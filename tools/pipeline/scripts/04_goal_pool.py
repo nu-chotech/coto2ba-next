@@ -55,6 +55,7 @@ from _goalbot import (  # noqa: E402
     evaluate_goal,
     goal_candidates,
     init_worker,
+    load_goal_seeds,
     worker_evaluate,
 )
 from _vectors import load_output_space  # noqa: E402
@@ -276,7 +277,14 @@ def main() -> None:
     else:
         space = load_output_space()
         candidates = goal_candidates(space, ng)
-        Random(SHUFFLE_SEED).shuffle(candidates)
+        # 種リスト（goal_seeds.txt）は goal_candidates が先頭に置いている。
+        # その並びは人の意図なので壊さず、残りだけを決定的にシャッフルする。
+        n_seeds = len(
+            [w for w in load_goal_seeds() if w in space.index and space.index[w] in set(candidates)]
+        )
+        head, tail = candidates[:n_seeds], candidates[n_seeds:]
+        Random(SHUFFLE_SEED).shuffle(tail)
+        candidates = head + tail
         print(
             f"出力語彙 {space.size} 語 / ゴール候補 {len(candidates)} 語", file=sys.stderr
         )

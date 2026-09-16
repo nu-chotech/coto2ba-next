@@ -107,7 +107,7 @@ export const N_INPUT = 208_707
  * 出力語彙のサイズ。heat の対数正規化に使う。
  * パイプライン（02_prune）の実測値でここを更新すること。
  */
-export const N_OUTPUT = 99_805
+export const N_OUTPUT = 102_520
 
 // ── 難易度 ──────────────────────────────────────────────────
 export const DIFFICULTIES = ['easy', 'normal', 'hard'] as const

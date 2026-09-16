@@ -103,6 +103,30 @@ def is_concrete_goal(word: str) -> bool:
     return True
 
 
+
+
+def load_goal_seeds() -> list[str]:
+    """手で選んだ「絵になる」ゴール候補（goal_seeds.txt）。
+
+    品詞だけでは「政令」と「望遠鏡」を区別できず、機械的に選ぶとゴールが
+    行政・報道の語彙になってしまう。人が選んだ語を先に評価して、
+    ボット検証を通ったものからプールに入れる。
+    """
+    from _common import PIPELINE_ROOT, normalize_word
+
+    path = PIPELINE_ROOT / "goal_seeds.txt"
+    if not path.exists():
+        return []
+    out: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        s = line.split("#", 1)[0].strip()
+        if s:
+            w = normalize_word(s)
+            if w and w not in out:
+                out.append(w)
+    return out
+
+
 def goal_candidates(space: OutputSpace, ng: tuple[set[str], set[str]]) -> list[int]:
     """出力語彙・freq_rank 500〜30,000・**具体的な**一般名詞・2 文字以上・数字なし・NG 外。"""
     mask = (
@@ -122,6 +146,14 @@ def goal_candidates(space: OutputSpace, ng: tuple[set[str], set[str]]) -> list[i
         if not is_concrete_goal(w):
             continue
         out.append(i)
+
+    # 種リストの語を先頭に持ってくる（ファイルの並び順を尊重する）。
+    seeds = load_goal_seeds()
+    if seeds:
+        seen = set(out)
+        head = [space.index[w] for w in seeds if w in space.index and space.index[w] in seen]
+        head_set = set(head)
+        out = head + [i for i in out if i not in head_set]
     return out
 
 

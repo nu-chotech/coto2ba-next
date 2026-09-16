@@ -48,6 +48,12 @@ COMPOUND_POS = {"名詞", "接頭辞", "接尾辞"}
 # （促進 / 捜査 / 提唱 / 後悔 / 目指し）。unidic の pos3。
 ABSTRACT_NOUN_SUBPOS = {"サ変可能", "副詞可能", "サ変形状詞可能", "形状詞可能", "助数詞可能"}
 HIRAGANA_TAIL_RE = re.compile(r"[\u3041-\u309F]$")
+# 出力語彙の最小文字数。ただし **漢字 1 文字は許す**。
+# SPEC §4.2 は「2 文字以上」だが、それだと SPEC 自身がゴールの例に挙げている「蚕」や、
+# 虹 / 鶴 / 亀 / 苔 / 琴 / 筆 のような目的地として最良の語が全部落ちる。
+# ひらがな・カタカナ 1 文字（を / ん / ア）はノイズなので従来どおり落とす。
+OUTPUT_MIN_LEN = 2
+SINGLE_KANJI_RE = re.compile(r"^[\u4E00-\u9FFF\u3400-\u4DBF]$")
 
 
 def build_tagger():
@@ -216,7 +222,7 @@ def main() -> None:
             poses.append(None)
             stats["drop_out_freq"] += 1
             continue
-        if len(w) < 2:
+        if len(w) < OUTPUT_MIN_LEN and not SINGLE_KANJI_RE.match(w):
             is_output.append(False)
             is_common.append(False)
             is_conc.append(False)
