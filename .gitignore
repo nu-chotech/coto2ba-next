@@ -18,3 +18,4 @@ __pycache__/
 .superpowers/
 coverage/
 *.log
+apps/api/api/

@@ -12,7 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "build:vercel": "tsup && node scripts/build-vercel-output.mjs"
   },
   "dependencies": {
     "@coto2ba/contracts": "workspace:*",
