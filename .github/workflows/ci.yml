@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Lint / Typecheck / Test (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (Biome)
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+  pipeline:
+    name: Lint (Python pipeline)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # setup-uv に working-directory という入力は無い（無視される）。
+      # pyproject-file で tools/pipeline の requires-python / uv 設定を読ませる。
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          pyproject-file: tools/pipeline/pyproject.toml
+          enable-cache: true
+
+      - name: ruff check
+        working-directory: tools/pipeline
+        run: uv run ruff check .

@@ -1,0 +1,37 @@
+[project]
+name = "coto2ba-pipeline"
+version = "0.1.0"
+description = "コトコトバのオフラインパイプライン（語彙刈り込み・pgvector 書き出し・ゴールプール）"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "numpy>=2.1",
+    "fugashi>=1.4",
+    "unidic-lite>=1.0.8",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.4",
+    "pyarrow>=18",
+    "tqdm>=4.67",
+    "python-dotenv>=1.0",
+    "httpx>=0.28",
+]
+
+[project.optional-dependencies]
+umap = ["umap-learn>=0.5.7", "scikit-learn>=1.5"]
+
+[dependency-groups]
+dev = ["ruff>=0.9"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.uv]
+package = false
+
+[tool.ruff.lint.isort]
+# scripts/ 直下の共通モジュール（アンダースコア始まり）を自前扱いにする。
+known-first-party = ["_common", "_constants", "_db", "_vectors", "_goalbot"]

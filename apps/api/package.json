@@ -1,0 +1,38 @@
+{
+  "name": "@coto2ba/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/dev.ts",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "build:vercel": "tsup && node scripts/build-vercel-output.mjs"
+  },
+  "dependencies": {
+    "@coto2ba/contracts": "workspace:*",
+    "better-auth": "1.7.5",
+    "drizzle-orm": "0.45.2",
+    "hono": "4.13.8",
+    "zod": "4.6.5",
+    "pg": "^8.16.3",
+    "@vercel/functions": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "drizzle-kit": "0.31.10",
+    "tsup": "8.5.1",
+    "tsx": "^4.20.0",
+    "typescript": "~6.0.3",
+    "vitest": "5.0.1",
+    "@types/pg": "^8.15.5",
+    "@hono/node-server": "^1.19.5",
+    "dotenv": "^17.2.3"
+  }
+}

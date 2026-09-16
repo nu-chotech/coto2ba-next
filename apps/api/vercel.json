@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["sin1"],
+  "outputDirectory": "public",
+  "installCommand": "echo \"bundled by tsup; no install needed\"",
+  "buildCommand": "echo \"prebuilt by tsup\"",
+  "functions": {
+    "api/index.mjs": { "maxDuration": 30 }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+}

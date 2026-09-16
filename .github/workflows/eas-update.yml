@@ -1,0 +1,51 @@
+name: EAS Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - "packages/**"
+  workflow_dispatch: {}
+
+concurrency:
+  group: eas-update-${{ github.event_name == 'workflow_dispatch' && 'production' || 'preview' }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: eas update
+    runs-on: ubuntu-latest
+    # push -> preview チャンネルへ自動公開。production への公開は workflow_dispatch の手動実行のみ。
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'production' || 'preview' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS Update (preview)
+        if: github.event_name != 'workflow_dispatch'
+        working-directory: apps/mobile
+        run: eas update --channel preview --auto --non-interactive
+
+      - name: EAS Update (production, manual only)
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: apps/mobile
+        run: eas update --channel production --auto --non-interactive

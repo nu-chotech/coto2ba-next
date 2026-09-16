@@ -1,0 +1,7 @@
+src/
+tests/
+drizzle/
+node_modules/
+*.ts
+!api/**
+.env*

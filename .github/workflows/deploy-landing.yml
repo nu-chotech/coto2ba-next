@@ -1,0 +1,36 @@
+name: Deploy Landing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/landing/**"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-landing-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build + Deploy (production)
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_LANDING }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Vercel pull (production environment)
+        working-directory: apps/landing
+        run: npx vercel@59 pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Vercel build
+        working-directory: apps/landing
+        run: npx vercel@59 build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Vercel deploy (prebuilt, production)
+        working-directory: apps/landing
+        run: npx vercel@59 deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}

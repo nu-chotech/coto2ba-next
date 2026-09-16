@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789583783351,
+      "tag": "0000_enable_pgvector",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789583788538,
+      "tag": "0001_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789587756249,
+      "tag": "0002_forbidden_inputs",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789588216874,
+      "tag": "0003_vocab_is_concrete",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@coto2ba/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./constants": "./src/constants.ts",
+    "./schemas": "./src/schemas.ts",
+    "./tiers": "./src/tiers.ts",
+    "./errors": "./src/errors.ts",
+    "./achievements": "./src/achievements.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3",
+    "vitest": "5.0.1"
+  }
+}
