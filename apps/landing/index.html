@@ -227,32 +227,11 @@
     background: linear-gradient(135deg, var(--indigo), #c7ccff);
   }
 
-  .btn:disabled {
-    pointer-events: none;
-    cursor: not-allowed;
-    opacity: 0.45;
-    filter: grayscale(0.4);
-  }
-
   .step-note {
     margin-top: 0.7em;
     font-size: 0.82rem;
     color: var(--ink-mute);
   }
-
-  .badge-soon {
-    display: none;
-    margin-left: 0.6em;
-    font-size: 0.7rem;
-    letter-spacing: 0.06em;
-    color: var(--ink-mute);
-    border: 1px solid var(--panel-border);
-    border-radius: 999px;
-    padding: 0.15em 0.7em;
-    vertical-align: middle;
-  }
-
-  .step[data-link-ready="false"] .badge-soon { display: inline-block; }
 
   footer {
     max-width: 640px;
@@ -318,23 +297,20 @@
           </div>
         </li>
 
-        <li class="step" id="step-open" data-link-ready="false">
+        <li class="step">
           <span class="step-index" aria-hidden="true">②</span>
           <div>
-            <h2>コトコトバを開く<span class="badge-soon">近日公開</span></h2>
+            <h2>コトコトバを開く</h2>
             <p>
               Expo Go がインストール済みなら、下のボタンをタップするだけで直接起動します。
               ブースでは会場の QR コードからも同じ場所に飛べます。
             </p>
-            <button
-              id="open-app-link"
-              type="button"
+            <a
               class="btn btn-indigo"
-              disabled
-              data-expo-link="exp://u.expo.dev/73c7cda9-727c-4b83-ba2e-674c38b951ae?channel-name=production"
-            >コトコトバを開く</button>
-            <p class="step-note" id="open-app-fallback">
-              リンクは公開準備中です。しばらくお待ちいただくか、会場スタッフにお声がけください。
+              href="exp://u.expo.dev/73c7cda9-727c-4b83-ba2e-674c38b951ae?channel-name=production"
+            >コトコトバを開く</a>
+            <p class="step-note">
+              Expo Go が入っていないと開きません。先に ① を済ませてください。
             </p>
           </div>
         </li>
@@ -354,31 +330,5 @@
       </p>
     </footer>
   </div>
-
-  <script>
-    (() => {
-      // ② の exp:// リンク（EAS Update / production チャンネル）。
-      // 値は data-expo-link 属性。差し替え手順は apps/landing/README.md を参照。
-      // 属性が空か REPLACE_WITH_ で始まる間は無効なボタンのまま表示する。
-      var button = document.getElementById('open-app-link');
-      var step = document.getElementById('step-open');
-      var fallback = document.getElementById('open-app-fallback');
-      if (!button || !step) return;
-      var url = button.getAttribute('data-expo-link') || '';
-      var ready = url.length > 0 && url.indexOf('REPLACE_WITH_') !== 0;
-      if (!ready) return;
-
-      // 準備ができたら無効ボタンを本物のリンクに差し替える。
-      var link = document.createElement('a');
-      link.id = button.id;
-      link.className = button.className;
-      link.href = url;
-      link.textContent = button.textContent;
-      button.replaceWith(link);
-
-      step.setAttribute('data-link-ready', 'true');
-      if (fallback) fallback.style.display = 'none';
-    })();
-  </script>
 </body>
 </html>

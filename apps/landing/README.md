@@ -33,8 +33,9 @@ vercel --prod
 
 ## ② 「コトコトバを開く」リンク
 
-`index.html` の `#open-app-link` は、EAS Update で公開した `production` チャンネルを
-Expo Go で直接開く `exp://` リンク。現在の値（実リンク・設定済み）:
+`index.html` の ②「コトコトバを開く」は、EAS Update で公開した `production` チャンネルを
+Expo Go で直接開く `exp://` リンクを `href` に直書きした素の `<a>`（JS は使っていない）。
+現在の値（実リンク・設定済み）:
 
 ```
 exp://u.expo.dev/73c7cda9-727c-4b83-ba2e-674c38b951ae?channel-name=production
@@ -44,9 +45,8 @@ exp://u.expo.dev/73c7cda9-727c-4b83-ba2e-674c38b951ae?channel-name=production
 EAS プロジェクト `@ut42tech-hobby/coto2ba-next`）。`apps/mobile/app.json` の
 `updates.url` (`https://u.expo.dev/<projectId>`) と同じプロジェクトを指している。
 
-**Phase 0 の完了条件（SPEC §13 Phase 0）**: この ② が `REPLACE_WITH_` ではない
-**実リンク**になっていること。ここが埋まっていないと QR を向ける先（このページ 1 枚、SPEC §11.2）
-が機能しない。
+**Phase 0 の完了条件（SPEC §13 Phase 0）**: この ② が **実リンク**になっていること。
+ここが埋まっていないと QR を向ける先（このページ 1 枚、SPEC §11.2）が機能しない。
 
 ### リンクの正当性の確認・差し替え手順
 
@@ -66,10 +66,9 @@ EAS プロジェクト `@ut42tech-hobby/coto2ba-next`）。`apps/mobile/app.json
    場合は、上のコマンドで生成した `runtime-version` 付きの URL に差し替えて切り分けること
    （ARCHITECTURE §0 の SDK 58 期限リスク）。
 
-2. `index.html` の `id="open-app-link"` の `data-expo-link` 属性を書き換えるだけでよい。
-   ページ末尾の `<script>` が、値が空でも `REPLACE_WITH_` 始まりでもないことを検知して
-   `<button disabled>` を本物の `<a href>` に差し替え、「近日公開」バッジと注意文を消す。
-   追加の実装は不要。
+2. 差し替えは `index.html` の ②「コトコトバを開く」の `<a class="btn btn-indigo" href="...">` の
+   `href` を書き換えるだけでよい（`index.html` 内で `exp://` を検索すれば 1 箇所しかない）。
+   JS の差し替え機構は無いので、追加の実装も不要。
 
 3. `production` チャンネルへの publish 前は、リンク自体は有効でもアプリはまだ配信されない。
    公開は `.github/workflows/eas-update.yml` の `workflow_dispatch`（手動実行）で行う

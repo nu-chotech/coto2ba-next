@@ -15,7 +15,10 @@ import urllib.parse
 import urllib.request
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8787"
+# 開発機の DHCP 依存で本来は不定。ここでは固定値で「未知の exp:// を拒否しない」ことを確かめる。
+EXPO_ORIGIN = "exp://192.168.1.23:8081"
 TOKEN: str | None = None
+LAST_HEADERS: dict[str, str] = {}
 
 
 def call(method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
@@ -24,13 +27,24 @@ def call(method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(f"{BASE}{urllib.parse.quote(path, safe='/?=&')}", data=data, method=method)
     req.add_header("Content-Type", "application/json")
+    # Expo Go が送るオリジン。@better-auth/expo が expo-origin を Origin に変換する。
+    req.add_header("Origin", EXPO_ORIGIN)
+    req.add_header("expo-origin", EXPO_ORIGIN)
     if TOKEN:
         req.add_header("Authorization", f"Bearer {TOKEN}")
     try:
-        with urllib.request.urlopen(req, timeout=30) as res:
-            return res.status, json.loads(res.read().decode())
+        with urllib.request.urlopen(req, timeout=40) as res:
+            LAST_HEADERS.clear()
+            LAST_HEADERS.update({k.lower(): v for k, v in res.headers.items()})
+            return res.status, json.loads(res.read().decode() or "{}")
     except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read().decode() or "{}")
+        LAST_HEADERS.clear()
+        LAST_HEADERS.update({k.lower(): v for k, v in e.headers.items()})
+        raw = e.read().decode()
+        try:
+            return e.code, json.loads(raw or "{}")
+        except json.JSONDecodeError:
+            return e.code, {"raw": raw[:200]}
 
 
 def timed(label: str, fn):
@@ -67,6 +81,38 @@ def main() -> int:
         "GET  /api/me (認証なし)", lambda: _without_token("GET", "/api/me")
     )
     check(unauth.get("code") == "UNAUTHORIZED", "認証なしで 401 にならない")
+
+    # ── Better Auth（匿名 + bearer + expo）──────────────────────
+    # 調査で判明した罠: Cookie が無いリクエストではオリジン検証がスキップされる。
+    # つまり「1 回目だけ通って 2 回目から 403」という silent-green が起きうるので、
+    # トークンを持った状態の 2 回目以降まで必ず確かめる。
+    saved_token, TOKEN = TOKEN, None
+    status, ba, _ = timed(
+        "POST /auth/sign-in/anonymous", lambda: call("POST", "/api/auth/sign-in/anonymous", {})
+    )
+    ba_token = LAST_HEADERS.get("set-auth-token")
+    check(status == 200, f"匿名サインインが失敗: {ba}")
+    check(bool(ba_token), "set-auth-token ヘッダが返らない（bearer プラグインの設定を確認）")
+
+    if ba_token:
+        TOKEN = ba_token
+        status, sess, _ = timed(
+            "GET  /auth/get-session（2回目）", lambda: call("GET", "/api/auth/get-session")
+        )
+        check(status == 200 and (sess or {}).get("user"), f"bearer でセッションが取れない: {sess}")
+
+        status, me2, _ = timed("GET  /api/me（Better Auth）", lambda: call("GET", "/api/me"))
+        check(status == 200 and me2.get("display_name"), f"Better Auth 経由で /api/me が通らない: {me2}")
+
+        status, again, _ = timed(
+            "POST /auth/sign-in/anonymous（2回目）",
+            lambda: call("POST", "/api/auth/sign-in/anonymous", {}),
+        )
+        check(
+            again.get("code") == "ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY",
+            "匿名サインインが冪等に見える（クライアントは必ず getSession を先に呼ぶこと）",
+        )
+    TOKEN = saved_token
 
     status, game, _ = timed(
         "POST /api/games free",
