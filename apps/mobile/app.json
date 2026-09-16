@@ -59,7 +59,6 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "newArchEnabled": true,
     "primaryColor": "#0B0B10",
     "runtimeVersion": {
       "policy": "sdkVersion"

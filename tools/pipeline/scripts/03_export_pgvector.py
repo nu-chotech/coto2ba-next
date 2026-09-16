@@ -3,6 +3,11 @@
 - ベクトルは **単位長に正規化**してから入れる（`1 - (w2v <=> goal)` がそのまま cos）。
 - psycopg3 の **binary COPY**（テキストリテラルだと 438MB、binary なら 78MB）。
 - 冪等: 一時テーブルへ COPY → `INSERT ... ON CONFLICT (word) DO UPDATE`。
+- **今回の parquet に無い語は `is_input = is_output = false` に落とす**（`--limit` 無しのときだけ）。
+  ng_words.txt に追記して `pnpm pipeline:prune && pnpm pipeline:export` を流したとき、
+  新たに NG になった語が DB に残って混合結果・ヒント・rank 母集団に出続けるのを防ぐ
+  （SPEC §4.2）。goal_pool / daily_challenges / word_encounters から FK で参照されて
+  いるので**行は消さずフラグだけ落とす**。
 - HNSW インデックスは**ロード後**に作る（CONCURRENTLY は使わない。トランザクション内で
   黙って死ぬ / drizzle のマイグレーションと衝突する）。
 
@@ -56,6 +61,17 @@ SQL_CREATE_HNSW = (
 SQL_CREATE_FREQ = (
     f"CREATE INDEX IF NOT EXISTS {INDEX_FREQ} ON vocab (freq_rank) WHERE is_output"
 )
+
+# 今回の parquet に無い語を無効化する（行は消さない。FK があるため）。
+SQL_DEACTIVATE_MISSING = f"""
+UPDATE vocab SET is_input = false, is_output = false
+WHERE (is_input OR is_output) AND word NOT IN (SELECT word FROM {LOAD_TABLE})
+"""
+SQL_SAMPLE_MISSING = f"""
+SELECT word FROM vocab
+WHERE (is_input OR is_output) AND word NOT IN (SELECT word FROM {LOAD_TABLE})
+ORDER BY freq_rank LIMIT 10
+"""
 
 
 class Rows(NamedTuple):
@@ -173,8 +189,31 @@ def main() -> None:
               w2v            = EXCLUDED.w2v
             """
         )
-        conn.execute(f"DROP TABLE {LOAD_TABLE}")
         print(f"upsert 完了: {time.time() - t2:.1f}s", file=sys.stderr)
+
+        # parquet から消えた語（NG 追加・prune のしきい値変更など）を無効化する。
+        # --limit 付きは「先頭 N 行だけ」なので、残り全部を無効化してはいけない。
+        if args.limit:
+            deactivated = -1
+            print(
+                "--limit 付きなので、今回の parquet に無い語の無効化はしません",
+                file=sys.stderr,
+            )
+        else:
+            sample = [r[0] for r in conn.execute(SQL_SAMPLE_MISSING).fetchall()]
+            with conn.cursor() as cur:
+                cur.execute(SQL_DEACTIVATE_MISSING)
+                deactivated = cur.rowcount
+            if deactivated:
+                print(
+                    f"parquet に無い {deactivated} 語を is_input/is_output = false に"
+                    f"落としました（行は残す。FK があるため）: {sample[:5]}",
+                    file=sys.stderr,
+                )
+            else:
+                print("parquet に無い有効語はありませんでした", file=sys.stderr)
+
+        conn.execute(f"DROP TABLE {LOAD_TABLE}")
 
         if not args.skip_index:
             t3 = time.time()
@@ -203,6 +242,13 @@ def main() -> None:
         print(
             "※ --limit 付きで走らせました。本番ロードは --recreate-index を付けて "
             "全件で走らせ直してください（小さいデータで作った HNSW が残るため）。",
+            file=sys.stderr,
+        )
+    if deactivated > 0:
+        print(
+            "※ 無効化した語がゴールプールに残っている可能性があります。続けて "
+            "`04_goal_pool.py --upsert-only --prune-stale` と `05_daily_schedule.py` を"
+            "流してください。",
             file=sys.stderr,
         )
 

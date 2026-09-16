@@ -7,10 +7,22 @@
 **中断・再開できる。** 1 語終えるごとに `data/goal_pool_progress.jsonl` に追記し、
 再実行時は済んだ語を読み飛ばす。`--fresh` で最初からやり直す。
 
+**`goal_pool` の中身は「進捗ファイル + ng_words.txt + vocab.is_output」から毎回導出する。**
+
+- `difficulty` は保存値ではなく upsert のたびに `classify(bot_moves)` で計算し直す
+  （`DIFFICULTY_BOT_MOVES` を変えたら既評価語にも反映される）。
+- 採用集合に無い goal_pool の行（古い分類・手入れで足した未検証語など）は警告し、
+  `--prune-stale` を付けると `enabled = false` に落とす（daily_challenges から FK で
+  参照されているので DELETE はしない）。
+- ng_words.txt に入った語・`is_output` を外れた語は書かない（＝ stale 扱いになる）。
+  よって **goal_pool を人手で無効化したいときは ng_words.txt に足すこと**。
+  直接 `enabled = false` にしても、次の upsert で採用語なら true に戻る。
+
 使い方:
     uv run python scripts/04_goal_pool.py --max-goals 20 --jobs 1   # 動作確認
     uv run python scripts/04_goal_pool.py                           # 本番（数十分）
     uv run python scripts/04_goal_pool.py --no-stop-on-quota        # 目標数で止めない
+    uv run python scripts/04_goal_pool.py --upsert-only --prune-stale  # DB だけ作り直す
 """
 
 from __future__ import annotations
