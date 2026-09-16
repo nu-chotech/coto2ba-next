@@ -1,0 +1,71 @@
+/** API が返すエラーコード。レスポンスは常に { code, message }。 */
+export const ERROR_CODES = [
+  'GOAL_INPUT',
+  'SAME_AS_CURRENT',
+  'OOV',
+  'INVALID_RATIO',
+  'GAME_FINISHED',
+  'GAME_NOT_FOUND',
+  'DAILY_DONE',
+  'DAILY_NOT_READY',
+  'NOT_FREE_MODE',
+  'ALREADY_MOVED',
+  'UNAUTHORIZED',
+  'FORBIDDEN',
+  'RATE_LIMITED',
+  'INVALID_NAME',
+  'TRANSFER_INVALID',
+  'TRANSFER_EXPIRED',
+  'VALIDATION',
+  'INTERNAL',
+] as const
+
+export type ErrorCode = (typeof ERROR_CODES)[number]
+
+export const ERROR_MESSAGES_JA: Record<ErrorCode, string> = {
+  GOAL_INPUT: 'ゴールの語そのものは混ぜられません',
+  SAME_AS_CURRENT: 'いまの語と同じ語は混ぜられません',
+  OOV: 'その語は辞書にありません',
+  INVALID_RATIO: '混合比率が不正です',
+  GAME_FINISHED: 'このゲームはもう終わっています',
+  GAME_NOT_FOUND: 'ゲームが見つかりません',
+  DAILY_DONE: '今日のデイリーはもう挑戦済みです',
+  DAILY_NOT_READY: '今日のデイリーがまだ用意されていません',
+  NOT_FREE_MODE: 'フリーモードでのみ実行できます',
+  ALREADY_MOVED: 'すでに 1 手打っているので変更できません',
+  UNAUTHORIZED: 'ログインが必要です',
+  FORBIDDEN: 'この操作は許可されていません',
+  RATE_LIMITED: '操作が速すぎます。少し待ってください',
+  INVALID_NAME: 'その名前は使えません',
+  TRANSFER_INVALID: '引き継ぎコードが無効です',
+  TRANSFER_EXPIRED: '引き継ぎコードの有効期限が切れています',
+  VALIDATION: '入力が不正です',
+  INTERNAL: 'サーバーエラーが発生しました',
+}
+
+/** HTTP ステータスの対応。 */
+export const ERROR_STATUS: Record<ErrorCode, number> = {
+  GOAL_INPUT: 422,
+  SAME_AS_CURRENT: 422,
+  OOV: 422,
+  INVALID_RATIO: 422,
+  GAME_FINISHED: 409,
+  GAME_NOT_FOUND: 404,
+  DAILY_DONE: 409,
+  DAILY_NOT_READY: 503,
+  NOT_FREE_MODE: 409,
+  ALREADY_MOVED: 409,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  RATE_LIMITED: 429,
+  INVALID_NAME: 422,
+  TRANSFER_INVALID: 404,
+  TRANSFER_EXPIRED: 410,
+  VALIDATION: 400,
+  INTERNAL: 500,
+}
+
+export interface ApiErrorBody {
+  code: ErrorCode
+  message: string
+}

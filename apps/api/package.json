@@ -1,0 +1,33 @@
+{
+  "name": "@coto2ba/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/dev.ts",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@coto2ba/contracts": "workspace:*",
+    "better-auth": "1.7.5",
+    "drizzle-orm": "0.45.2",
+    "hono": "4.13.8",
+    "postgres": "3.4.9",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "drizzle-kit": "0.31.10",
+    "tsup": "8.5.1",
+    "tsx": "^4.20.0",
+    "typescript": "~6.0.3",
+    "vitest": "5.0.1"
+  }
+}
