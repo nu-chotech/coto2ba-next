@@ -100,11 +100,17 @@ async function chooseStart(db: Db, goal: string, exclude: string[] = []): Promis
   return chosen
 }
 
-/** フリーモードのゴールを難易度から抽選する。 */
+/**
+ * フリーモードのゴールを難易度から抽選する。
+ * `vocab.is_concrete` を必ず条件に入れること — ゴールプールには過去の実行で入った
+ * 抽象語（顧み・促進・提唱）が残っている可能性があり、目的地として弱い。
+ */
 async function chooseGoal(db: Db, difficulty: Difficulty): Promise<string> {
   const rows = await db.execute<{ word: string }>(sql`
-    SELECT word FROM goal_pool
-    WHERE enabled AND NOT review_needed AND difficulty = ${difficulty}
+    SELECT g.word FROM goal_pool g
+    JOIN vocab v ON v.word = g.word
+    WHERE g.enabled AND NOT g.review_needed AND g.difficulty = ${difficulty}
+      AND v.is_concrete
     ORDER BY random() LIMIT 1
   `)
   const word = rows.rows[0]?.word
