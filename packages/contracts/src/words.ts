@@ -39,3 +39,24 @@ export function isValidDisplayNameLength(name: string, min: number, max: number)
   const len = [...name].length
   return len >= min && len <= max
 }
+
+/**
+ * 2 語が表記揺れクラスタか（2 文字以上の接頭辞または接尾辞を共有する）。
+ * SPEC §6.1 のゴール健全性チェックと同じ考え方をヒントにも使う。
+ * 「居住地」に対する「居住 / 定住 / 居住者 / 移住者」を落とすのが目的。
+ */
+export function isMorphologicalVariant(a: string, b: string, minShared = 2): boolean {
+  if (a === b) return true
+  const ca = [...a]
+  const cb = [...b]
+  const max = Math.min(ca.length, cb.length)
+  if (max < minShared) return false
+
+  let prefix = 0
+  while (prefix < max && ca[prefix] === cb[prefix]) prefix++
+  if (prefix >= minShared) return true
+
+  let suffix = 0
+  while (suffix < max && ca[ca.length - 1 - suffix] === cb[cb.length - 1 - suffix]) suffix++
+  return suffix >= minShared
+}

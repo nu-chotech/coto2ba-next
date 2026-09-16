@@ -63,6 +63,9 @@ export const SUGGEST_CHIP_HEIGHT = 34
 /** 入力欄の最大文字数は **付けない**（ARCHITECTURE §5: CJK IME のバグ）。
  *  代わりに送信時にこの長さを超えていたら弾く。 */
 export const INPUT_SANITY_MAX_LENGTH = 32
+/** 注意文の行。**常にこの高さを確保する**（出たり消えたりで下の UI をずらさない）。
+ *  typography.label の lineHeight と同じ値。 */
+export const INPUT_ERROR_ROW_HEIGHT = 18
 
 // ── ヒントシート ────────────────────────────────────────────
 /** シートの最大高さ（画面比）。 */

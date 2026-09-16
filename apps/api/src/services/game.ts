@@ -16,6 +16,7 @@ import {
   type MoveResponse,
   START_MAX_FREQ_RANK,
   START_RANK_RANGE,
+  isMorphologicalVariant,
   sharesKanji,
   tierForRank,
 } from '@coto2ba/contracts'
@@ -39,6 +40,8 @@ import { applyMove, updateBestFreeMoves, validateMove } from './rules'
 import { hintWords, lookupWord, mixAndRank, rankOf, sampleStartWord } from './vector'
 
 const LEADERBOARD_PAGE = 50
+/** ヒントの候補を何倍取ってから表記揺れを落とすか。 */
+const HINT_OVERSAMPLE = 4
 /** スタート語の候補を何件引いてから漢字チェックで絞るか。 */
 const START_SAMPLE_SIZE = 24
 
@@ -435,15 +438,32 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
       exclude.add(h.result)
       exclude.add(h.input)
     }
-    hints = await hintWords(
+    // 候補を多めに取ってから表記揺れを落とす。
+    // 「居住地」に対して「居住 / 定住 / 居住者 / 移住者」ばかりが並ぶと
+    // 混ぜても同じクラスタの中をうろうろするだけでヒントとして機能しない。
+    const raw = await hintWords(
       db,
       game.goal,
       game.current,
       [...exclude],
       HINT_RATIO,
-      HINT_CANDIDATE_COUNT,
-      HINT_COUNT,
+      HINT_CANDIDATE_COUNT * HINT_OVERSAMPLE,
+      HINT_CANDIDATE_COUNT * HINT_OVERSAMPLE,
     )
+    const kept: string[] = []
+    for (const w of raw) {
+      if (kept.length >= HINT_COUNT) break
+      if (isMorphologicalVariant(w, game.current)) continue
+      if (isMorphologicalVariant(w, game.goal)) continue
+      if (kept.some((k) => isMorphologicalVariant(w, k))) continue
+      kept.push(w)
+    }
+    // 絞りすぎて足りなくなったら素の近傍で埋める（ヒントが 6 語未満にならないように）
+    for (const w of raw) {
+      if (kept.length >= HINT_COUNT) break
+      if (!kept.includes(w)) kept.push(w)
+    }
+    hints = kept
     await db
       .insert(hintCache)
       .values({ goal: game.goal, current: game.current, hints })

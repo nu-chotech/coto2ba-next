@@ -300,7 +300,7 @@ export default function GameScreen() {
             <WordInput
               ref={inputRef}
               tier={tier}
-              serverErrorMessage={inputError}
+              errorMessage={inputError}
               onChangeWord={() => setInputError(null)}
               disabled={pending !== null}
             />

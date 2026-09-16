@@ -10,8 +10,14 @@
  * 内部で `defaultValue` を差し替えて **remount** する（`setNativeProps` は使わない）。
  * これが Fabric でいちばん壊れない。
  *
- * 端末側の語彙判定（lib/vocab）で、辞書に無い語は赤く警告し、
- * 前方一致の候補を `SUGGEST_LIMIT` 件までチップで出す。
+ * **辞書外（OOV）の赤い警告は、入力中には出さない。**
+ * IME の変換途中（「ぎ」「ぎん」「ぎんが」…）は当然どれも辞書外なので、
+ * 1 打ごとに判定すると枠が赤いまま・注意文が点滅し続ける（ARCHITECTURE §5:
+ * composition 中の値は確定値ではない）。警告は **送信を試みたあと** だけ、
+ * 親から `errorMessage` で降ってくる（ローカルの OOV 判定も親の startMix に集約）。
+ * 注意文の行は常に高さを確保して、出入りでレイアウトをずらさない。
+ *
+ * 前方一致の候補チップは入力中もライブで出す（変換前のかなでも役に立つ）。
  */
 
 import { normalizeWord, SUGGEST_LIMIT, type TierId } from '@coto2ba/contracts'
@@ -26,9 +32,9 @@ import {
   View,
   type ViewStyle,
 } from 'react-native'
-import { isKnownWord, isVocabReady, suggest } from '../lib/vocab'
+import { suggest } from '../lib/vocab'
 import { layout, palette, paletteForTier, radius, spacing, typography } from '../theme'
-import { SUGGEST_CHIP_HEIGHT } from './constants'
+import { INPUT_ERROR_ROW_HEIGHT, SUGGEST_CHIP_HEIGHT } from './constants'
 
 export type WordInputHandle = {
   /** 最新の入力（正規化前の生文字列）。 */
@@ -47,8 +53,12 @@ export type WordInputProps = {
   onPickSuggestion?: (word: string) => void
   disabled?: boolean
   placeholder?: string
-  /** サーバーが OOV を返した語。赤い注意文を出す。 */
-  serverErrorMessage?: string | null
+  /**
+   * 赤い注意文。**送信を試みたあとの結果だけ**を渡すこと
+   * （親の `inputError`: 空入力・長すぎ・ローカル OOV・サーバーのエラー）。
+   * 入力中の値から毎打計算した値を渡してはいけない。
+   */
+  errorMessage?: string | null
   style?: StyleProp<ViewStyle>
 }
 
@@ -59,7 +69,7 @@ export const WordInput = forwardRef<WordInputHandle, WordInputProps>(function Wo
     onPickSuggestion,
     disabled = false,
     placeholder = '混ぜる語を入力',
-    serverErrorMessage = null,
+    errorMessage = null,
     style,
   },
   ref,
@@ -71,7 +81,7 @@ export const WordInput = forwardRef<WordInputHandle, WordInputProps>(function Wo
   // remount 用。seed を変えて key を進めると TextInput が作り直される。
   const [seed, setSeed] = useState('')
   const [epoch, setEpoch] = useState(0)
-  // 候補と警告だけは再描画したいので state に持つ（本文は ref）。
+  // 候補チップだけは再描画したいので state に持つ（本文は ref）。
   const [text, setText] = useState('')
 
   const apply = useCallback(
@@ -106,9 +116,8 @@ export const WordInput = forwardRef<WordInputHandle, WordInputProps>(function Wo
     () => (normalized.length === 0 ? [] : suggest(normalized, SUGGEST_LIMIT)),
     [normalized],
   )
-  // 語彙が読めていないときは警告を出さない（サーバーが最終判定）。
-  const unknown = isVocabReady() && normalized.length > 0 && !isKnownWord(normalized)
-  const showError = unknown || (serverErrorMessage !== null && serverErrorMessage.length > 0)
+  // 入力中は判定しない。警告は送信を試みたあとに親から降ってくるものだけ。
+  const showError = errorMessage !== null && errorMessage.length > 0
 
   const pick = useCallback(
     (word: string) => {
@@ -147,11 +156,14 @@ export const WordInput = forwardRef<WordInputHandle, WordInputProps>(function Wo
         />
       </View>
 
-      {showError ? (
-        <Text style={[typography.label, { color: palette.negative }]}>
-          {serverErrorMessage ?? 'その語は辞書にありません'}
-        </Text>
-      ) : null}
+      {/* 注意文の行。常に置いて高さを固定する（下の UI をずらさない）。 */}
+      <View style={styles.errorRow}>
+        {showError ? (
+          <Text style={[typography.label, { color: palette.negative }]} numberOfLines={1}>
+            {errorMessage}
+          </Text>
+        ) : null}
+      </View>
 
       {suggestions.length > 0 ? (
         <ScrollView
@@ -191,6 +203,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   input: { padding: 0 },
+  errorRow: { height: INPUT_ERROR_ROW_HEIGHT, justifyContent: 'center' },
   chips: { gap: spacing.sm, paddingVertical: spacing.xs },
   chip: {
     height: SUGGEST_CHIP_HEIGHT,

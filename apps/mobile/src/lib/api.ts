@@ -121,7 +121,12 @@ async function send(
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (auth) {
-    const token = await getToken()
+    // **必ずセッションが立つのを待ってから送る。**
+    // 起動直後は ensureSession() がまだ走っている最中なので、待たずに送ると
+    // Authorization 無しのリクエストが飛んで 401 になる（実際に起きた）。
+    // ensureSession() は inflight を共有するので、同時に何本呼んでも往復は 1 回。
+    let token = await getToken()
+    if (token === null || token.length === 0) token = await ensureSession()
     if (token !== null && token.length > 0) headers.Authorization = `Bearer ${token}`
   }
 
