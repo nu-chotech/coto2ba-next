@@ -50,14 +50,21 @@ export type MixSliderProps = {
 export function MixSlider({ value, onChange, tier, disabled = false, style }: MixSliderProps) {
   const colors = paletteForTier(tier)
   const trackWidth = useSharedValue(0)
+  /** 直近にコミットした段。ディテント判定はこれだけを見る（真の値）。 */
+  const committed = useSharedValue(ratioToIndex(value))
+  /** 表示専用。withSpring で補間中なので判定には使わない。 */
   const index = useSharedValue(ratioToIndex(value))
   const active = useSharedValue(0)
 
   // 外から値が変わったとき（ヒント選択・リセット）に追従する。
+  // 自分が onChange した直後は committed と一致するので、スプリングを取り直さない。
   useEffect(() => {
     const next = ratioToIndex(value)
-    if (index.value !== next) index.value = withSpring(next, spring.snappy)
-  }, [value, index])
+    if (committed.value !== next) {
+      committed.value = next
+      index.value = withSpring(next, spring.snappy)
+    }
+  }, [value, index, committed])
 
   /** 段が変わったときだけ呼ばれる（JS スレッド）。 */
   const commit = useCallback(
@@ -74,12 +81,16 @@ export function MixSlider({ value, onChange, tier, disabled = false, style }: Mi
     .onBegin((event) => {
       active.value = withTiming(1, { duration: duration.fast })
       const next = indexAtX(event.x, trackWidth.value)
-      if (next !== Math.round(index.value)) runOnJS(commit)(next)
-      index.value = withSpring(next, spring.snappy)
+      if (next !== committed.value) {
+        committed.value = next
+        runOnJS(commit)(next)
+        index.value = withSpring(next, spring.snappy)
+      }
     })
     .onUpdate((event) => {
       const next = indexAtX(event.x, trackWidth.value)
-      if (next !== Math.round(index.value)) {
+      if (next !== committed.value) {
+        committed.value = next
         runOnJS(commit)(next)
         index.value = withSpring(next, spring.snappy)
       }

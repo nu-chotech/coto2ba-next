@@ -6,7 +6,7 @@
  * ガラスの opacity 問題（§8.5）には当たらない。
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { type StyleProp, StyleSheet, type TextStyle, View, type ViewStyle } from 'react-native'
 import Animated, {
   runOnJS,
@@ -16,7 +16,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated'
 import { duration, heroFontSize, spring, typography } from '../theme'
-import { HERO_LINE_HEIGHT_RATIO } from './constants'
+import { HERO_LINE_HEIGHT_RATIO, WORD_FADE_SCALE } from './constants'
 
 export type WordDisplayProps = {
   word: string
@@ -40,20 +40,24 @@ export function WordDisplay({
   const opacity = useSharedValue(1)
   const scale = useSharedValue(1)
 
+  /** 消え終わってから差し替え、そのまま現れる（JS スレッド）。 */
+  const reveal = useCallback(
+    (next: string) => {
+      setShown(next)
+      opacity.value = withTiming(1, { duration: duration.base })
+      scale.value = withSpring(1, spring.gentle)
+    },
+    [opacity, scale],
+  )
+
   // 語が差し替わったら、いったん消してから新しい語に入れ替える。
   useEffect(() => {
     if (shown === word) return
-    scale.value = withTiming(0.92, { duration: duration.fast })
+    scale.value = withTiming(WORD_FADE_SCALE, { duration: duration.fast })
     opacity.value = withTiming(0, { duration: duration.fast }, (finished) => {
-      if (finished === true) runOnJS(setShown)(word)
+      if (finished === true) runOnJS(reveal)(word)
     })
-  }, [word, shown, opacity, scale])
-
-  // 表示中の語が変わったら現れる。
-  useEffect(() => {
-    opacity.value = withTiming(1, { duration: duration.base })
-    scale.value = withSpring(1, spring.gentle)
-  }, [shown, opacity, scale])
+  }, [word, shown, opacity, scale, reveal])
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,

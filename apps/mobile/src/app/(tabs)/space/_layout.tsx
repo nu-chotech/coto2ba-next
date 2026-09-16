@@ -1,0 +1,17 @@
+/**
+ * 図鑑タブのスタック。中身は次の担当者が実装する。
+ */
+
+import { Stack } from 'expo-router'
+import { palette } from '../../../theme'
+
+export default function SpaceLayout() {
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: palette.base },
+      }}
+    />
+  )
+}

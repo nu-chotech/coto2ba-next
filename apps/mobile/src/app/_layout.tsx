@@ -1,11 +1,13 @@
 /**
  * ルートレイアウト。Provider を積むだけ。
  *
- * タブ（(tabs)/play, space, ranking, settings）は次の担当者が作る。ここは Stack のまま。
+ * ここは Stack。タブ本体は `(tabs)/_layout.tsx`（`expo-router/unstable-native-tabs`）。
+ * `/` は `index.tsx` がロビー（`/play`）へリダイレクトする。
  *
  * `KeyboardProvider`（react-native-keyboard-controller@1.21.9、SDK 57 の Expo Go に同梱）は
- * GestureHandlerRootView の内側・SafeAreaProvider の外側。入力欄は `KeyboardStickyView` を
- * 使うこと（`KeyboardAvoidingView` とは戦わない。ARCHITECTURE §5）。
+ * GestureHandlerRootView の内側・SafeAreaProvider の外側。入力欄は
+ * `KeyboardAwareScrollView` / `KeyboardStickyView` を使うこと
+ * （`KeyboardAvoidingView` とは戦わない。ARCHITECTURE §5）。
  */
 
 import { QueryClientProvider } from '@tanstack/react-query'

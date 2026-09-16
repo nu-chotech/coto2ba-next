@@ -48,4 +48,12 @@ export const pool: Pool = globalThis.__coto2baPool ?? createPool()
 if (process.env.NODE_ENV !== 'production') globalThis.__coto2baPool = pool
 
 export const db = drizzle(pool, { schema })
-export type Db = typeof db
+
+type Drizzle = typeof db
+/** トランザクションのハンドル。db とほぼ同じインターフェースを持つ。 */
+export type Tx = Parameters<Parameters<Drizzle['transaction']>[0]>[0]
+/**
+ * クエリを実行できるもの。db 本体でもトランザクションでも受けられるようにしておく
+ * （1 手の処理は games 行を FOR UPDATE でロックしたトランザクションの中で走る）。
+ */
+export type Db = Drizzle | Tx

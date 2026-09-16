@@ -111,7 +111,7 @@ export default function LobbyScreen() {
       { mode: 'free', difficulty },
       { onSuccess: (game) => router.push(gameHref(game.id)) },
     )
-  }, [createGame, difficulty])
+  }, [createGame, difficulty, router])
 
   const createError = createGame.isError ? toMessageJa(createGame.error) : null
 

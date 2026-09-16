@@ -16,10 +16,13 @@ import {
   View,
 } from 'react-native'
 import { borderWidth, palette, paletteForTier, radius, spacing, typography } from '../theme'
-import { HINT_SHEET_MAX_HEIGHT_RATIO } from './constants'
+import { HINT_SHEET_MAX_HEIGHT_RATIO, HINT_SLOT_HEIGHT } from './constants'
 import { GlassCard } from './GlassCard'
 import { PrimaryButton } from './PrimaryButton'
 import { Skeleton } from './Skeleton'
+
+/** ローディング中に並べる枠。index を key にしないため、先に固定の id を作っておく。 */
+const HINT_SLOT_IDS = Array.from({ length: HINT_COUNT }, (_, i) => `hint-slot-${i}`)
 
 export type HintSheetProps = {
   visible: boolean
@@ -69,8 +72,8 @@ export function HintSheet({
 
           <ScrollView contentContainerStyle={styles.list}>
             {loading
-              ? Array.from({ length: HINT_COUNT }, (_, i) => (
-                  <Skeleton key={i} height={48} cornerRadius={radius.md} />
+              ? HINT_SLOT_IDS.map((slotId) => (
+                  <Skeleton key={slotId} height={HINT_SLOT_HEIGHT} cornerRadius={radius.md} />
                 ))
               : words.map((word) => (
                   <Pressable
@@ -106,7 +109,14 @@ export function HintSheet({
 }
 
 const styles = StyleSheet.create({
-  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: palette.scrim },
+  scrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: palette.scrim,
+  },
   dock: { flex: 1, justifyContent: 'flex-end', padding: spacing.lg },
   sheet: { gap: spacing.md },
   header: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },

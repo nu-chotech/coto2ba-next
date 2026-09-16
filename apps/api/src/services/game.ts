@@ -252,7 +252,15 @@ export async function shuffleStart(db: Db, userId: string, gameId: string): Prom
   return toDto(next, await goalDescriptionOf(db, next.goal))
 }
 
-/** 1 手打つ（SPEC §5.3）。 */
+/**
+ * 1 手打つ（SPEC §5.3）。
+ *
+ * **games 行を FOR UPDATE でロックしたトランザクションの中で実行する。**
+ * ロック無しだと同じゲームへの同時リクエストが同じ move_count を読み、
+ * 同じ seq を insert して `moves_game_id_seq_pk` の一意制約違反で 500 になる
+ * （負荷試験で実際に 642 件発生した）。UI 側でボタンを無効化していても、
+ * 通信が遅いときの二度押しや再送で起こりうる。
+ */
 export async function playMove(
   db: Db,
   userId: string,
@@ -260,7 +268,23 @@ export async function playMove(
   rawInput: string,
   rawRatio: number,
 ): Promise<MoveResponse> {
-  const game = await loadGame(db, userId, gameId)
+  if (!('transaction' in db)) {
+    throw appError('INTERNAL', 'playMove はトランザクションを開始できる接続で呼ぶこと')
+  }
+  return db.transaction((tx) => playMoveLocked(tx, userId, gameId, rawInput, rawRatio))
+}
+
+async function playMoveLocked(
+  db: Db,
+  userId: string,
+  gameId: string,
+  rawInput: string,
+  rawRatio: number,
+): Promise<MoveResponse> {
+  const rows = await db.select().from(games).where(eq(games.id, gameId)).limit(1).for('update')
+  const game = rows[0]
+  if (!game) throw appError('GAME_NOT_FOUND')
+  if (game.userId !== userId) throw appError('FORBIDDEN')
 
   const pre = validateMove({
     status: game.status as GameDto['status'],

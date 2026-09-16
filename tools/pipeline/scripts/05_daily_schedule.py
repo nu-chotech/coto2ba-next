@@ -24,6 +24,7 @@ import argparse
 import hashlib
 import sys
 from collections import Counter
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from random import Random
@@ -42,8 +43,13 @@ from _constants import (  # noqa: E402
 from _db import connect, ensure_daily_challenges  # noqa: E402
 from _vectors import load_output_space, pick_starts  # noqa: E402
 
-# プールが空の難易度で代用するときの擬似キー。
-FALLBACK_KEY = "__fallback__"
+# キューのキー。優先順は
+#   clean:<難易度> → clean:*（他の難易度で代用） → flagged:<難易度> → flagged:*
+# で、**clean を使い切るまで flagged（review_needed）には落ちない**。
+# `*` は「難易度を問わず全部」の擬似キー。
+CLEAN = "clean"
+FLAGGED = "flagged"
+ANY_DIFFICULTY = "*"
 
 UPSERT_SQL = """
 INSERT INTO daily_challenges (date, goal, start, difficulty)
@@ -74,17 +80,39 @@ def difficulty_for(day: date) -> str:
     return DAILY_DIFFICULTY_BY_WEEKDAY[day.isoweekday() % 7]
 
 
-def load_pool(conn) -> dict[str, list[str]]:
-    """難易度 → ゴール語（有効・要レビューでないもの優先）。"""
-    pool: dict[str, list[str]] = {d: [] for d in DIFFICULTIES}
+@dataclass(frozen=True)
+class Pool:
+    """ゴールプール。review_needed の有無で 2 つに分けて持つ。
+
+    `clean` が既定。`flagged`（review_needed = true）は clean を使い切った
+    ときだけのフォールバックで、通常は 1 語も使わない。
+    """
+
+    clean: dict[str, list[str]]
+    flagged: dict[str, list[str]]
+    difficulty_of: dict[str, str]
+
+
+def load_pool(conn) -> Pool:
+    """有効なゴール語を難易度別・review_needed 別に読む。
+
+    フリーモード（apps/api/src/services/game.ts の chooseGoal）は
+    `enabled AND NOT review_needed` でゴールを選ぶ。全員に同じ語を出すデイリーは
+    それより緩くてはいけないので、既定では clean（`NOT review_needed`）だけを使う。
+    """
+    clean: dict[str, list[str]] = {d: [] for d in DIFFICULTIES}
+    flagged: dict[str, list[str]] = {d: [] for d in DIFFICULTIES}
+    difficulty_of: dict[str, str] = {}
     rows = conn.execute(
         "SELECT word, difficulty, review_needed FROM goal_pool "
-        "WHERE enabled ORDER BY review_needed, word"
+        "WHERE enabled ORDER BY word"
     ).fetchall()
-    for word, difficulty, _review in rows:
-        if difficulty in pool:
-            pool[difficulty].append(word)
-    return pool
+    for word, difficulty, review in rows:
+        if difficulty not in clean:
+            continue
+        (flagged if review else clean)[difficulty].append(word)
+        difficulty_of[word] = difficulty
+    return Pool(clean=clean, flagged=flagged, difficulty_of=difficulty_of)
 
 
 def main() -> None:
@@ -92,6 +120,11 @@ def main() -> None:
     ap.add_argument("--days", type=int, default=DAILY_SCHEDULE_DAYS)
     ap.add_argument("--from", dest="start_date", default="", help="開始日（YYYY-MM-DD、既定は JST の今日）")
     ap.add_argument("--dry-run", action="store_true", help="DB に書かず一覧を出すだけ")
+    ap.add_argument(
+        "--no-flagged",
+        action="store_true",
+        help="review_needed の語を一切使わない（clean が尽きたら clean を使い回す）",
+    )
     args = ap.parse_args()
 
     first = date.fromisoformat(args.start_date) if args.start_date else jst_today()
@@ -107,60 +140,94 @@ def main() -> None:
 
     print(f"開始日 {first}（JST） / {args.days} 日分", file=sys.stderr)
     for d in DIFFICULTIES:
-        print(f"  {d:<7} 必要 {demand[d]:>3} 日 / プール {len(pool[d]):>4} 語", file=sys.stderr)
+        print(
+            f"  {d:<7} 必要 {demand[d]:>3} 日 / プール {len(pool.clean[d]):>4} 語"
+            f"（要レビュー {len(pool.flagged[d])} 語は枯渇時のみ）",
+            file=sys.stderr,
+        )
 
-    shortage = [d for d in DIFFICULTIES if len(pool[d]) < demand[d]]
+    shortage = [d for d in DIFFICULTIES if len(pool.clean[d]) < demand[d]]
     if shortage:
         print(
             f"※ {', '.join(shortage)} のプールが足りません。"
-            "「同じ goal は 120 日内で再登場しない」を守れないので使い回します。"
-            "04_goal_pool.py を続きから流してください。",
+            "「同じ goal は 120 日内で再登場しない」を守れないので、他の難易度の語で"
+            "代用するか使い回します。04_goal_pool.py を続きから流してください。",
             file=sys.stderr,
         )
-    empty = [d for d in DIFFICULTIES if not pool[d]]
+    empty = [d for d in DIFFICULTIES if not pool.clean[d]]
     if empty:
         print(
-            f"※ {', '.join(empty)} のプールが空です。他の難易度のゴールで代用します"
-            "（表示上の難易度は曜日ローテーションのまま）。",
+            f"※ {', '.join(empty)} のプールが空です。他の難易度のゴールで代用し、"
+            "**その日の difficulty は実際に使ったゴールの難易度で記録します**"
+            "（表示だけ easy で中身が hard、という状態を作らない）。",
             file=sys.stderr,
         )
 
-    # 難易度ごとに、日付順で消費していくキュー（決定的にシャッフル）。
+    # 消費していくキュー（決定的にシャッフル）。clean と flagged は別キューにして、
+    # clean を使い切るまで flagged には落ちない。シャッフルは各キューの中に閉じる。
     queues: dict[str, list[str]] = {}
-    for d in DIFFICULTIES:
-        words = list(pool[d])
-        # hash() はプロセスごとに変わるので使わない（毎回同じ日程になる必要がある）。
-        Random(seed_of(f"{first.isoformat()}:{d}")).shuffle(words)
-        queues[d] = words
-    fallback = [w for d in DIFFICULTIES for w in queues[d]]
-    if not fallback:
-        raise SystemExit("goal_pool が空です。先に 04_goal_pool.py を流してください。")
+    for bucket, words_by_difficulty in ((CLEAN, pool.clean), (FLAGGED, pool.flagged)):
+        merged: list[str] = []
+        for d in DIFFICULTIES:
+            words = list(words_by_difficulty[d])
+            # hash() はプロセスごとに変わるので使わない（毎回同じ日程になる必要がある）。
+            Random(seed_of(f"{first.isoformat()}:{bucket}:{d}")).shuffle(words)
+            queues[f"{bucket}:{d}"] = words
+            merged += words
+        Random(seed_of(f"{first.isoformat()}:{bucket}:{ANY_DIFFICULTY}")).shuffle(merged)
+        queues[f"{bucket}:{ANY_DIFFICULTY}"] = merged
 
-    cursors: dict[str, int] = dict.fromkeys(DIFFICULTIES, 0)
-    cursors[FALLBACK_KEY] = 0
+    if not queues[f"{CLEAN}:{ANY_DIFFICULTY}"]:
+        raise SystemExit(
+            "レビュー済み（NOT review_needed）のゴールが 1 語もありません。"
+            "先に 04_goal_pool.py を流し、人手レビューで review_needed を落としてください。"
+        )
+
+    flagged_words = {w for words in pool.flagged.values() for w in words}
+    cursors: dict[str, int] = dict.fromkeys(queues, 0)
     used: set[str] = set()
     rows: list[tuple[date, str, str, str]] = []
     no_start: list[str] = []
     reused = 0
+    flagged_used: list[str] = []
+    substituted = 0
 
-    def take(key: str, queue: list[str]) -> str:
-        """未使用を優先して 1 語取る。尽きたら使い回す（期間内の重複になる）。"""
+    def chain_for(difficulty: str) -> list[str]:
+        """その難易度の探索順。clean を全部使い切るまで flagged は見ない。"""
+        keys = [f"{CLEAN}:{difficulty}", f"{CLEAN}:{ANY_DIFFICULTY}"]
+        if not args.no_flagged:
+            keys += [f"{FLAGGED}:{difficulty}", f"{FLAGGED}:{ANY_DIFFICULTY}"]
+        return keys
+
+    def take(chain: list[str]) -> str:
+        """chain の順に、未使用の語を 1 つ取る。全部使い切っていたら使い回す。"""
         nonlocal reused
-        for _ in range(len(queue)):
-            candidate = queue[cursors[key] % len(queue)]
-            cursors[key] += 1
-            if candidate not in used:
-                return candidate
-        picked = queue[cursors[key] % len(queue)]
-        cursors[key] += 1
-        reused += 1
-        return picked
+        for key in chain:
+            queue = queues[key]
+            for _ in range(len(queue)):
+                candidate = queue[cursors[key] % len(queue)]
+                cursors[key] += 1
+                if candidate not in used:
+                    return candidate
+        for key in chain:
+            queue = queues[key]
+            if queue:
+                picked = queue[cursors[key] % len(queue)]
+                cursors[key] += 1
+                reused += 1
+                return picked
+        raise SystemExit("ゴールプールが空です。先に 04_goal_pool.py を流してください。")
 
     for day in tqdm(days, unit="日", desc="日程", file=sys.stderr):
-        difficulty = difficulty_for(day)
-        queue = queues[difficulty]
-        goal = take(difficulty, queue) if queue else take(FALLBACK_KEY, fallback)
+        wanted = difficulty_for(day)
+        goal = take(chain_for(wanted))
         used.add(goal)
+        # 表示上の難易度ではなく、実際に使ったゴールの難易度を記録する。
+        difficulty = pool.difficulty_of[goal]
+        if difficulty != wanted:
+            substituted += 1
+        if goal in flagged_words:
+            flagged_used.append(goal)
 
         goal_idx = space.index.get(goal)
         if goal_idx is None:
@@ -175,6 +242,19 @@ def main() -> None:
 
     if reused:
         print(f"※ goal を使い回した日が {reused} 件あります（プール不足）", file=sys.stderr)
+    if substituted:
+        print(
+            f"※ 曜日ローテーションの難易度が用意できず、別の難易度のゴールを使った日が "
+            f"{substituted} 件あります（difficulty はゴール実体の値で記録済み）",
+            file=sys.stderr,
+        )
+    if flagged_used:
+        print(
+            f"※ レビュー済みの語を使い切ったため、review_needed のゴールを "
+            f"{len(flagged_used)} 日使いました: {flagged_used[:5]}"
+            "（展示前に人手レビューするか、04_goal_pool.py を流してプールを増やしてください）",
+            file=sys.stderr,
+        )
     if no_start:
         print(f"※ スタート語が見つからず飛ばした日が {len(no_start)} 件: {no_start[:5]}", file=sys.stderr)
 

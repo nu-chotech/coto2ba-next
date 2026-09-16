@@ -20,7 +20,6 @@ import Animated, {
   useSharedValue,
   withDelay,
   withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated'
 import {
@@ -77,7 +76,6 @@ export function MixOverlay({ visible, tier, from, input, result, onFinished }: M
       easing: Easing.inOut(Easing.cubic),
     })
     glow.value = withDelay(
-      HERO_LINE_HEIGHT_RATIO,
       MIX_CONVERGE_MS,
       withRepeat(
         withTiming(1, { duration: MIX_PULSE_MS, easing: Easing.inOut(Easing.quad) }),
@@ -91,14 +89,20 @@ export function MixOverlay({ visible, tier, from, input, result, onFinished }: M
   useEffect(() => {
     if (!visible || result === null) return
     glow.value = withTiming(0, { duration: MIX_REVEAL_MS })
-    reveal.value = withSequence(
-      withTiming(1, { duration: MIX_REVEAL_MS, easing: Easing.out(Easing.cubic) }),
-      withDelay(
-        MIX_HOLD_MS,
-        withTiming(1, { duration: 0 }, (finished) => {
-          if (finished === true) runOnJS(onFinished)()
-        }),
-      ),
+    // withSequence は第 1 引数が ReduceMotion と解釈されうるので使わない。
+    // 「現れる」→「少し見せる」→「親に返す」を入れ子のコールバックで繋ぐ。
+    reveal.value = withTiming(
+      1,
+      { duration: MIX_REVEAL_MS, easing: Easing.out(Easing.cubic) },
+      (appeared) => {
+        if (appeared !== true) return
+        reveal.value = withDelay(
+          MIX_HOLD_MS,
+          withTiming(1, { duration: 0 }, (held) => {
+            if (held === true) runOnJS(onFinished)()
+          }),
+        )
+      },
     )
   }, [visible, result, glow, reveal, onFinished])
 

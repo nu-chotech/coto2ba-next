@@ -134,6 +134,18 @@ def rank_of(sorted_sims_asc: np.ndarray, sim: float) -> int:
     `sorted_sims_asc` は `np.sort(goal_sims(...))`。ゴール自身も含むので、
     「sim より大きい要素数」がそのまま rank になる（goal 自身が +1 を担う）。
     sim == 1.0（= goal そのもの）のとき 0 = 完全錬成。
+
+    **サーバー（apps/api/src/services/vector.ts）と同値。触らないこと。**
+    同じ定義の書き方が 2 通りあって、どちらも同じ値になる:
+
+      A) goal を除外して +1 する   … vector.ts / ARCHITECTURE §6（`1 + count(*) WHERE
+         v.is_output AND v.word <> goal AND 距離 < 距離(result)`）
+      B) goal を除外せず +1 しない … この関数（goal 自身が「距離がより小さい 1 件」
+         として数に入るので、+1 と同じ働きをする）
+
+    「goal を除外したまま +1 も落とす」のは **誤り**。ゴールの最近傍が rank 0 になり、
+    完全錬成（rank 0）と 1 位が区別できず CLEAR_RANK の判定も 1 ずれる。
+    実 DB で `rank(goal の最近傍) == 1` を確認済み（施設内 → 施設 → rank 1）。
     """
     return int(sorted_sims_asc.size - np.searchsorted(sorted_sims_asc, sim, side="right"))
 

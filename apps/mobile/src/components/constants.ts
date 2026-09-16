@@ -28,6 +28,8 @@ export const MIX_CORE_PULSE = 0.18
 /** 結果の語が現れるときの初期スケール。 */
 export const MIX_RESULT_FROM_SCALE = 0.86
 
+/** 語が入れ替わるとき、いったん縮む倍率。 */
+export const WORD_FADE_SCALE = 0.92
 /** 主役の語の行の高さ（フォントサイズに対する比）。 */
 export const HERO_LINE_HEIGHT_RATIO = 1.18
 
@@ -65,6 +67,8 @@ export const INPUT_SANITY_MAX_LENGTH = 32
 // ── ヒントシート ────────────────────────────────────────────
 /** シートの最大高さ（画面比）。 */
 export const HINT_SHEET_MAX_HEIGHT_RATIO = 0.62
+/** ヒント 1 件ぶんの高さ（ローディング枠にも使う）。 */
+export const HINT_SLOT_HEIGHT = 48
 
 // ── ボタン ──────────────────────────────────────────────────
 export const BUTTON_PRESSED_SCALE = 0.97
@@ -72,6 +76,8 @@ export const BUTTON_PRESSED_SCALE = 0.97
 // ── 結果画面 ────────────────────────────────────────────────
 /** 経路のマス 1 つの文字サイズ。 */
 export const PATH_CELL_FONT_SIZE = 26
+/** 経路のマスの行の高さ（フォントサイズに対する比）。 */
+export const PATH_CELL_LINE_HEIGHT_RATIO = 1.4
 /** 実績バッジが順番に出てくる間隔。 */
 export const ACHIEVEMENT_STAGGER_MS = 120
 

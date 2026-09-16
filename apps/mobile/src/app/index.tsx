@@ -1,23 +1,11 @@
-import { RATIOS, rankToHeat, tierForRank } from '@coto2ba/contracts'
-import { StyleSheet, Text, View } from 'react-native'
+/**
+ * `/` はタブの中のロビーへ送るだけ。
+ * タブ本体は `(tabs)/_layout.tsx`（Native Tabs）。
+ */
+
+import { Redirect } from 'expo-router'
+import { LOBBY_HREF } from '../features/game'
 
 export default function Index() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.text}>コトコトバ</Text>
-      <Text style={styles.text}>ratios: {RATIOS.join(', ')}</Text>
-      <Text style={styles.text}>tier(42) = {tierForRank(42)}</Text>
-      <Text style={styles.text}>heat(42) = {rankToHeat(42).toFixed(3)}</Text>
-    </View>
-  )
+  return <Redirect href={LOBBY_HREF} />
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0B0B10',
-  },
-  text: { color: '#fff', fontSize: 18 },
-})
