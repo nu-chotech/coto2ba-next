@@ -36,9 +36,13 @@ from _common import (  # noqa: E402
 )
 
 INPUT_MAX_FREQ_RANK = 300_000
+# 出力語彙はここまで。これ以降は地名・人名の長い尾で、混合結果・ヒントとして質が落ちる。
+OUTPUT_MAX_FREQ_RANK = 180_000
 MAX_WORD_LEN = 24
 CONTENT_POS = {"名詞", "動詞", "形容詞", "形状詞"}
 EXCLUDED_NOUN_SUBPOS = {"数詞", "代名詞", "助動詞語幹"}
+# 複合語（潤滑油 = 潤滑[名詞] + 油[接尾辞-名詞的]）を通すために許す品詞
+COMPOUND_POS = {"名詞", "接頭辞", "接尾辞"}
 
 
 def build_tagger():
@@ -48,11 +52,19 @@ def build_tagger():
 
 
 def classify_output(word: str, tagger) -> tuple[bool, str | None, bool]:
-    """(is_output, pos, is_common_noun) を返す。"""
+    """(is_output, pos, is_common_noun) を返す。
+
+    - 未知語（is_unk）は品詞情報が信用できないので落とす
+    - 用言は 表層形 == orthBase（書字形基本形）であること。lemma は語彙素（斬ら→切る）
+      なので使わない
+    - 複合語は 名詞/接頭辞/接尾辞 のみで構成され、名詞を 1 つ以上含み、
+      末尾が 名詞 か 接尾辞-名詞的 であること
+    """
     toks = tagger(word)
     if not toks:
         return False, None, False
-    # 表層の連結が元の語と一致しない（未知語分割の失敗）ものは落とす
+    if any(t.is_unk for t in toks):
+        return False, None, False
     if "".join(t.surface for t in toks) != word:
         return False, None, False
 
@@ -65,20 +77,33 @@ def classify_output(word: str, tagger) -> tuple[bool, str | None, bool]:
         if pos1 == "名詞" and pos2 in EXCLUDED_NOUN_SUBPOS:
             return False, None, False
         if pos1 in {"動詞", "形容詞", "形状詞"}:
-            # 活用断片（斬ら / 美しく）を落とす: 基本形と表層形が一致すること
-            lemma = f.lemma
-            if not lemma or lemma != t.surface:
+            # 活用断片（斬ら / 美しく / 走っ）を落とす: 書字形基本形と表層形が一致すること
+            base = f.orthBase
+            if not base or base != t.surface:
                 return False, None, False
         pos = f"{pos1}-{pos2}" if pos2 and pos2 != "*" else pos1
         common = pos1 == "名詞" and pos2 == "普通名詞"
         return True, pos, common
 
-    # 複合語: 全トークンが名詞なら名詞複合語として採用
+    has_noun = False
     for t in toks:
         f = t.feature
-        if f.pos1 != "名詞" or f.pos2 in EXCLUDED_NOUN_SUBPOS:
+        if f.pos1 not in COMPOUND_POS:
             return False, None, False
-    common = all(t.feature.pos2 == "普通名詞" for t in toks)
+        if f.pos1 == "名詞":
+            if f.pos2 in EXCLUDED_NOUN_SUBPOS:
+                return False, None, False
+            has_noun = True
+    if not has_noun:
+        return False, None, False
+    last = toks[-1].feature
+    if last.pos1 == "接頭辞":
+        return False, None, False
+    if last.pos1 == "接尾辞" and last.pos2 != "名詞的":
+        return False, None, False
+    common = all(
+        t.feature.pos1 != "名詞" or t.feature.pos2 == "普通名詞" for t in toks
+    )
     return True, "名詞-複合", common
 
 
@@ -89,7 +114,7 @@ def main() -> None:
     args = ap.parse_args()
 
     ng = load_ng_words()
-    print(f"NG 語: {len(ng)} 件", file=sys.stderr)
+    print(f"NG 語: 完全一致 {len(ng[0])} / 部分一致 {len(ng[1])} 件", file=sys.stderr)
 
     tagger = build_tagger()
     stats = Counter()
@@ -160,7 +185,13 @@ def main() -> None:
     is_common: list[bool] = []
     poses: list[str | None] = []
     t1 = time.time()
-    for w in words:
+    for w, rank in zip(words, ranks, strict=True):
+        if rank > OUTPUT_MAX_FREQ_RANK:
+            is_output.append(False)
+            is_common.append(False)
+            poses.append(None)
+            stats["drop_out_freq"] += 1
+            continue
         if len(w) < 2:
             is_output.append(False)
             is_common.append(False)

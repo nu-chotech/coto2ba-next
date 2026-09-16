@@ -56,22 +56,44 @@ def shares_kanji(a: str, b: str) -> bool:
     return bool(sa and sa & set(KANJI_RE.findall(b)))
 
 
-def load_ng_words() -> set[str]:
-    if not NG_WORDS_PATH.exists():
-        return set()
+VENDOR_DIR = PIPELINE_ROOT / "vendor"
+VENDOR_NG_FILES = ("Sexual.txt", "Offensive.txt", "ldnoobw-ja.txt")
+# 部分一致で弾く最小長。短い語を部分一致にすると巻き込みが大きすぎる。
+NG_SUBSTRING_MIN_LEN = 3
+
+
+def _read_ng_file(path) -> set[str]:
     out: set[str] = set()
-    for line in NG_WORDS_PATH.read_text(encoding="utf-8").splitlines():
+    if not path.exists():
+        return out
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.split("#", 1)[0].strip()
-        if line:
-            out.add(normalize_word(line))
+        if not line:
+            continue
+        w = normalize_word(line)
+        if w:
+            out.add(w)
     return out
 
 
-def is_ng(word: str, ng: set[str]) -> bool:
-    """完全一致に加えて、NG 語を部分文字列として含む語も落とす（2 文字以上の NG 語のみ）。"""
-    if word in ng:
+def load_ng_words() -> tuple[set[str], set[str]]:
+    """(完全一致セット, 部分一致セット) を返す。
+
+    手書きの ng_words.txt と vendor/ の公開リスト（MIT / CC BY 4.0、出典は
+    vendor/NOTICE.md）をマージする。
+    """
+    exact = _read_ng_file(NG_WORDS_PATH)
+    for name in VENDOR_NG_FILES:
+        exact |= _read_ng_file(VENDOR_DIR / name)
+    substr = {w for w in exact if len(w) >= NG_SUBSTRING_MIN_LEN}
+    return exact, substr
+
+
+def is_ng(word: str, ng: tuple[set[str], set[str]]) -> bool:
+    exact, substr = ng
+    if word in exact:
         return True
-    return any(len(n) >= 2 and n in word for n in ng)
+    return any(n in word for n in substr)
 
 
 # ── ベクトル ──────────────────────────────────────────────────

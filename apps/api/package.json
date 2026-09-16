@@ -19,8 +19,9 @@
     "better-auth": "1.7.5",
     "drizzle-orm": "0.45.2",
     "hono": "4.13.8",
-    "postgres": "3.4.9",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "pg": "^8.16.3",
+    "@vercel/functions": "^3.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -28,6 +29,7 @@
     "tsup": "8.5.1",
     "tsx": "^4.20.0",
     "typescript": "~6.0.3",
-    "vitest": "5.0.1"
+    "vitest": "5.0.1",
+    "@types/pg": "^8.15.5"
   }
 }

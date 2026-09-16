@@ -83,11 +83,15 @@ export const START_MAX_FREQ_RANK = 20000
 // ── 語彙 ────────────────────────────────────────────────────
 /** 入力語彙に入れる頻度順位の上限（SPEC §4.2）。 */
 export const INPUT_MAX_FREQ_RANK = 300_000
+/** 出力語彙の頻度順位上限。これ以降は地名・人名の長い尾で混合結果の質が落ちる。 */
+export const OUTPUT_MAX_FREQ_RANK = 180_000
+/** 入力語彙のサイズ（02_prune の実測値）。 */
+export const N_INPUT = 208_707
 /**
  * 出力語彙のサイズ。heat の対数正規化に使う。
  * パイプライン（02_prune）の実測値でここを更新すること。
  */
-export const N_OUTPUT = 141_596
+export const N_OUTPUT = 99_805
 
 // ── 難易度 ──────────────────────────────────────────────────
 export const DIFFICULTIES = ['easy', 'normal', 'hard'] as const
