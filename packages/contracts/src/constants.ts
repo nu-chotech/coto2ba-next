@@ -169,8 +169,6 @@ export function rankToHeat(rank: number, nOutput: number = N_OUTPUT): number {
 // ── アプリ ──────────────────────────────────────────────────
 /** app.json の scheme と一致させること。Better Auth の trustedOrigins に使う。 */
 export const APP_SCHEME = 'coto2ba'
-/** 本番 API のオリジン。EXPO_PUBLIC_API_URL 未設定時の既定値。 */
-export const API_BASE_URL = 'https://coto2ba-next-api.chotech.dev'
 /** セッションの有効期間（秒）。匿名アカウントなので長め。 */
 export const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 365
 /** ベクトルの次元。 */
@@ -179,7 +177,12 @@ export const VECTOR_DIM = 200
 export const NEAREST_CANDIDATES = 32
 
 // ── 共有 ────────────────────────────────────────────────────
-export const LANDING_URL = 'https://coto2ba-next.chotech.dev'
+/**
+ * 本番 API のベース URL。独自ドメインを張ったらここと Vercel の環境変数、
+ * apps/mobile/app.json の extra.apiUrl を同時に差し替えること。
+ */
+export const API_BASE_URL = 'https://coto2ba-next-api.vercel.app'
+export const LANDING_URL = 'https://coto2ba-next.vercel.app'
 export const TIER_EMOJI = {
   mono: '⬜',
   color: '🟩',

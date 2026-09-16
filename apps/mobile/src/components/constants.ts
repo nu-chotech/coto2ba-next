@@ -17,6 +17,16 @@ export const MIX_REVEAL_MS = 380
 export const MIX_HOLD_MS = 420
 /** 溶ける前の 2 語の初期オフセット（画面中央からの距離、pt）。 */
 export const MIX_WORD_OFFSET = 86
+/** 中央で溶けた光の玉の直径。 */
+export const MIX_CORE_SIZE = 96
+/** 演出の舞台の最小高さ（語が長くても跳ねないように）。 */
+export const MIX_STAGE_MIN_HEIGHT = 180
+/** 中央へ寄るときに 2 語が縮む量。 */
+export const MIX_WORD_SHRINK = 0.25
+/** 光の玉が脈打つ振幅。 */
+export const MIX_CORE_PULSE = 0.18
+/** 結果の語が現れるときの初期スケール。 */
+export const MIX_RESULT_FROM_SCALE = 0.86
 
 // ── ratio スライダー ────────────────────────────────────────
 /** トラックの左右の余白（サムがはみ出さないように）。 */

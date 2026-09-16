@@ -2,12 +2,14 @@
  * API のベース URL の解決。
  *
  * 1. `EXPO_PUBLIC_API_URL` があればそれ（明示指定が最優先）
- * 2. `__DEV__` のときだけ Expo Go の `hostUri`（= Metro を動かしている PC）の
- *    ホスト部 + :8787。Expo Go は実機なので `localhost` では開発サーバに届かない。
- *    hostUri が取れなければ `http://localhost:8787`。
- * 3. それ以外（本番 / EAS Update）は contracts の `API_BASE_URL`。
+ * 2. `app.json` の `extra.apiUrl`（= 本番 API。EAS Update でも Expo Go の dev でも同じ）
+ * 3. contracts の `API_BASE_URL`
  *
- * 本番で env を入れ忘れても localhost に落ちない（黙ってどこにも繋がらないのを防ぐ）。
+ * **`__DEV__` でもローカル API に自動で向けない。**
+ * `expo start` で QR を読んだだけのとき、手元で API サーバを立てていないと
+ * 何も動かなくなるため。ローカル API を使いたいときは
+ * `apps/mobile/.env` に `EXPO_PUBLIC_API_URL=http://<PCのLAN IP>:8787` を書く
+ * （`localhost` は実機からは届かない）。
  */
 
 import { API_BASE_URL } from '@coto2ba/contracts'
@@ -45,10 +47,9 @@ export function resolveApiBaseUrl(): string {
     return cached
   }
 
-  if (__DEV__) {
-    const hostUri = devHostUri()
-    const host = hostUri ? hostOf(hostUri) : null
-    cached = host ? `http://${host}:${DEV_API_PORT}` : FALLBACK_API_URL
+  const fromExtra = (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl
+  if (typeof fromExtra === 'string' && fromExtra.trim().length > 0) {
+    cached = stripTrailingSlash(fromExtra.trim())
     return cached
   }
 
@@ -70,4 +71,14 @@ export function apiUrl(path: string): string {
 /** API のオリジンが開発用（LAN / localhost）か。設定画面のデバッグ表示に使う。 */
 export function isDevApiUrl(): boolean {
   return resolveApiBaseUrl().startsWith('http://')
+}
+
+/**
+ * ローカル API を使いたいときの候補 URL（設定画面に出す用）。
+ * Expo Go は実機なので Metro を動かしている PC の LAN IP を使う。
+ */
+export function suggestedLocalApiUrl(): string {
+  const hostUri = devHostUri()
+  const host = hostUri ? hostOf(hostUri) : null
+  return host ? `http://${host}:${DEV_API_PORT}` : FALLBACK_API_URL
 }

@@ -34,7 +34,7 @@ import {
   type ViewStyle,
 } from 'react-native'
 import { isKnownWord, isVocabReady, suggest } from '../lib/vocab'
-import { palette, paletteForTier, radius, spacing, typography } from '../theme'
+import { layout, palette, paletteForTier, radius, spacing, typography } from '../theme'
 import { SUGGEST_CHIP_HEIGHT } from './constants'
 
 export type WordInputHandle = {
@@ -149,7 +149,6 @@ export const WordInput = forwardRef<WordInputHandle, WordInputProps>(function Wo
           autoCorrect={false}
           autoCapitalize="none"
           returnKeyType="done"
-          blurOnSubmit
           style={[typography.body, styles.input, { color: colors.text }]}
           accessibilityLabel="混ぜる語"
         />
@@ -192,7 +191,7 @@ export const WordInput = forwardRef<WordInputHandle, WordInputProps>(function Wo
 const styles = StyleSheet.create({
   root: { gap: spacing.sm },
   field: {
-    height: 52,
+    height: layout.inputHeight,
     borderRadius: radius.md,
     borderWidth: 1,
     justifyContent: 'center',
