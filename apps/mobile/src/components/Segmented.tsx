@@ -5,7 +5,15 @@
 
 import type { TierId } from '@coto2ba/contracts'
 import { Pressable, type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native'
-import { borderWidth, opacity, palette, paletteForTier, radius, spacing, typography } from '../theme'
+import {
+  borderWidth,
+  opacity,
+  palette,
+  paletteForTier,
+  radius,
+  spacing,
+  typography,
+} from '../theme'
 
 export type SegmentedOption<T extends string> = {
   value: T
@@ -59,12 +67,7 @@ export function Segmented<T extends string>({
               },
             ]}
           >
-            <Text
-              style={[
-                typography.label,
-                { color: selected ? palette.base : colors.text },
-              ]}
-            >
+            <Text style={[typography.label, { color: selected ? palette.base : colors.text }]}>
               {option.label}
             </Text>
           </Pressable>

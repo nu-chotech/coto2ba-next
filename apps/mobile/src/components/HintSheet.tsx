@@ -61,9 +61,7 @@ export function HintSheet({
         >
           <View style={styles.header}>
             <Text style={[typography.subtitle, { color: colors.text }]}>ヒント</Text>
-            <Text style={[typography.label, { color: colors.sub }]}>
-              使った回数 {hintCount}
-            </Text>
+            <Text style={[typography.label, { color: colors.sub }]}>使った回数 {hintCount}</Text>
           </View>
           <Text style={[typography.caption, { color: colors.sub }]}>
             タップすると入力欄に入ります（混合はされません）

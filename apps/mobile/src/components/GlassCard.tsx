@@ -9,8 +9,8 @@
  * 別レイヤー（親の View や中身）でフェードすること。
  */
 
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect'
 import { BlurView } from 'expo-blur'
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect'
 import type { ReactNode } from 'react'
 import { type StyleProp, StyleSheet, View, type ViewStyle } from 'react-native'
 import { blurIntensity, glassEdge, glassFallbackFill, radius, spacing } from '../theme'
@@ -70,12 +70,7 @@ export function GlassCard({
         tint="dark"
         style={StyleSheet.absoluteFill}
       />
-      <View
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: tint ?? glassFallbackFill },
-        ]}
-      />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: tint ?? glassFallbackFill }]} />
       {children}
     </View>
   )

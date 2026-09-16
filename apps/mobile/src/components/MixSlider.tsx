@@ -19,7 +19,16 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated'
 import { feedback } from '../lib/feedback'
-import { duration, layout, opacity, paletteForTier, radius, spacing, spring, typography } from '../theme'
+import {
+  duration,
+  layout,
+  opacity,
+  paletteForTier,
+  radius,
+  spacing,
+  spring,
+  typography,
+} from '../theme'
 import {
   SLIDER_EDGE_PADDING,
   SLIDER_HIT_HEIGHT,
@@ -99,9 +108,7 @@ export function MixSlider({ value, onChange, tier, disabled = false, style }: Mi
     <View style={[styles.root, disabled ? { opacity: opacity.disabled } : null, style]}>
       <View style={styles.labels}>
         <Text style={[typography.label, { color: colors.sub }]}>今の語寄り</Text>
-        <Text style={[typography.subtitle, { color: colors.accent }]}>
-          {value.toFixed(1)}
-        </Text>
+        <Text style={[typography.subtitle, { color: colors.accent }]}>{value.toFixed(1)}</Text>
         <Text style={[typography.label, { color: colors.sub }]}>混ぜる語寄り</Text>
       </View>
 
@@ -116,10 +123,7 @@ export function MixSlider({ value, onChange, tier, disabled = false, style }: Mi
           <Animated.View style={[styles.fill, { backgroundColor: colors.accent }, fillStyle]} />
           <View style={styles.ticks} pointerEvents="none">
             {RATIOS.map((ratio) => (
-              <View
-                key={ratio}
-                style={[styles.tick, { backgroundColor: colors.sub }]}
-              />
+              <View key={ratio} style={[styles.tick, { backgroundColor: colors.sub }]} />
             ))}
           </View>
           <Animated.View

@@ -5,7 +5,7 @@
  * チップ 1 枚 = `input ×ratio → result (rank)`。
  */
 
-import { PERFECT_RANK, TIER_EMOJI, type Move, type TierId } from '@coto2ba/contracts'
+import { type Move, PERFECT_RANK, TIER_EMOJI, type TierId } from '@coto2ba/contracts'
 import { useEffect, useRef } from 'react'
 import { ScrollView, type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native'
 import { borderWidth, palette, paletteForTier, radius, spacing, typography } from '../theme'

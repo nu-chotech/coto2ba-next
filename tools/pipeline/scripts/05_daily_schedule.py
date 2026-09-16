@@ -4,6 +4,12 @@
 - 曜日ローテーション: 月〜金 normal / 土 hard / 日 easy。
 - シードは日付文字列の sha256。同じ日付なら何度流しても同じ結果になる。
 - 同じ goal は期間内に再登場しない（プールが足りないときだけ、警告を出して使い回す）。
+- **review_needed（人手レビュー未済）の語は使わない。** サーバーのフリーモード
+  （apps/api/src/services/game.ts の chooseGoal）と同じ `enabled AND NOT review_needed`。
+  全員に同じ語が出るデイリーで、未レビューの語を混ぜないため。
+  clean（レビュー不要）のプールを使い切ったときだけ flagged にフォールバックする。
+- プールが空の難易度は、**実際に使ったゴールの難易度を記録する**（「表示は easy・
+  中身は hard」を避ける）。
 - start は SPEC §6.3 の規則で抽選（ゴールから見た rank が START_RANK_RANGE、
   freq_rank <= START_MAX_FREQ_RANK、一般名詞、NG 外、ゴールと漢字を共有しない）。
 

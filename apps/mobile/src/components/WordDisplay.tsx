@@ -16,6 +16,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated'
 import { duration, heroFontSize, spring, typography } from '../theme'
+import { HERO_LINE_HEIGHT_RATIO } from './constants'
 
 export type WordDisplayProps = {
   word: string
@@ -66,7 +67,11 @@ export function WordDisplay({
         adjustsFontSizeToFit
         style={[
           typography.hero,
-          { color, fontSize: heroFontSize(shown), lineHeight: heroFontSize(shown) * 1.18 },
+          {
+            color,
+            fontSize: heroFontSize(shown),
+            lineHeight: heroFontSize(shown) * HERO_LINE_HEIGHT_RATIO,
+          },
           textStyle,
           animatedStyle,
         ]}
@@ -76,7 +81,12 @@ export function WordDisplay({
       {caption !== null && caption.length > 0 ? (
         <Animated.Text
           numberOfLines={2}
-          style={[typography.caption, styles.caption, { color: captionColor ?? color }, animatedStyle]}
+          style={[
+            typography.caption,
+            styles.caption,
+            { color: captionColor ?? color },
+            animatedStyle,
+          ]}
         >
           {caption}
         </Animated.Text>

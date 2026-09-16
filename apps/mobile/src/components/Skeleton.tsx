@@ -21,7 +21,12 @@ export type SkeletonProps = {
   style?: StyleProp<ViewStyle>
 }
 
-export function Skeleton({ width = '100%', height, cornerRadius = radius.sm, style }: SkeletonProps) {
+export function Skeleton({
+  width = '100%',
+  height,
+  cornerRadius = radius.sm,
+  style,
+}: SkeletonProps) {
   const pulse = useSharedValue(SKELETON_MIN_OPACITY)
 
   useEffect(() => {

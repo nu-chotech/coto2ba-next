@@ -23,8 +23,16 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated'
-import { heroFontSize, opacity as opacityToken, paletteForTier, radius, spacing, typography } from '../theme'
 import {
+  heroFontSize,
+  opacity as opacityToken,
+  paletteForTier,
+  radius,
+  spacing,
+  typography,
+} from '../theme'
+import {
+  HERO_LINE_HEIGHT_RATIO,
   MIX_CONVERGE_MS,
   MIX_CORE_PULSE,
   MIX_CORE_SIZE,
@@ -69,8 +77,13 @@ export function MixOverlay({ visible, tier, from, input, result, onFinished }: M
       easing: Easing.inOut(Easing.cubic),
     })
     glow.value = withDelay(
+      HERO_LINE_HEIGHT_RATIO,
       MIX_CONVERGE_MS,
-      withRepeat(withTiming(1, { duration: MIX_PULSE_MS, easing: Easing.inOut(Easing.quad) }), -1, true),
+      withRepeat(
+        withTiming(1, { duration: MIX_PULSE_MS, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true,
+      ),
     )
   }, [visible, converge, glow, reveal])
 
@@ -107,7 +120,11 @@ export function MixOverlay({ visible, tier, from, input, result, onFinished }: M
 
   const coreStyle = useAnimatedStyle(() => ({
     opacity: converge.value * (1 - reveal.value),
-    transform: [{ scale: 1 - MIX_WORD_SHRINK + MIX_WORD_SHRINK * converge.value + MIX_CORE_PULSE * glow.value }],
+    transform: [
+      {
+        scale: 1 - MIX_WORD_SHRINK + MIX_WORD_SHRINK * converge.value + MIX_CORE_PULSE * glow.value,
+      },
+    ],
   }))
 
   const resultStyle = useAnimatedStyle(() => ({
@@ -148,7 +165,7 @@ export function MixOverlay({ visible, tier, from, input, result, onFinished }: M
                 {
                   color: colors.text,
                   fontSize: heroFontSize(result),
-                  lineHeight: heroFontSize(result) * 1.18,
+                  lineHeight: heroFontSize(result) * HERO_LINE_HEIGHT_RATIO,
                 },
                 resultStyle,
               ]}

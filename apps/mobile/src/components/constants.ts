@@ -28,6 +28,9 @@ export const MIX_CORE_PULSE = 0.18
 /** 結果の語が現れるときの初期スケール。 */
 export const MIX_RESULT_FROM_SCALE = 0.86
 
+/** 主役の語の行の高さ（フォントサイズに対する比）。 */
+export const HERO_LINE_HEIGHT_RATIO = 1.18
+
 // ── ratio スライダー ────────────────────────────────────────
 /** トラックの左右の余白（サムがはみ出さないように）。 */
 export const SLIDER_EDGE_PADDING = 18

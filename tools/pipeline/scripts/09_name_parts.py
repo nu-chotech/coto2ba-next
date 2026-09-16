@@ -34,14 +34,8 @@ from _common import (  # noqa: E402
 )
 from _constants import (  # noqa: E402
     DISPLAY_NAME_MAX_LENGTH,
-    NAME_ADJ_MAX_FREQ_RANK,
-    NAME_ADJ_MAX_LEN,
-    NAME_ADJ_MIN_LEN,
     NAME_ADJ_NA_POS_PREFIX,
     NAME_ADJ_NA_SUFFIX,
-    NAME_ADJ_POS_EXCLUDED,
-    NAME_ADJ_POS_PREFIXES,
-    NAME_ADJ_STOP_WORDS,
     NAME_ADJ_TARGET,
     NAME_NOUN_MAX_FREQ_RANK,
     NAME_NOUN_MAX_LEN,
@@ -60,6 +54,27 @@ ON CONFLICT (word) DO UPDATE SET kind = EXCLUDED.kind
 """
 
 
+# 形容詞は日本語では名前に使える語が限られた閉じた集合なので、頻度順ではなく手で選ぶ。
+# 頻度上位を機械的に取ると「可能な」「頻繁な」「主な」ばかりになって名前として面白くない。
+CURATED_ADJECTIVES = [
+    "静かな", "黄金の", "遠い", "深い", "淡い", "鋭い", "優しい", "小さな", "大きな",
+    "古い", "新しい", "温かい", "冷たい", "青い", "白い", "黒い", "赤い", "眩しい",
+    "儚い", "強い", "軽い", "重い", "明るい", "暗い", "細い", "丸い", "硬い", "柔らかい",
+    "甘い", "苦い", "涼しい", "暖かい", "懐かしい", "美しい", "危うい", "賢い", "眠い",
+    "遥かな", "密やかな", "朗らかな", "健やかな", "鮮やかな", "穏やかな", "緩やかな",
+    "軽やかな", "涼やかな", "細やかな", "華やかな", "しなやかな", "麗しい", "潔い",
+    "清らかな", "秘密の", "永遠の", "最初の", "最後の", "真夜中の", "夜明けの",
+    "夕暮れの", "銀の", "鉄の", "硝子の", "琥珀の", "月の", "星の", "海の", "北の",
+    "南の", "忘れられた", "名もなき", "眠れる", "旅する", "踊る", "歌う", "光る",
+]
+
+ABSTRACT_NOUN_SUBPOS = {"サ変可能", "副詞可能", "サ変形状詞可能", "形状詞可能", "助数詞可能"}
+HIRAGANA_TAIL_RE = re.compile(r"[\u3041-\u309F]$")
+ALL_KANJI_RE = re.compile(r"[\u4E00-\u9FFF\u3400-\u4DBF]{2,3}")
+# 頻度が高すぎる語は名前として平板なので下限を設ける
+NAME_NOUN_MIN_FREQ_RANK = 2500
+
+
 def attributive(word: str, pos: str) -> str:
     """連体形にする。形状詞（静か）→「静かな」、形容詞（新しい）→ そのまま。"""
     if pos.startswith(NAME_ADJ_NA_POS_PREFIX):
@@ -67,7 +82,30 @@ def attributive(word: str, pos: str) -> str:
     return word
 
 
-def collect(ng: tuple[set[str], set[str]]) -> tuple[list[str], list[str]]:
+def is_concrete_noun(word: str, tagger) -> bool:
+    """「閲覧」「当て」のような抽象語・サ変名詞を落として、モノの名前に寄せる。
+
+    unidic の細分類（pos3）は parquet に落ちていないのでここで取り直す。
+    サ変可能 / 副詞可能 / 形状詞可能 は「〜する」「〜に」で使う抽象語なので除く。
+    また動詞の連用形由来（当て・遊び・売り）も名前としては弱いので、
+    ひらがなで終わる 2 文字語を除く。
+    """
+    # 全部漢字の 2〜3 文字に絞ると具体物（蚕・岩礁・潤滑油）に寄る。
+    # ひらがな・カタカナ混じりは抽象語や外来語の比率が高い。
+    if not ALL_KANJI_RE.fullmatch(word):
+        return False
+    toks = tagger(word)
+    if not toks or any(tk.is_unk for tk in toks):
+        return False
+    for tk in toks:
+        f = tk.feature
+        if f.pos1 == "名詞" and f.pos3 in ABSTRACT_NOUN_SUBPOS:
+            return False
+    # 「当て」「遊び」のような連用形名詞（漢字 + ひらがな送り）を落とす
+    return not (len(word) <= 2 and HIRAGANA_TAIL_RE.search(word))
+
+
+def collect(ng: tuple[set[str], set[str]], tagger) -> tuple[list[str], list[str]]:
     table = pq.read_table(
         VOCAB_PARQUET, columns=["word", "freq_rank", "is_output", "is_common_noun", "pos"]
     )
@@ -77,41 +115,34 @@ def collect(ng: tuple[set[str], set[str]]) -> tuple[list[str], list[str]]:
     is_common = table["is_common_noun"].to_pylist()
     poses = table["pos"].to_pylist()
 
-    adjectives: list[str] = []
     nouns: list[str] = []
     # parquet は freq_rank 昇順なので、先頭から詰めれば頻度上位が取れる。
-    for word, rank, out, common, pos in zip(
+    for word, rank, out, common, _pos in zip(
         words, freq, is_output, is_common, poses, strict=True
     ):
         if not out or has_digit(word) or is_ng(word, ng):
             continue
 
         if (
-            len(adjectives) < NAME_ADJ_TARGET
-            and pos
-            and rank <= NAME_ADJ_MAX_FREQ_RANK
-            and pos.startswith(NAME_ADJ_POS_PREFIXES)
-            and not pos.endswith(NAME_ADJ_POS_EXCLUDED)
-            and NAME_ADJ_MIN_LEN <= len(word) <= NAME_ADJ_MAX_LEN
-            and word not in NAME_ADJ_STOP_WORDS
-        ):
-            form = attributive(word, pos)
-            if len(form) <= NAME_ADJ_MAX_LEN:
-                adjectives.append(form)
-
-        if (
             len(nouns) < NAME_NOUN_TARGET
             and common
-            and rank <= NAME_NOUN_MAX_FREQ_RANK
+            and NAME_NOUN_MIN_FREQ_RANK <= rank <= NAME_NOUN_MAX_FREQ_RANK
             and NAME_NOUN_MIN_LEN <= len(word) <= NAME_NOUN_MAX_LEN
             and (not NAME_NOUN_REQUIRE_CONTENT_CHAR or CONTENT_CHAR_RE.search(word))
+            and is_concrete_noun(word, tagger)
         ):
             nouns.append(word)
 
-        if len(adjectives) >= NAME_ADJ_TARGET and len(nouns) >= NAME_NOUN_TARGET:
+        if len(nouns) >= NAME_NOUN_TARGET:
             break
 
-    return adjectives, nouns
+    return CURATED_ADJECTIVES, nouns
+
+
+def _tagger():
+    import fugashi
+
+    return fugashi.Tagger()
 
 
 def main() -> None:
@@ -120,7 +151,7 @@ def main() -> None:
     args = ap.parse_args()
 
     ng = load_ng_words()
-    adjectives, nouns = collect(ng)
+    adjectives, nouns = collect(ng, _tagger())
     longest = max(len(a) for a in adjectives) + max(len(n) for n in nouns)
 
     print(f"形容詞 {len(adjectives)} 語 / 目標 {NAME_ADJ_TARGET}", file=sys.stderr)

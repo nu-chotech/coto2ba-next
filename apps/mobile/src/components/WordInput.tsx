@@ -15,14 +15,7 @@
  */
 
 import { normalizeWord, SUGGEST_LIMIT, type TierId } from '@coto2ba/contracts'
-import {
-  forwardRef,
-  useCallback,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import {
   Pressable,
   ScrollView,

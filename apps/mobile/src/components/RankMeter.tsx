@@ -65,9 +65,7 @@ export function RankMeter({ rank, prevRank = null, tier, style }: RankMeterProps
         ) : null}
       </View>
       <View style={[styles.track, { backgroundColor: palette.divider }]}>
-        <Animated.View
-          style={[styles.fill, { backgroundColor: colors.accent }, fillStyle]}
-        />
+        <Animated.View style={[styles.fill, { backgroundColor: colors.accent }, fillStyle]} />
       </View>
       <Text style={[typography.label, { color: colors.sub }]}>
         ゴールまでの温度 {Math.round(heat * 100)}%

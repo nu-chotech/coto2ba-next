@@ -4,9 +4,27 @@
  */
 
 import type { TierId } from '@coto2ba/contracts'
-import { ActivityIndicator, Pressable, type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native'
+import {
+  ActivityIndicator,
+  Pressable,
+  type StyleProp,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from 'react-native'
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated'
-import { borderWidth, layout, opacity, palette, paletteForTier, radius, spacing, spring, typography } from '../theme'
+import {
+  borderWidth,
+  layout,
+  opacity,
+  palette,
+  paletteForTier,
+  radius,
+  spacing,
+  spring,
+  typography,
+} from '../theme'
 import { BUTTON_PRESSED_SCALE } from './constants'
 
 export type PrimaryButtonVariant = 'primary' | 'secondary' | 'ghost'
@@ -40,7 +58,11 @@ export function PrimaryButton({
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }))
 
   const background =
-    variant === 'primary' ? colors.accent : variant === 'secondary' ? colors.surface : palette.transparent
+    variant === 'primary'
+      ? colors.accent
+      : variant === 'secondary'
+        ? colors.surface
+        : palette.transparent
   const labelColor = variant === 'primary' ? palette.base : colors.text
   const border = variant === 'ghost' ? colors.sub : palette.transparent
 
