@@ -2,6 +2,7 @@
   "expo": {
     "name": "コトコトバ",
     "slug": "coto2ba-next",
+    "owner": "ut42tech-hobby",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -24,7 +25,17 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "dev.chotech.coto2ba"
+      "package": "dev.chotech.coto2ba",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "web": {
       "output": "static",
@@ -55,10 +66,16 @@
     },
     "updates": {
       "enabled": true,
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/73c7cda9-727c-4b83-ba2e-674c38b951ae"
     },
     "extra": {
-      "router": {}
+      "router": {},
+      "eas": {
+        "projectId": "73c7cda9-727c-4b83-ba2e-674c38b951ae"
+      },
+      "apiUrl": "https://coto2ba-next-api.vercel.app",
+      "landingUrl": "https://coto2ba-next.vercel.app"
     }
   }
 }

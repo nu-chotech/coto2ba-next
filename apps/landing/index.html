@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>コトコトバ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="description" content="コトコトバ — word2vec の意味空間で言葉を混ぜ、ゴールの言葉に近づけるワードパズル。Expo Go で今すぐ遊べます。" />
+<meta name="theme-color" content="#0B0B10" />
+<meta name="color-scheme" content="dark" />
+<meta name="robots" content="index, follow" />
+
+<!--
+  og:image / twitter:image の SVG ソース（このファイルに同梱・data URI 化して埋め込み済み）。
+  差し替えたい場合はこの SVG を編集し、下記コマンドで base64 化して
+  meta[property="og:image"] と meta[name="twitter:image"] の data URI を丸ごと置き換えること。
+
+    base64 -i og-image.svg | tr -d '\n'
+
+  <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+    <defs>
+      <radialGradient id="g" cx="28%" cy="30%" r="65%">
+        <stop offset="0%" stop-color="#F5C542" stop-opacity="0.5"/>
+        <stop offset="100%" stop-color="#F5C542" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="i" cx="76%" cy="70%" r="65%">
+        <stop offset="0%" stop-color="#8B93FF" stop-opacity="0.55"/>
+        <stop offset="100%" stop-color="#8B93FF" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <rect width="1200" height="630" fill="#0B0B10"/>
+    <rect width="1200" height="630" fill="url(#g)"/>
+    <rect width="1200" height="630" fill="url(#i)"/>
+    <circle cx="336" cy="252" r="7" fill="#F5C542"/>
+    <circle cx="336" cy="252" r="20" fill="none" stroke="#F5C542" stroke-width="1.5" opacity="0.6"/>
+    <circle cx="864" cy="378" r="7" fill="#8B93FF"/>
+    <circle cx="864" cy="378" r="20" fill="none" stroke="#8B93FF" stroke-width="1.5" opacity="0.6"/>
+    <line x1="336" y1="252" x2="864" y2="378" stroke="#F5F1E6" stroke-width="1" stroke-dasharray="2 10" opacity="0.35"/>
+    <text x="600" y="300" text-anchor="middle" font-family="'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="128" font-weight="700" fill="#F5F1E6" letter-spacing="6">コトコトバ</text>
+    <text x="600" y="368" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="30" fill="#C9C3D8" letter-spacing="3">言葉を混ぜて、ゴールの言葉に近づけろ</text>
+    <text x="600" y="560" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="22" fill="#7A7688" letter-spacing="2">CHOTECH / NAGASAKI UNIVERSITY</text>
+  </svg>
+-->
+
+<meta property="og:type" content="website" />
+<meta property="og:locale" content="ja_JP" />
+<meta property="og:site_name" content="コトコトバ" />
+<meta property="og:title" content="コトコトバ" />
+<meta property="og:description" content="word2vec の意味空間で言葉を混ぜ、ゴールの言葉に近づけるワードパズル。" />
+<meta property="og:url" content="https://coto2ba-next.chotech.dev/" />
+<meta property="og:image" content="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAwIiBoZWlnaHQ9IjYzMCIgdmlld0JveD0iMCAwIDEyMDAgNjMwIj4KICA8ZGVmcz4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZyIgY3g9IjI4JSIgY3k9IjMwJSIgcj0iNjUlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iI0Y1QzU0MiIgc3RvcC1vcGFjaXR5PSIwLjUiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjRjVDNTQyIiBzdG9wLW9wYWNpdHk9IjAiLz4KICAgIDwvcmFkaWFsR3JhZGllbnQ+CiAgICA8cmFkaWFsR3JhZGllbnQgaWQ9ImkiIGN4PSI3NiUiIGN5PSI3MCUiIHI9IjY1JSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM4QjkzRkYiIHN0b3Atb3BhY2l0eT0iMC41NSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiM4QjkzRkYiIHN0b3Atb3BhY2l0eT0iMCIvPgogICAgPC9yYWRpYWxHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjEyMDAiIGhlaWdodD0iNjMwIiBmaWxsPSIjMEIwQjEwIi8+CiAgPHJlY3Qgd2lkdGg9IjEyMDAiIGhlaWdodD0iNjMwIiBmaWxsPSJ1cmwoI2cpIi8+CiAgPHJlY3Qgd2lkdGg9IjEyMDAiIGhlaWdodD0iNjMwIiBmaWxsPSJ1cmwoI2kpIi8+CiAgPGNpcmNsZSBjeD0iMzM2IiBjeT0iMjUyIiByPSI3IiBmaWxsPSIjRjVDNTQyIi8+CiAgPGNpcmNsZSBjeD0iMzM2IiBjeT0iMjUyIiByPSIyMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRjVDNTQyIiBzdHJva2Utd2lkdGg9IjEuNSIgb3BhY2l0eT0iMC42Ii8+CiAgPGNpcmNsZSBjeD0iODY0IiBjeT0iMzc4IiByPSI3IiBmaWxsPSIjOEI5M0ZGIi8+CiAgPGNpcmNsZSBjeD0iODY0IiBjeT0iMzc4IiByPSIyMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOEI5M0ZGIiBzdHJva2Utd2lkdGg9IjEuNSIgb3BhY2l0eT0iMC42Ii8+CiAgPGxpbmUgeDE9IjMzNiIgeTE9IjI1MiIgeDI9Ijg2NCIgeTI9IjM3OCIgc3Ryb2tlPSIjRjVGMUU2IiBzdHJva2Utd2lkdGg9IjEiIHN0cm9rZS1kYXNoYXJyYXk9IjIgMTAiIG9wYWNpdHk9IjAuMzUiLz4KICA8dGV4dCB4PSI2MDAiIHk9IjMwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IidIaXJhZ2lubyBTYW5zJywnSGlyYWdpbm8gS2FrdSBHb3RoaWMgUHJvTicsJ05vdG8gU2FucyBKUCcsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMjgiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IiNGNUYxRTYiIGxldHRlci1zcGFjaW5nPSI2Ij7jgrPjg4jjgrPjg4jjg5A8L3RleHQ+CiAgPHRleHQgeD0iNjAwIiB5PSIzNjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSInSGlyYWdpbm8gU2FucycsJ05vdG8gU2FucyBKUCcsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIzMCIgZmlsbD0iI0M5QzNEOCIgbGV0dGVyLXNwYWNpbmc9IjMiPuiogOiRieOCkua3t+OBnOOBpuOAgeOCtOODvOODq+OBruiogOiRieOBq+i/keOBpeOBkeOCjTwvdGV4dD4KICA8dGV4dCB4PSI2MDAiIHk9IjU2MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IidIaXJhZ2lubyBTYW5zJywnTm90byBTYW5zIEpQJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjIyIiBmaWxsPSIjN0E3Njg4IiBsZXR0ZXItc3BhY2luZz0iMiI+Q0hPVEVDSCAvIE5BR0FTQUtJIFVOSVZFUlNJVFk8L3RleHQ+Cjwvc3ZnPgo=" />
+<meta property="og:image:type" content="image/svg+xml" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="コトコトバ" />
+<meta name="twitter:description" content="word2vec の意味空間で言葉を混ぜ、ゴールの言葉に近づけるワードパズル。" />
+<meta name="twitter:image" content="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAwIiBoZWlnaHQ9IjYzMCIgdmlld0JveD0iMCAwIDEyMDAgNjMwIj4KICA8ZGVmcz4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZyIgY3g9IjI4JSIgY3k9IjMwJSIgcj0iNjUlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iI0Y1QzU0MiIgc3RvcC1vcGFjaXR5PSIwLjUiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjRjVDNTQyIiBzdG9wLW9wYWNpdHk9IjAiLz4KICAgIDwvcmFkaWFsR3JhZGllbnQ+CiAgICA8cmFkaWFsR3JhZGllbnQgaWQ9ImkiIGN4PSI3NiUiIGN5PSI3MCUiIHI9IjY1JSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM4QjkzRkYiIHN0b3Atb3BhY2l0eT0iMC41NSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiM4QjkzRkYiIHN0b3Atb3BhY2l0eT0iMCIvPgogICAgPC9yYWRpYWxHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjEyMDAiIGhlaWdodD0iNjMwIiBmaWxsPSIjMEIwQjEwIi8+CiAgPHJlY3Qgd2lkdGg9IjEyMDAiIGhlaWdodD0iNjMwIiBmaWxsPSJ1cmwoI2cpIi8+CiAgPHJlY3Qgd2lkdGg9IjEyMDAiIGhlaWdodD0iNjMwIiBmaWxsPSJ1cmwoI2kpIi8+CiAgPGNpcmNsZSBjeD0iMzM2IiBjeT0iMjUyIiByPSI3IiBmaWxsPSIjRjVDNTQyIi8+CiAgPGNpcmNsZSBjeD0iMzM2IiBjeT0iMjUyIiByPSIyMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRjVDNTQyIiBzdHJva2Utd2lkdGg9IjEuNSIgb3BhY2l0eT0iMC42Ii8+CiAgPGNpcmNsZSBjeD0iODY0IiBjeT0iMzc4IiByPSI3IiBmaWxsPSIjOEI5M0ZGIi8+CiAgPGNpcmNsZSBjeD0iODY0IiBjeT0iMzc4IiByPSIyMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOEI5M0ZGIiBzdHJva2Utd2lkdGg9IjEuNSIgb3BhY2l0eT0iMC42Ii8+CiAgPGxpbmUgeDE9IjMzNiIgeTE9IjI1MiIgeDI9Ijg2NCIgeTI9IjM3OCIgc3Ryb2tlPSIjRjVGMUU2IiBzdHJva2Utd2lkdGg9IjEiIHN0cm9rZS1kYXNoYXJyYXk9IjIgMTAiIG9wYWNpdHk9IjAuMzUiLz4KICA8dGV4dCB4PSI2MDAiIHk9IjMwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IidIaXJhZ2lubyBTYW5zJywnSGlyYWdpbm8gS2FrdSBHb3RoaWMgUHJvTicsJ05vdG8gU2FucyBKUCcsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMjgiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IiNGNUYxRTYiIGxldHRlci1zcGFjaW5nPSI2Ij7jgrPjg4jjgrPjg4jjg5A8L3RleHQ+CiAgPHRleHQgeD0iNjAwIiB5PSIzNjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSInSGlyYWdpbm8gU2FucycsJ05vdG8gU2FucyBKUCcsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIzMCIgZmlsbD0iI0M5QzNEOCIgbGV0dGVyLXNwYWNpbmc9IjMiPuiogOiRieOCkua3t+OBnOOBpuOAgeOCtOODvOODq+OBruiogOiRieOBq+i/keOBpeOBkeOCjTwvdGV4dD4KICA8dGV4dCB4PSI2MDAiIHk9IjU2MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IidIaXJhZ2lubyBTYW5zJywnTm90byBTYW5zIEpQJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjIyIiBmaWxsPSIjN0E3Njg4IiBsZXR0ZXItc3BhY2luZz0iMiI+Q0hPVEVDSCAvIE5BR0FTQUtJIFVOSVZFUlNJVFk8L3RleHQ+Cjwvc3ZnPgo=" />
+
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgdmlld0JveD0iMCAwIDY0IDY0Ij4KICA8cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHJ4PSIxNCIgZmlsbD0iIzBCMEIxMCIvPgogIDxjaXJjbGUgY3g9IjIyIiBjeT0iMjIiIHI9IjYiIGZpbGw9IiNGNUM1NDIiLz4KICA8Y2lyY2xlIGN4PSI0MiIgY3k9IjQyIiByPSI2IiBmaWxsPSIjOEI5M0ZGIi8+CiAgPGxpbmUgeDE9IjIyIiB5MT0iMjIiIHgyPSI0MiIgeTI9IjQyIiBzdHJva2U9IiNGNUYxRTYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWRhc2hhcnJheT0iMSA1Ii8+Cjwvc3ZnPgo=" />
+
+<style>
+  :root {
+    --bg: #0b0b10;
+    --bg-2: #121218;
+    --panel: #16161e;
+    --panel-border: #2a2a36;
+    --ink: #f5f1e6;
+    --ink-dim: #c9c3d8;
+    --ink-mute: #8b879a;
+    --gold: #f5c542;
+    --gold-ink: #1c1608;
+    --indigo: #8b93ff;
+    --radius: 18px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { color-scheme: dark; }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background:
+      radial-gradient(60% 46% at 18% 8%, rgba(245, 197, 66, 0.14), transparent 60%),
+      radial-gradient(55% 50% at 88% 78%, rgba(139, 147, 255, 0.16), transparent 62%),
+      var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP",
+      "Yu Gothic", system-ui, sans-serif;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    padding: max(28px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+      max(40px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  }
+
+  a { color: inherit; }
+
+  .wrap {
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6em;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    color: var(--ink-mute);
+    border: 1px solid var(--panel-border);
+    background: rgba(255, 255, 255, 0.02);
+    padding: 6px 14px;
+    border-radius: 999px;
+  }
+
+  .eyebrow .dot { color: var(--gold); }
+
+  header {
+    text-align: center;
+    padding: clamp(24px, 6vw, 56px) 0 clamp(20px, 5vw, 40px);
+  }
+
+  h1 {
+    margin: 20px 0 14px;
+    font-size: clamp(2.6rem, 11vw, 4.4rem);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.15;
+    background: linear-gradient(135deg, var(--ink) 35%, var(--gold) 78%, var(--indigo) 120%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .lede {
+    margin: 0 auto;
+    max-width: 34em;
+    font-size: clamp(0.98rem, 2.6vw, 1.12rem);
+    color: var(--ink-dim);
+  }
+
+  .lede strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  main {
+    padding-bottom: clamp(24px, 6vw, 48px);
+  }
+
+  ol.steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .step {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 16px;
+    align-items: start;
+    background: linear-gradient(180deg, var(--panel), var(--bg-2));
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: clamp(18px, 4vw, 26px);
+  }
+
+  .step-index {
+    width: 2.4em;
+    height: 2.4em;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: var(--gold-ink);
+    background: linear-gradient(135deg, var(--gold), #ffe08a);
+  }
+
+  .step:nth-of-type(2) .step-index {
+    color: #10122a;
+    background: linear-gradient(135deg, var(--indigo), #c7ccff);
+  }
+
+  .step h2 {
+    margin: 0.1em 0 0.35em;
+    font-size: clamp(1.08rem, 3vw, 1.28rem);
+    font-weight: 700;
+  }
+
+  .step p {
+    margin: 0 0 1em;
+    color: var(--ink-dim);
+    font-size: 0.95rem;
+  }
+
+  .btn {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    text-decoration: none;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 0.98rem;
+    padding: 0.85em 1.4em;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+  }
+
+  .btn:active { transform: scale(0.98); }
+
+  .btn-gold {
+    color: var(--gold-ink);
+    background: linear-gradient(135deg, var(--gold), #ffe08a);
+  }
+
+  .btn-indigo {
+    color: #10122a;
+    background: linear-gradient(135deg, var(--indigo), #c7ccff);
+  }
+
+  .btn:disabled {
+    pointer-events: none;
+    cursor: not-allowed;
+    opacity: 0.45;
+    filter: grayscale(0.4);
+  }
+
+  .step-note {
+    margin-top: 0.7em;
+    font-size: 0.82rem;
+    color: var(--ink-mute);
+  }
+
+  .badge-soon {
+    display: none;
+    margin-left: 0.6em;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    color: var(--ink-mute);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    padding: 0.15em 0.7em;
+    vertical-align: middle;
+  }
+
+  .step[data-link-ready="false"] .badge-soon { display: inline-block; }
+
+  footer {
+    max-width: 640px;
+    margin: 0 auto;
+    padding-top: clamp(20px, 5vw, 36px);
+    border-top: 1px solid var(--panel-border);
+    font-size: 0.82rem;
+    color: var(--ink-mute);
+  }
+
+  footer p.credit-line {
+    margin: 0 0 0.6em;
+  }
+
+  footer p:last-child {
+    margin: 0;
+  }
+
+  footer a {
+    color: var(--ink-dim);
+    text-decoration: underline;
+    text-decoration-color: var(--panel-border);
+    text-underline-offset: 3px;
+  }
+
+  footer a:hover {
+    text-decoration-color: var(--gold);
+  }
+
+  .credit-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em 1.2em;
+    align-items: baseline;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="eyebrow"><span class="dot">●</span>技育博 出展作品</span>
+      <h1>コトコトバ</h1>
+      <p class="lede">
+        word2vec の意味空間で言葉を<strong>混ぜて</strong>、ゴールの言葉に<strong>近づけろ</strong>。
+        現在の語に好きな語を混ぜると、ベクトル空間の最近傍語に姿を変える —
+        意味と意味をかけ合わせて遊ぶ、新感覚のワードパズル。
+      </p>
+    </header>
+
+    <main>
+      <ol class="steps">
+        <li class="step">
+          <span class="step-index" aria-hidden="true">①</span>
+          <div>
+            <h2>Expo Go を入れる</h2>
+            <p>コトコトバは Expo Go というアプリの中で動きます。まずは無料でインストールしてください。</p>
+            <a
+              class="btn btn-gold"
+              href="https://apps.apple.com/app/expo-go/id982107779"
+              target="_blank"
+              rel="noopener noreferrer"
+            >App Store で開く</a>
+          </div>
+        </li>
+
+        <li class="step" id="step-open" data-link-ready="false">
+          <span class="step-index" aria-hidden="true">②</span>
+          <div>
+            <h2>コトコトバを開く<span class="badge-soon">近日公開</span></h2>
+            <p>
+              Expo Go がインストール済みなら、下のボタンをタップするだけで直接起動します。
+              ブースでは会場の QR コードからも同じ場所に飛べます。
+            </p>
+            <button
+              id="open-app-link"
+              type="button"
+              class="btn btn-indigo"
+              disabled
+              data-expo-link="exp://u.expo.dev/73c7cda9-727c-4b83-ba2e-674c38b951ae?channel-name=production"
+            >コトコトバを開く</button>
+            <p class="step-note" id="open-app-fallback">
+              リンクは公開準備中です。しばらくお待ちいただくか、会場スタッフにお声がけください。
+            </p>
+          </div>
+        </li>
+      </ol>
+    </main>
+
+    <footer>
+      <p class="credit-line">
+        <span>制作: ChoTech / 長崎大学</span>
+        <a href="https://github.com/nu-chotech/coto2-ba" target="_blank" rel="noopener noreferrer">ハッカソン版 coto2-ba</a>
+      </p>
+      <p>
+        意味空間の語彙ベクトルは
+        <a href="https://github.com/singletongue/WikiEntVec" target="_blank" rel="noopener noreferrer">WikiEntVec</a>
+        （日本語 Wikipedia 由来, jawiki 20190520）を利用しています。
+        ライセンス: <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>。
+      </p>
+    </footer>
+  </div>
+
+  <script>
+    (() => {
+      // ② の exp:// リンク（EAS Update / production チャンネル）。
+      // 値は data-expo-link 属性。差し替え手順は apps/landing/README.md を参照。
+      // 属性が空か REPLACE_WITH_ で始まる間は無効なボタンのまま表示する。
+      var button = document.getElementById('open-app-link');
+      var step = document.getElementById('step-open');
+      var fallback = document.getElementById('open-app-fallback');
+      if (!button || !step) return;
+      var url = button.getAttribute('data-expo-link') || '';
+      var ready = url.length > 0 && url.indexOf('REPLACE_WITH_') !== 0;
+      if (!ready) return;
+
+      // 準備ができたら無効ボタンを本物のリンクに差し替える。
+      var link = document.createElement('a');
+      link.id = button.id;
+      link.className = button.className;
+      link.href = url;
+      link.textContent = button.textContent;
+      button.replaceWith(link);
+
+      step.setAttribute('data-link-ready', 'true');
+      if (fallback) fallback.style.display = 'none';
+    })();
+  </script>
+</body>
+</html>

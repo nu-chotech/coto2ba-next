@@ -1,0 +1,129 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "packages/**"
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "packages/**"
+  workflow_dispatch: {}
+
+concurrency:
+  # PR は PR 番号ごと（新しい push で古い preview デプロイを打ち切る）。
+  # production は 1 本に直列化し、走行中のデプロイを途中で殺さない。
+  group: deploy-api-${{ github.event_name == 'pull_request' && format('preview-{0}', github.event.number) || 'production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy:
+    name: Build + Deploy (${{ github.event_name == 'pull_request' && 'preview' || 'production' }})
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_API }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # PR からは絶対に migrate しない（production の Neon に PR のスキーマが流れると事故になる）。
+      - name: Run database migrations (direct connection)
+        if: github.event_name != 'pull_request'
+        run: pnpm --filter @coto2ba/api exec drizzle-kit migrate
+        env:
+          DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+
+      - name: Build API (tsup)
+        run: pnpm --filter @coto2ba/api build
+
+      # ARCHITECTURE §4 の検証。ワークスペース依存がバンドルに畳み込まれず
+      # import として残っていると、Vercel 上で実行時に解決できず 500 になる。
+      - name: Verify bundle has no workspace imports
+        run: test "$(grep -c '@coto2ba' apps/api/api/index.mjs)" -eq 0
+
+      # ---- production 経路（main への push / 手動実行）----
+      - name: Vercel pull (production environment)
+        if: github.event_name != 'pull_request'
+        working-directory: apps/api
+        run: npx vercel@59 pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Vercel build (production)
+        if: github.event_name != 'pull_request'
+        working-directory: apps/api
+        run: npx vercel@59 build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Vercel deploy (prebuilt, production)
+        if: github.event_name != 'pull_request'
+        working-directory: apps/api
+        run: npx vercel@59 deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      # ---- preview 経路（PR）----
+      - name: Vercel pull (preview environment)
+        if: github.event_name == 'pull_request'
+        working-directory: apps/api
+        run: npx vercel@59 pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Vercel build (preview)
+        if: github.event_name == 'pull_request'
+        working-directory: apps/api
+        run: npx vercel@59 build --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Vercel deploy (prebuilt, preview)
+        id: deploy_preview
+        if: github.event_name == 'pull_request'
+        working-directory: apps/api
+        run: |
+          set -euo pipefail
+          # deploy は進捗を stderr、最終的な URL を stdout に出す。
+          url="$(npx vercel@59 deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} | tail -n 1)"
+          echo "preview URL: ${url}"
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment preview URL on the PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
+        with:
+          script: |
+            const marker = '<!-- deploy-api-preview -->';
+            const body = [
+              marker,
+              '### API preview デプロイ',
+              '',
+              `- URL: ${process.env.PREVIEW_URL}`,
+              `- commit: \`${context.payload.pull_request.head.sha.slice(0, 7)}\``,
+              '',
+              '> migrate はこの経路では実行していない（production の Neon を触らないため）。',
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const existing = comments.data.find((c) => c.body && c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
