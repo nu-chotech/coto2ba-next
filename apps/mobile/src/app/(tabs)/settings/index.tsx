@@ -4,6 +4,8 @@
  * - 表示名の変更（contracts の `DISPLAY_NAME_MIN/MAX_LENGTH`）
  * - ブースモード（サーバーの `users.booth` が権威。PATCH してから store に反映）
  * - 引き継ぎ QR（`POST /api/transfer` → QR + トークン文字列 + コピー）
+ * - 引き継ぎの受け取り（`POST /api/transfer/claim`）。コードの貼り付けと、
+ *   `?transfer=` 付きのディープリンクで開かれたときの自動入力
  * - サウンド / ハプティクス（端末ローカルの好み）
  * - クレジット
  *
@@ -19,6 +21,7 @@ import {
   TRANSFER_TOKEN_TTL_MINUTES,
 } from '@coto2ba/contracts'
 import * as Clipboard from 'expo-clipboard'
+import * as Linking from 'expo-linking'
 import * as WebBrowser from 'expo-web-browser'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -45,12 +48,15 @@ import { useMeQuery } from '../../../features/game'
 import {
   COPY_FEEDBACK_MS,
   checkDisplayName,
+  checkTransferToken,
   chunkToken,
   QR_EC_LEVEL,
   QR_MAX_SIZE,
   QrCode,
   SETTINGS_ROW_MIN_HEIGHT,
   TOKEN_CHUNK_SIZE,
+  transferTokenFromUrl,
+  useClaimTransferMutation,
   useCreateTransferMutation,
   useUpdateProfileMutation,
 } from '../../../features/profile'
@@ -111,6 +117,7 @@ export default function SettingsScreen() {
   const me = useMeQuery()
   const updateProfile = useUpdateProfileMutation()
   const transfer = useCreateTransferMutation()
+  const claim = useClaimTransferMutation()
 
   const soundEnabled = useSettingsStore((s) => s.soundEnabled)
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled)
@@ -122,6 +129,8 @@ export default function SettingsScreen() {
   const [nameError, setNameError] = useState<string | null>(null)
   const [nameSaved, setNameSaved] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [claimError, setClaimError] = useState<string | null>(null)
+  const [claimedName, setClaimedName] = useState<string | null>(null)
 
   // 表示名は uncontrolled。サーバーの値が来たら key を進めて作り直す。
   const draftName = useRef('')
@@ -136,6 +145,20 @@ export default function SettingsScreen() {
     if (serverBooth !== undefined)
       useSettingsStore.getState().syncFromServer({ booth: serverBooth })
   }, [serverBooth])
+
+  // 引き継ぎコードの入力欄も uncontrolled。ディープリンクで値が来たら key を進める。
+  const draftToken = useRef('')
+  const [prefillToken, setPrefillToken] = useState('')
+  const incomingUrl = Linking.useURL()
+  useEffect(() => {
+    if (incomingUrl === null) return
+    const token = transferTokenFromUrl(incomingUrl)
+    if (token === null) return
+    draftToken.current = token
+    setPrefillToken(token)
+    setClaimError(null)
+    setClaimedName(null)
+  }, [incomingUrl])
 
   const onRefresh = useCallback(() => {
     setRefreshing(true)
@@ -186,6 +209,27 @@ export default function SettingsScreen() {
     setCopied(false)
     transfer.mutate()
   }, [transfer])
+
+  const onClaim = useCallback(() => {
+    const checked = checkTransferToken(draftToken.current)
+    if (!checked.ok) {
+      setClaimError(checked.message)
+      setClaimedName(null)
+      feedback('error_oov')
+      return
+    }
+    setClaimError(null)
+    claim.mutate(checked.value, {
+      onSuccess: (result) => {
+        setClaimedName(result.display_name)
+        feedback('achievement')
+      },
+      onError: (error: unknown) => {
+        setClaimedName(null)
+        setClaimError(toMessageJa(error))
+      },
+    })
+  }, [claim])
 
   const onCopy = useCallback((text: string) => {
     void Clipboard.setStringAsync(text).then(() => {
@@ -287,8 +331,9 @@ export default function SettingsScreen() {
         <GlassCard tint={colors.glassTint} style={styles.card}>
           <Text style={[typography.label, { color: colors.sub }]}>別の端末に引き継ぐ</Text>
           <Text style={[typography.caption, { color: colors.sub }]}>
-            引き継ぎコードは {TRANSFER_TOKEN_TTL_MINUTES} 分で切れます。 新しい端末でこの QR
-            を読み取るか、コードを貼り付けてください。
+            引き継ぎコードは {TRANSFER_TOKEN_TTL_MINUTES} 分で切れます。 新しい端末の
+            「別の端末から引き継ぐ」にこのコードを入力してください（QR
+            にも同じコードが入っています）。
           </Text>
 
           {transfer.isError ? (
@@ -323,6 +368,53 @@ export default function SettingsScreen() {
             tier={SETTINGS_TIER}
             variant="secondary"
             loading={transfer.isPending}
+          />
+        </GlassCard>
+
+        {/* ── 引き継ぎの受け取り ── */}
+        <GlassCard tint={colors.glassTint} style={styles.card}>
+          <Text style={[typography.label, { color: colors.sub }]}>別の端末から引き継ぐ</Text>
+          <Text style={[typography.caption, { color: colors.sub }]}>
+            前の端末で作ったコードを入れると、この端末がそのデータ（図鑑・実績・記録）を
+            引き継ぎます。ハイフン付きのままでも、QR の URL をそのまま貼っても構いません。
+          </Text>
+
+          <TextInput
+            key={`transfer-token-${prefillToken}`}
+            defaultValue={prefillToken}
+            onChangeText={(text) => {
+              draftToken.current = text
+              setClaimedName(null)
+            }}
+            onSubmitEditing={onClaim}
+            placeholder="ABCD-EFGH-…"
+            placeholderTextColor={colors.sub}
+            autoCorrect={false}
+            autoComplete="off"
+            autoCapitalize="characters"
+            submitBehavior="blurAndSubmit"
+            style={[
+              typography.mono,
+              styles.input,
+              { color: colors.text, backgroundColor: colors.surface, borderColor: colors.sub },
+            ]}
+          />
+
+          <Text
+            style={[
+              typography.label,
+              { color: claimError !== null ? palette.negative : colors.sub },
+            ]}
+          >
+            {claimError ?? (claimedName !== null ? `${claimedName} のデータを引き継ぎました` : ' ')}
+          </Text>
+
+          <PrimaryButton
+            title="この端末に引き継ぐ"
+            onPress={onClaim}
+            tier={SETTINGS_TIER}
+            variant="secondary"
+            loading={claim.isPending}
           />
         </GlassCard>
 

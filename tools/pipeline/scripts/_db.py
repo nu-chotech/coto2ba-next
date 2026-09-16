@@ -55,6 +55,15 @@ CREATE TABLE IF NOT EXISTS name_parts (
 )
 """
 
+DDL_WORD_DESCRIPTIONS = """
+CREATE TABLE IF NOT EXISTS word_descriptions (
+  word       text PRIMARY KEY,
+  text       text NOT NULL,
+  source     text NOT NULL,
+  fetched_at timestamptz NOT NULL DEFAULT now()
+)
+"""
+
 
 def connect(url: str) -> psycopg.Connection:
     """autocommit 接続。DDL と COPY をそのまま流すため。"""
@@ -78,3 +87,7 @@ def ensure_daily_challenges(conn: psycopg.Connection) -> None:
 
 def ensure_name_parts(conn: psycopg.Connection) -> None:
     conn.execute(DDL_NAME_PARTS)
+
+
+def ensure_word_descriptions(conn: psycopg.Connection) -> None:
+    conn.execute(DDL_WORD_DESCRIPTIONS)

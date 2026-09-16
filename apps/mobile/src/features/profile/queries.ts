@@ -14,9 +14,11 @@ import {
   type MeResponse,
   normalizeWord,
   type PatchMeRequest,
+  TRANSFER_TOKEN_LENGTH,
+  type TransferClaimResponse,
 } from '@coto2ba/contracts'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createTransfer, patchMe } from '../../lib/api'
+import { claimTransfer, createTransfer, patchMe } from '../../lib/api'
 import { queryKeys } from '../../lib/queryClient'
 import { useSettingsStore } from '../../store/settings'
 
@@ -39,6 +41,24 @@ export function useUpdateProfileMutation() {
 export function useCreateTransferMutation() {
   return useMutation({
     mutationFn: () => createTransfer(),
+  })
+}
+
+/**
+ * 引き継ぎの適用（`POST /api/transfer/claim`）。
+ *
+ * 成功するとこの端末のトークンが **引き継ぎ元のユーザー** に付け替わる
+ * （サーバー側で device_tokens を付け替える）。トークン文字列自体は変わらないので
+ * 再ログインは要らないが、**キャッシュに残っているのは前のユーザーのデータ**なので
+ * 全部捨てて引き直す（me / daily / collection / achievements / leaderboard / game）。
+ */
+export function useClaimTransferMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (token: string) => claimTransfer(token),
+    onSuccess: async (_result: TransferClaimResponse) => {
+      await queryClient.invalidateQueries()
+    },
   })
 }
 
@@ -72,4 +92,46 @@ export function chunkToken(token: string, chunkSize: number): string {
     parts.push(token.slice(i, i + chunkSize))
   }
   return parts.join('-')
+}
+
+// ── 引き継ぎコードの検証（端末側。最終判定はサーバー）──────────
+
+export type TransferTokenCheck = { ok: true; value: string } | { ok: false; message: string }
+
+/**
+ * 入力された引き継ぎコードをサーバーに送る形に戻す。
+ *
+ * - QR / 「URL をコピー」から貼られた `https://…/?transfer=XXXX` はトークン部分を抜く
+ * - 表示用に挟んだハイフン・読み上げ時の空白・改行は落とす
+ * - 大文字に揃える（サーバーは `trim().toUpperCase()` しかしない）
+ *
+ * `readableToken` の字種は大文字英数のみなので、英数以外を捨てても情報は落ちない。
+ */
+export function normalizeTransferToken(raw: string): string {
+  const trimmed = raw.trim()
+  const fromUrl = /[?&]transfer=([^&#\s]+)/.exec(trimmed)
+  const source = fromUrl?.[1] ?? trimmed
+  return source.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+}
+
+/**
+ * ディープリンク（`exp://…/--/?transfer=XXXX` など）からコードを取り出す。
+ * `transfer` が無い URL では **null**（URL 全体を英数だけ残して潰さないため）。
+ */
+export function transferTokenFromUrl(url: string): string | null {
+  const match = /[?&]transfer=([^&#\s]+)/.exec(url)
+  const raw = match?.[1]
+  if (raw === undefined) return null
+  const token = normalizeTransferToken(raw)
+  return token.length === 0 ? null : token
+}
+
+/** 送る前に長さだけ見る（無効なコードは最終的にサーバーが弾く）。 */
+export function checkTransferToken(raw: string): TransferTokenCheck {
+  const value = normalizeTransferToken(raw)
+  if (value.length === 0) return { ok: false, message: '引き継ぎコードを入力してください' }
+  if (value.length !== TRANSFER_TOKEN_LENGTH) {
+    return { ok: false, message: `引き継ぎコードは ${TRANSFER_TOKEN_LENGTH} 文字です` }
+  }
+  return { ok: true, value }
 }

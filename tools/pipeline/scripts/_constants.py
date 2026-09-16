@@ -75,6 +75,10 @@ DAILY_DIFFICULTY_BY_WEEKDAY = (
 # 表示名（形容詞 1 語 + 名詞 1 語）。
 DISPLAY_NAME_MAX_LENGTH = 12
 
+# 図鑑のゴースト点（未取得語）のサンプル数。06 の入力件数と 10 の出力件数が
+# ここからずれるとクライアント（assets/vocab/ghost.json）と食い違う。
+SPACE_GHOST_COUNT = 2_000
+
 
 # ══════════════════════════════════════════════════════════════
 #  パイプライン専用（contracts には無い）
@@ -176,3 +180,40 @@ NAME_ADJ_STOP_WORDS = frozenset(
 NAME_NOUN_REQUIRE_CONTENT_CHAR = True
 
 NAME_PART_KINDS = ("adjective", "noun")
+
+# ── 06_umap_coords ───────────────────────────────────────────
+# SPEC §9.1。UMAP のパラメータは固定値（変えると図鑑の「世界地図」の形が変わり、
+# 過去に保存した pos3 と一貫しなくなる）。
+UMAP_N_COMPONENTS = 3
+UMAP_N_NEIGHBORS = 15
+UMAP_MIN_DIST = 0.1
+UMAP_METRIC = "cosine"
+# 各軸をこの範囲に正規化する（SPEC: [-1, 1]）。
+POS3_RANGE = (-1.0, 1.0)
+# DB 書き込みの一時テーブル名。
+POS3_LOAD_TABLE = "pos3_load"
+
+# ── 07_descriptions ──────────────────────────────────────────
+# SPEC §6.5 / §7.6。連絡先必須（Wikipedia の利用規約）。
+WIKIPEDIA_UA = "coto2ba-next/0.1 (https://coto2ba-next.chotech.dev)"
+WIKIPEDIA_SUMMARY_URL = "https://ja.wikipedia.org/api/rest_v1/page/summary"
+# 頻度上位何語まで説明文を埋めるか（ゴールプール全語には別途）。
+DESCRIPTIONS_FREQ_LIMIT = 50_000
+# goal_pool.description の上限文字数。句点で切る。
+GOAL_DESCRIPTION_MAX_LEN = 40
+# 同時実行数（Wikipedia のレート制限を守る）。
+DESCRIPTIONS_CONCURRENCY = 4
+DESCRIPTIONS_TIMEOUT_SEC = 15.0
+DESCRIPTIONS_MAX_RETRIES = 5
+DESCRIPTIONS_BASE_BACKOFF_SEC = 1.0
+DESCRIPTIONS_MAX_BACKOFF_SEC = 30.0
+
+# ── 10_mobile_assets ─────────────────────────────────────────
+# ゴースト点の座標が未計算（06 未実行）のときの疑似乱数フォールバック。
+# シードは日付ベース（04_goal_pool の SHUFFLE_SEED と同じ流儀）。
+GHOST_FALLBACK_SEED = 20260917
+# フィボナッチ球の半径のゆらぎの下限（apps/mobile/src/features/collection/ghost.ts の
+# generateFallbackGhosts と同じ値。中身は空点でなく実語を置く点が違う）。
+GHOST_FALLBACK_RADIUS_MIN = 0.45
+# JSON の座標精度（桁を絞ってファイルサイズを抑える）。
+GHOST_POS3_DECIMALS = 4

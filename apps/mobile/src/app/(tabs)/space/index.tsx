@@ -13,7 +13,7 @@ import { SPACE_GHOST_COUNT } from '@coto2ba/contracts'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { GlassCard, toMessageJa } from '../../../components'
+import { GlassCard, SkiaGate, toMessageJa } from '../../../components'
 import {
   buildSpaceScene,
   collectionSummary,
@@ -127,15 +127,19 @@ export default function SpaceScreen() {
 
   return (
     <View style={styles.root}>
-      <SpaceCanvas
-        key={sceneKey}
-        scene={scene}
-        camera={camera}
-        gesture={gesture}
-        onHit={onHit}
-        selectedIndex={selectedIndex}
-        onResize={onResize}
-      />
+      {/* Skia が使えないときに図鑑タブごとアプリを落とさないためのゲート。
+          Web では CanvasKit の WASM を読み終わるまで待つ。 */}
+      <SkiaGate label="図鑑">
+        <SpaceCanvas
+          key={sceneKey}
+          scene={scene}
+          camera={camera}
+          gesture={gesture}
+          onHit={onHit}
+          selectedIndex={selectedIndex}
+          onResize={onResize}
+        />
+      </SkiaGate>
       <SpaceLabels
         scene={scene}
         camera={camera}

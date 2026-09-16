@@ -77,19 +77,33 @@ export function SkiaShareCard({ game }: SkiaShareCardProps) {
   const route = `${game.start} → ${game.goal}`
   const meta = `${DIFFICULTY_LABELS_JA[game.difficulty]} ・ 最大 ${MAX_MOVES} 手`
 
+  const cells = game.moves.map((move) => move.tier)
+
+  // マスの列は画像の余白の内側に必ず収める。
+  // 既定のサイズ（56 + 12）だと 14 手で余白を使い切り、17 手以上で左端が画像の外に出る。
+  // MAX_MOVES（= 20）まで普通に出る手数なので、入りきらないときは
+  // マスと間隔を同じ比率で縮めて 1 行に収める（`cellsStartX >= SHARE_PADDING` が保証される）。
+  const cellsAvailableWidth = SHARE_IMAGE_WIDTH - SHARE_PADDING * 2
+  const cellScale =
+    cells.length > 0
+      ? Math.min(1, cellsAvailableWidth / (cells.length * (SHARE_CELL_SIZE + SHARE_CELL_GAP)))
+      : 1
+  const cellSize = SHARE_CELL_SIZE * cellScale
+  const cellGap = SHARE_CELL_GAP * cellScale
+  const cellRadius = SHARE_CELL_RADIUS * cellScale
+  const cellsWidth = cells.length * cellSize + Math.max(0, cells.length - 1) * cellGap
+  const cellsStartX = (SHARE_IMAGE_WIDTH - cellsWidth) / 2
+
   // 縦の配置（px）。上から順に積む。
   const titleY = SHARE_PADDING + SHARE_TITLE_SIZE
   const headlineY = titleY + SHARE_TITLE_SIZE * 3
   const goalY = headlineY + SHARE_GOAL_SIZE * 1.6
   const routeY = goalY + SHARE_BODY_SIZE * 2
   const cellsY = routeY + SHARE_BODY_SIZE * 1.6
+  // 縮んでもマスの下の余白が変わらないように、原寸ぶんの高さを確保しておく。
   const summaryY = cellsY + SHARE_CELL_SIZE + SHARE_BODY_SIZE * 1.8
   const metaY = summaryY + SHARE_BODY_SIZE * 1.6
   const footerY = SHARE_IMAGE_HEIGHT - SHARE_PADDING
-
-  const cells = game.moves.map((move) => move.tier)
-  const cellsWidth = cells.length * SHARE_CELL_SIZE + Math.max(0, cells.length - 1) * SHARE_CELL_GAP
-  const cellsStartX = (SHARE_IMAGE_WIDTH - cellsWidth) / 2
 
   return (
     <Group>
@@ -145,13 +159,14 @@ export function SkiaShareCard({ game }: SkiaShareCardProps) {
           key={`${index}-${cellTier}`}
           rect={rrect(
             rect(
-              cellsStartX + index * (SHARE_CELL_SIZE + SHARE_CELL_GAP),
-              cellsY,
-              SHARE_CELL_SIZE,
-              SHARE_CELL_SIZE,
+              cellsStartX + index * (cellSize + cellGap),
+              // 縮めたときは原寸ぶんの帯の中で縦中央に置く。
+              cellsY + (SHARE_CELL_SIZE - cellSize) / 2,
+              cellSize,
+              cellSize,
             ),
-            SHARE_CELL_RADIUS,
-            SHARE_CELL_RADIUS,
+            cellRadius,
+            cellRadius,
           )}
           color={tierPalettes[cellTier].accent}
         />
