@@ -67,8 +67,44 @@ class GoalRecord(TypedDict):
 
 
 # ── 候補の抽出（SPEC §6.1）────────────────────────────────────
+# サ変可能などの抽象名詞。ゴール語として弱い（「提唱」「収監」「再検討」「促進」）。
+# unidic の細分類（pos3）は parquet に落ちていないので、ここで取り直す。
+ABSTRACT_NOUN_SUBPOS = frozenset(
+    {"サ変可能", "副詞可能", "サ変形状詞可能", "形状詞可能", "助数詞可能"}
+)
+
+_tagger = None
+
+
+def is_concrete_goal(word: str) -> bool:
+    """モノ・生き物・場所など、目的地として絵になる語か。
+
+    Wikipedia の頻度 500〜30,000 帯は「促進 / 捜査 / 提唱 / 後悔」のような
+    サ変名詞が非常に多く、そのままだとゴールプールが行政文書のようになる。
+    サ変可能・副詞可能を落とすと「温泉 / 宝石 / 琥珀 / 振り子 / 潤滑油 / 土偶 /
+    刀剣 / 巫女」が残る。
+    """
+    global _tagger
+    if _tagger is None:
+        import fugashi
+
+        _tagger = fugashi.Tagger()
+    toks = _tagger(word)
+    if not toks or any(t.is_unk for t in toks):
+        return False
+    if "".join(t.surface for t in toks) != word:
+        return False
+    for t in toks:
+        f = t.feature
+        if f.pos1 == "名詞" and f.pos3 in ABSTRACT_NOUN_SUBPOS:
+            return False
+        if f.pos2 in ("固有名詞", "数詞", "代名詞"):
+            return False
+    return True
+
+
 def goal_candidates(space: OutputSpace, ng: tuple[set[str], set[str]]) -> list[int]:
-    """出力語彙・freq_rank 500〜30,000・一般名詞・2 文字以上・数字なし・NG 外。"""
+    """出力語彙・freq_rank 500〜30,000・**具体的な**一般名詞・2 文字以上・数字なし・NG 外。"""
     mask = (
         (space.freq_rank >= GOAL_MIN_FREQ_RANK)
         & (space.freq_rank <= GOAL_MAX_FREQ_RANK)
@@ -82,6 +118,8 @@ def goal_candidates(space: OutputSpace, ng: tuple[set[str], set[str]]) -> list[i
         # 02_prune の時点で NG は除外済みだが、ng_words.txt は後から増やせるので再確認する。
         exact, substr = ng
         if w in exact or any(s in w for s in substr):
+            continue
+        if not is_concrete_goal(w):
             continue
         out.append(i)
     return out

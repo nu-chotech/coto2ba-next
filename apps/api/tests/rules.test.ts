@@ -237,3 +237,43 @@ describe('フリーモードの自己ベスト（SPEC §5.7）', () => {
     expect(updateBestFreeMoves({ normal: 6 }, 'hard', 12)).toEqual({ normal: 6, hard: 12 })
   })
 })
+
+describe('ゴールに近すぎる語の禁止（デイリーのランキングを守るため）', () => {
+  const withBan = { ...base, forbiddenInputs: ['絹糸', '養蚕', '桑'] }
+
+  it('ゴール近傍の語は弾く', () => {
+    expect(validateMove({ ...withBan, rawInput: '養蚕', ratio: 0.5 })).toEqual({
+      ok: false,
+      code: 'TOO_CLOSE_TO_GOAL',
+    })
+  })
+
+  it('近傍でない語は通る', () => {
+    expect(validateMove({ ...withBan, rawInput: '糸', ratio: 0.5 })).toEqual({
+      ok: true,
+      input: '糸',
+      ratio: 0.5,
+    })
+  })
+
+  it('正規化してから判定する', () => {
+    expect(validateMove({ ...withBan, rawInput: ' 養蚕 ', ratio: 0.5 })).toEqual({
+      ok: false,
+      code: 'TOO_CLOSE_TO_GOAL',
+    })
+  })
+
+  it('禁止リストが無ければ何も起きない', () => {
+    expect(validateMove({ ...base, rawInput: '養蚕', ratio: 0.5 })).toEqual({
+      ok: true,
+      input: '養蚕',
+      ratio: 0.5,
+    })
+  })
+
+  it('ゴール語そのものの判定が優先される', () => {
+    expect(
+      validateMove({ ...withBan, forbiddenInputs: ['蚕', '養蚕'], rawInput: '蚕', ratio: 0.5 }),
+    ).toEqual({ ok: false, code: 'GOAL_INPUT' })
+  })
+})

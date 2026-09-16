@@ -1,0 +1,1 @@
+ALTER TABLE "games" ADD COLUMN "forbidden_inputs" text[] DEFAULT ARRAY[]::text[] NOT NULL;

@@ -1,6 +1,7 @@
 /** API が返すエラーコード。レスポンスは常に { code, message }。 */
 export const ERROR_CODES = [
   'GOAL_INPUT',
+  'TOO_CLOSE_TO_GOAL',
   'SAME_AS_CURRENT',
   'OOV',
   'INVALID_RATIO',
@@ -24,6 +25,7 @@ export type ErrorCode = (typeof ERROR_CODES)[number]
 
 export const ERROR_MESSAGES_JA: Record<ErrorCode, string> = {
   GOAL_INPUT: 'ゴールの語そのものは混ぜられません',
+  TOO_CLOSE_TO_GOAL: 'ゴールに近すぎる語は混ぜられません',
   SAME_AS_CURRENT: 'いまの語と同じ語は混ぜられません',
   OOV: 'その語は辞書にありません',
   INVALID_RATIO: '混合比率が不正です',
@@ -46,6 +48,7 @@ export const ERROR_MESSAGES_JA: Record<ErrorCode, string> = {
 /** HTTP ステータスの対応。 */
 export const ERROR_STATUS: Record<ErrorCode, number> = {
   GOAL_INPUT: 422,
+  TOO_CLOSE_TO_GOAL: 422,
   SAME_AS_CURRENT: 422,
   OOV: 422,
   INVALID_RATIO: 422,

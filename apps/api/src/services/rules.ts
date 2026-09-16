@@ -24,6 +24,8 @@ export interface MoveValidationInput {
   ratio: number
   /** vocab に存在し is_input=true か。null は未検証（呼び出し側で引く） */
   inputInVocab: boolean | null
+  /** ゴールに近すぎて使えない語（games.forbidden_inputs）。 */
+  forbiddenInputs?: readonly string[]
 }
 
 export interface MoveValidationOk {
@@ -51,6 +53,7 @@ export function validateMove(input: MoveValidationInput): MoveValidationOk | Mov
   if (word.length === 0) return { ok: false, code: 'OOV' }
   if (word === input.goal) return { ok: false, code: 'GOAL_INPUT' }
   if (word === input.current) return { ok: false, code: 'SAME_AS_CURRENT' }
+  if (input.forbiddenInputs?.includes(word)) return { ok: false, code: 'TOO_CLOSE_TO_GOAL' }
   if (input.inputInVocab === false) return { ok: false, code: 'OOV' }
 
   return { ok: true, input: word, ratio }

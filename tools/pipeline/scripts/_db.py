@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS vocab (
   is_input       boolean NOT NULL DEFAULT true,
   is_output      boolean NOT NULL DEFAULT false,
   is_common_noun boolean NOT NULL DEFAULT false,
+  is_concrete    boolean NOT NULL DEFAULT false,
   pos            text,
   w2v            halfvec({VECTOR_DIM}) NOT NULL,
   pos3           real[]

@@ -8,15 +8,16 @@ import {
   type Difficulty,
   type GameDetail,
   type Game as GameDto,
+  GOAL_NEIGHBOR_BAN,
   HINT_CANDIDATE_COUNT,
   HINT_COUNT,
   HINT_RATIO,
   type HintResponse,
+  isMorphologicalVariant,
   type LeaderboardResponse,
   type MoveResponse,
   START_MAX_FREQ_RANK,
   START_RANK_RANGE,
-  isMorphologicalVariant,
   sharesKanji,
   tierForRank,
 } from '@coto2ba/contracts'
@@ -37,7 +38,14 @@ import { jstDate } from '../lib/jst'
 import { pickRandom } from '../lib/random'
 import { evaluateAchievements, recordEncounters } from './achievements'
 import { applyMove, updateBestFreeMoves, validateMove } from './rules'
-import { hintWords, lookupWord, mixAndRank, rankOf, sampleStartWord } from './vector'
+import {
+  goalNeighborhood,
+  hintWords,
+  lookupWord,
+  mixAndRank,
+  rankOf,
+  sampleStartWord,
+} from './vector'
 
 const LEADERBOARD_PAGE = 50
 /** ヒントの候補を何倍取ってから表記揺れを落とすか。 */
@@ -115,7 +123,10 @@ async function insertGame(
     start: string
   },
 ): Promise<GameRow> {
-  const startRank = (await rankOf(db, input.goal, input.start)) ?? START_RANK_RANGE[1]
+  const [startRank, forbiddenInputs] = await Promise.all([
+    rankOf(db, input.goal, input.start),
+    goalNeighborhood(db, input.goal, GOAL_NEIGHBOR_BAN),
+  ])
   const rows = await db
     .insert(games)
     .values({
@@ -126,13 +137,14 @@ async function insertGame(
       goal: input.goal,
       start: input.start,
       current: input.start,
-      currentRank: startRank,
+      currentRank: startRank ?? START_RANK_RANGE[1],
+      forbiddenInputs,
     })
     .returning()
   const row = rows[0]
   if (!row) throw appError('INTERNAL', 'ゲームを作成できませんでした')
   await recordEncounters(db, input.userId, row.id, [
-    { word: input.start, source: 'start', rank: startRank },
+    { word: input.start, source: 'start', rank: startRank ?? START_RANK_RANGE[1] },
   ])
   return row
 }
@@ -296,6 +308,7 @@ async function playMoveLocked(
     rawInput,
     ratio: rawRatio,
     inputInVocab: null,
+    forbiddenInputs: game.forbiddenInputs,
   })
   if (!pre.ok) throw appError(pre.code)
 

@@ -1,0 +1,1 @@
+ALTER TABLE "vocab" ADD COLUMN "is_concrete" boolean DEFAULT false NOT NULL;

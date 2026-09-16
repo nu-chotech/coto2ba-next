@@ -172,9 +172,9 @@ export async function nearestAmong(
 
 /**
  * スタート語の抽選（SPEC §6.3）。
- * 出力語彙・**単独トークンの一般名詞**・freq_rank <= maxFreqRank で、
- * （複合語を許すと「共同通信」「ベストアルバム」のような語が出てゲームの入り口として弱い。
- *  単独名詞に絞ると 8,091 語あり、プラチナ / 器官 / 人質 / 気温 / 磁気 のような語になる）
+ * 出力語彙・**単独トークンの具体名詞**・freq_rank <= maxFreqRank で、
+ * （複合語を許すと「共同通信」「ベストアルバム」、サ変名詞を許すと「対応」「浮遊」のような
+ *  語が出てゲームの入り口として弱い。is_concrete は 02_prune が判定する）
  * goal から見たランクが [minRank, maxRank] に入る語からランダムに選ぶ。
  * 漢字の共有チェックは呼び出し側（JS）で行う。
  */
@@ -190,7 +190,7 @@ export async function sampleStartWord(
   // 一般名詞に絞る前に順位を確定させること。goal 自身は順位から除く。
   const rows = await db.execute<{ word: string }>(sql`
     WITH ranked AS (
-      SELECT v.word, v.is_common_noun, v.freq_rank, v.pos,
+      SELECT v.word, v.is_common_noun, v.is_concrete, v.freq_rank, v.pos,
              row_number() OVER (ORDER BY v.w2v <=> ${vectorOf(goal)}) AS rk
       FROM vocab v
       WHERE v.is_output AND v.word <> ${goal}
@@ -198,10 +198,28 @@ export async function sampleStartWord(
     SELECT word FROM ranked
     WHERE rk BETWEEN ${minRank} AND ${maxRank}
       AND is_common_noun
+      AND is_concrete
       AND pos = '名詞-普通名詞'
       AND freq_rank <= ${maxFreqRank}
     ORDER BY random()
     LIMIT ${sampleSize}
+  `)
+  return rows.rows.map((r) => r.word)
+}
+
+/**
+ * ゴールに近すぎて「混ぜる語」に使えない語（入力語彙から上位 n 件）。
+ * ゲーム作成時に 1 度だけ呼び、games.forbidden_inputs に保存する。
+ * 出力語彙ではなく**入力語彙**から取ること（プレイヤーは入力語彙の語なら何でも打てる）。
+ */
+export async function goalNeighborhood(db: Db, goal: string, n: number): Promise<string[]> {
+  if (n <= 0) return []
+  const rows = await db.execute<{ word: string }>(sql`
+    SELECT v.word
+    FROM vocab v
+    WHERE v.is_input AND v.word <> ${goal}
+    ORDER BY v.w2v <=> ${vectorOf(goal)}
+    LIMIT ${n}
   `)
   return rows.rows.map((r) => r.word)
 }

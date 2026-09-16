@@ -15,6 +15,20 @@
       "when": 1789583788538,
       "tag": "0001_init",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789587756249,
+      "tag": "0002_forbidden_inputs",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789588216874,
+      "tag": "0003_vocab_is_concrete",
+      "breakpoints": true
     }
   ]
 }

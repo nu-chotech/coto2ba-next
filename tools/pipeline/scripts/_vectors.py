@@ -47,6 +47,7 @@ class OutputSpace:
     index: dict[str, int]
     freq_rank: np.ndarray  # int32 (N,)
     is_common_noun: np.ndarray  # bool (N,)
+    is_simple_noun: np.ndarray  # bool (N,) pos == '名詞-普通名詞'（複合語でない）
     mat: np.ndarray  # float32 (N, VECTOR_DIM) 単位長
 
     @property
@@ -54,9 +55,11 @@ class OutputSpace:
         return len(self.words)
 
 
-def _read_output_columns() -> tuple[list[str], np.ndarray, np.ndarray, np.ndarray]:
+def _read_output_columns() -> tuple[
+    list[str], np.ndarray, np.ndarray, np.ndarray, np.ndarray
+]:
     table = pq.read_table(
-        VOCAB_PARQUET, columns=["word", "freq_rank", "is_output", "is_common_noun"]
+        VOCAB_PARQUET, columns=["word", "freq_rank", "is_output", "is_common_noun", "pos"]
     )
     mask = np.asarray(table["is_output"].to_numpy(zero_copy_only=False), dtype=bool)
     words = [w for w, m in zip(table["word"].to_pylist(), mask, strict=True) if m]
@@ -64,12 +67,16 @@ def _read_output_columns() -> tuple[list[str], np.ndarray, np.ndarray, np.ndarra
     common = np.asarray(
         table["is_common_noun"].to_numpy(zero_copy_only=False), dtype=bool
     )[mask]
-    return words, freq, common, mask
+    # pos == '名詞-普通名詞' は単独トークンの一般名詞。'名詞-複合' は複合語。
+    simple = np.asarray(
+        [p == "名詞-普通名詞" for p in table["pos"].to_pylist()], dtype=bool
+    )[mask]
+    return words, freq, common, simple, mask
 
 
 def build_output_cache(force: bool = False) -> Path:
     """`data/output_vectors.npy`（正規化済み・出力語彙のみ）を作る。"""
-    words, _freq, _common, mask = _read_output_columns()
+    words, _freq, _common, _simple, mask = _read_output_columns()
     if not force and OUTPUT_VECTORS_NPY.exists():
         cached = np.load(OUTPUT_VECTORS_NPY, mmap_mode="r")
         if cached.shape == (len(words), VECTOR_DIM):
@@ -93,7 +100,7 @@ def build_output_cache(force: bool = False) -> Path:
 def load_output_space(mmap: bool = True) -> OutputSpace:
     """出力語彙の空間を読む。キャッシュが無ければ作る。"""
     build_output_cache()
-    words, freq, common, _mask = _read_output_columns()
+    words, freq, common, simple, _mask = _read_output_columns()
     mat = np.load(OUTPUT_VECTORS_NPY, mmap_mode="r" if mmap else None)
     if mat.shape != (len(words), VECTOR_DIM):
         raise SystemExit("output_vectors.npy が vocab.parquet と一致しません（作り直してください）")
@@ -102,6 +109,7 @@ def load_output_space(mmap: bool = True) -> OutputSpace:
         index={w: i for i, w in enumerate(words)},
         freq_rank=freq,
         is_common_noun=common,
+        is_simple_noun=simple,
         mat=mat,
     )
 
@@ -195,8 +203,12 @@ def start_candidates(
 ) -> list[int]:
     """ゴールから見た rank が START_RANK_RANGE に入るスタート語候補。
 
-    条件: 出力語彙 / freq_rank <= START_MAX_FREQ_RANK / 一般名詞 / 数字なし /
-    NG 外 / ゴールと漢字を共有しない。
+    条件: 出力語彙 / freq_rank <= START_MAX_FREQ_RANK / **単独トークンの一般名詞** /
+    数字なし / NG 外 / ゴールと漢字を共有しない。
+
+    複合語を許すと「共同通信」「男子生徒」「交通情報」のような語が出てゲームの
+    入り口として弱い。単独名詞に絞ると 8,000 語以上あり、プラチナ / 器官 / 人質 /
+    気温 / 磁気 のような語になる（サーバー側 sampleStartWord と同じ規則）。
     """
     if sims is None:
         sims = goal_sims(space, goal_idx)
@@ -205,7 +217,11 @@ def start_candidates(
     band = ordered[lo : hi + 1]
     if band.size == 0:
         return []
-    ok = (space.freq_rank[band] <= START_MAX_FREQ_RANK) & space.is_common_noun[band]
+    ok = (
+        (space.freq_rank[band] <= START_MAX_FREQ_RANK)
+        & space.is_common_noun[band]
+        & space.is_simple_noun[band]
+    )
     band = band[ok]
     goal_word = space.words[goal_idx]
     out: list[int] = []

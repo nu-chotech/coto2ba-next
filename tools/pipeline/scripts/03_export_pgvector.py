@@ -48,9 +48,27 @@ from _constants import (  # noqa: E402
 from _db import connect, ensure_vocab  # noqa: E402
 
 LOAD_TABLE = "vocab_load"
-COLUMNS = ("word", "freq_rank", "is_input", "is_output", "is_common_noun", "pos", "w2v")
+COLUMNS = (
+    "word",
+    "freq_rank",
+    "is_input",
+    "is_output",
+    "is_common_noun",
+    "is_concrete",
+    "pos",
+    "w2v",
+)
 # COPY (FORMAT BINARY) には列の型を明示する必要がある（COLUMNS と同じ順）。
-COPY_TYPES = ["text", "integer", "boolean", "boolean", "boolean", "text", "halfvec"]
+COPY_TYPES = [
+    "text",
+    "integer",
+    "boolean",
+    "boolean",
+    "boolean",
+    "boolean",
+    "text",
+    "halfvec",
+]
 
 INDEX_HNSW = "vocab_output_hnsw"
 INDEX_FREQ = "vocab_output_freq"
@@ -80,6 +98,7 @@ class Rows(NamedTuple):
     is_input: np.ndarray
     is_output: np.ndarray
     is_common: np.ndarray
+    is_concrete: np.ndarray
     pos: list[str | None]
     vecs: np.ndarray
 
@@ -100,6 +119,9 @@ def load_rows(limit: int) -> Rows:
     is_common = np.asarray(
         table["is_common_noun"].to_numpy(zero_copy_only=False), dtype=bool
     )
+    is_concrete = np.asarray(
+        table["is_concrete"].to_numpy(zero_copy_only=False), dtype=bool
+    )
     pos = table["pos"].to_pylist()
 
     mat = np.load(VECTORS_NPY, mmap_mode="r")
@@ -116,7 +138,7 @@ def load_rows(limit: int) -> Rows:
     if float(np.abs(vecs).max()) > HALFVEC_MAX_ABS:
         raise SystemExit("float16 の範囲を超える値があります（halfvec で inf になります）")
 
-    return Rows(words, freq, is_input, is_output, is_common, pos, vecs)
+    return Rows(words, freq, is_input, is_output, is_common, is_concrete, pos, vecs)
 
 
 def main() -> None:
@@ -134,7 +156,8 @@ def main() -> None:
     print(f"読み込み: {VOCAB_PARQUET.name} / {VECTORS_NPY.name}", file=sys.stderr)
     rows = load_rows(args.limit)
     words, freq, is_input, is_output = rows.words, rows.freq, rows.is_input, rows.is_output
-    is_common, pos, vecs = rows.is_common, rows.pos, rows.vecs
+    is_common, is_concrete = rows.is_common, rows.is_concrete
+    pos, vecs = rows.pos, rows.vecs
     n = len(words)
     print(
         f"  {n} 行 / 出力語彙 {int(is_output.sum())} 語 ({time.time() - t0:.1f}s)",
@@ -167,6 +190,7 @@ def main() -> None:
                         bool(is_input[i]),
                         bool(is_output[i]),
                         bool(is_common[i]),
+                        bool(is_concrete[i]),
                         pos[i],
                         HalfVector(vecs[i]),
                     )
@@ -185,6 +209,7 @@ def main() -> None:
               is_input       = EXCLUDED.is_input,
               is_output      = EXCLUDED.is_output,
               is_common_noun = EXCLUDED.is_common_noun,
+              is_concrete    = EXCLUDED.is_concrete,
               pos            = EXCLUDED.pos,
               w2v            = EXCLUDED.w2v
             """

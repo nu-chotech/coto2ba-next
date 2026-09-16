@@ -30,6 +30,12 @@ export const vocab = pgTable(
     isOutput: boolean('is_output').notNull().default(false),
     /** ゴールプール候補（名詞-普通名詞のみで構成される語） */
     isCommonNoun: boolean('is_common_noun').notNull().default(false),
+    /**
+     * モノ・生き物・場所など「絵になる」語か（サ変名詞・連用形名詞を除く）。
+     * ゴール語とスタート語の抽選に使う。これが無いと
+     * 「促進 / 捜査 / 提唱 / 目指し」ばかりになる。02_prune が判定する。
+     */
+    isConcrete: boolean('is_concrete').notNull().default(false),
     pos: text('pos'),
     /** 単位長に正規化済みの word2vec ベクトル */
     w2v: halfvec('w2v', { dimensions: 200 }).notNull(),
@@ -88,6 +94,11 @@ export const games = pgTable(
     hintCount: integer('hint_count').notNull().default(0),
     status: text('status').notNull().default('playing'),
     perfect: boolean('perfect').notNull().default(false),
+    /**
+     * ゴールに近すぎて「混ぜる語」として使えない語（ゲーム作成時に 1 度だけ計算）。
+     * 毎手ランクを引くと 90ms かかるので、作成時に近傍を取って配列で持つ。
+     */
+    forbiddenInputs: text('forbidden_inputs').array().notNull().default(sql`ARRAY[]::text[]`),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     clearedAt: timestamp('cleared_at', { withTimezone: true }),
   },

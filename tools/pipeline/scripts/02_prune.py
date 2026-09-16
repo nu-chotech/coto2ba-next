@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from collections import Counter
@@ -43,6 +44,10 @@ CONTENT_POS = {"名詞", "動詞", "形容詞", "形状詞"}
 EXCLUDED_NOUN_SUBPOS = {"数詞", "代名詞", "助動詞語幹"}
 # 複合語（潤滑油 = 潤滑[名詞] + 油[接尾辞-名詞的]）を通すために許す品詞
 COMPOUND_POS = {"名詞", "接頭辞", "接尾辞"}
+# サ変可能などの抽象名詞。ゴール語・スタート語・表示名として弱い
+# （促進 / 捜査 / 提唱 / 後悔 / 目指し）。unidic の pos3。
+ABSTRACT_NOUN_SUBPOS = {"サ変可能", "副詞可能", "サ変形状詞可能", "形状詞可能", "助数詞可能"}
+HIRAGANA_TAIL_RE = re.compile(r"[\u3041-\u309F]$")
 
 
 def build_tagger():
@@ -51,7 +56,24 @@ def build_tagger():
     return fugashi.Tagger()
 
 
-def classify_output(word: str, tagger) -> tuple[bool, str | None, bool]:
+def is_concrete(word: str, toks) -> bool:
+    """モノ・生き物・場所など、目的地や出発点として絵になる語か。
+
+    Wikipedia の頻度上位はサ変名詞（促進・捜査・提唱）と連用形名詞（目指し・よれ）が
+    非常に多く、そのままだとゴールプールが行政文書のようになる。これを落とすと
+    温泉 / 宝石 / 琥珀 / 振り子 / 潤滑油 / 土偶 / 刀剣 / 巫女 が残る。
+    """
+    for t in toks:
+        f = t.feature
+        if f.pos1 == "名詞" and f.pos3 in ABSTRACT_NOUN_SUBPOS:
+            return False
+        if f.pos2 in ("固有名詞", "数詞", "代名詞"):
+            return False
+    # 「目指し」「よれ」のような連用形名詞（短くてひらがな終わり）
+    return not (len(word) <= 3 and HIRAGANA_TAIL_RE.search(word))
+
+
+def classify_output(word: str, tagger) -> tuple[bool, str | None, bool, bool]:
     """(is_output, pos, is_common_noun) を返す。
 
     - 未知語（is_unk）は品詞情報が信用できないので落とす
@@ -62,49 +84,49 @@ def classify_output(word: str, tagger) -> tuple[bool, str | None, bool]:
     """
     toks = tagger(word)
     if not toks:
-        return False, None, False
+        return False, None, False, False
     if any(t.is_unk for t in toks):
-        return False, None, False
+        return False, None, False, False
     if "".join(t.surface for t in toks) != word:
-        return False, None, False
+        return False, None, False, False
 
     if len(toks) == 1:
         t = toks[0]
         f = t.feature
         pos1, pos2 = f.pos1, f.pos2
         if pos1 not in CONTENT_POS:
-            return False, None, False
+            return False, None, False, False
         if pos1 == "名詞" and pos2 in EXCLUDED_NOUN_SUBPOS:
-            return False, None, False
+            return False, None, False, False
         if pos1 in {"動詞", "形容詞", "形状詞"}:
             # 活用断片（斬ら / 美しく / 走っ）を落とす: 書字形基本形と表層形が一致すること
             base = f.orthBase
             if not base or base != t.surface:
-                return False, None, False
+                return False, None, False, False
         pos = f"{pos1}-{pos2}" if pos2 and pos2 != "*" else pos1
         common = pos1 == "名詞" and pos2 == "普通名詞"
-        return True, pos, common
+        return True, pos, common, is_concrete(word, toks)
 
     has_noun = False
     for t in toks:
         f = t.feature
         if f.pos1 not in COMPOUND_POS:
-            return False, None, False
+            return False, None, False, False
         if f.pos1 == "名詞":
             if f.pos2 in EXCLUDED_NOUN_SUBPOS:
-                return False, None, False
+                return False, None, False, False
             has_noun = True
     if not has_noun:
-        return False, None, False
+        return False, None, False, False
     last = toks[-1].feature
     if last.pos1 == "接頭辞":
-        return False, None, False
+        return False, None, False, False
     if last.pos1 == "接尾辞" and last.pos2 != "名詞的":
-        return False, None, False
+        return False, None, False, False
     common = all(
         t.feature.pos1 != "名詞" or t.feature.pos2 == "普通名詞" for t in toks
     )
-    return True, "名詞-複合", common
+    return True, "名詞-複合", common, is_concrete(word, toks)
 
 
 def main() -> None:
@@ -183,35 +205,42 @@ def main() -> None:
     # ── 出力語彙の判定 ──
     is_output: list[bool] = []
     is_common: list[bool] = []
+    is_conc: list[bool] = []
     poses: list[str | None] = []
     t1 = time.time()
     for w, rank in zip(words, ranks, strict=True):
         if rank > OUTPUT_MAX_FREQ_RANK:
             is_output.append(False)
             is_common.append(False)
+            is_conc.append(False)
             poses.append(None)
             stats["drop_out_freq"] += 1
             continue
         if len(w) < 2:
             is_output.append(False)
             is_common.append(False)
+            is_conc.append(False)
             poses.append(None)
             stats["drop_out_short"] += 1
             continue
         if has_digit(w):
             is_output.append(False)
             is_common.append(False)
+            is_conc.append(False)
             poses.append(None)
             stats["drop_out_digit"] += 1
             continue
-        ok, pos, common = classify_output(w, tagger)
+        ok, pos, common, conc = classify_output(w, tagger)
         is_output.append(ok)
         is_common.append(common)
+        is_conc.append(ok and conc)
         poses.append(pos)
         if ok:
             stats["is_output"] += 1
             if common:
                 stats["is_common_noun"] += 1
+            if conc:
+                stats["is_concrete"] += 1
         else:
             stats["drop_out_pos"] += 1
 
@@ -226,6 +255,7 @@ def main() -> None:
             "is_input": pa.array([True] * len(words), pa.bool_()),
             "is_output": pa.array(is_output, pa.bool_()),
             "is_common_noun": pa.array(is_common, pa.bool_()),
+            "is_concrete": pa.array(is_conc, pa.bool_()),
             "pos": pa.array(poses, pa.string()),
         }
     )

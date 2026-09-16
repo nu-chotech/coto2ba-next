@@ -46,6 +46,16 @@ export const CLEAR_RANK = 10
 export const MAX_MOVES = 20
 /** result === goal（rank 0）は完全錬成。 */
 export const PERFECT_RANK = 0
+/**
+ * ゴールに近すぎる語は混ぜる語として使えない（ゴールから見た近傍 N 語）。
+ *
+ * SPEC §5.3-4 はゴール語そのものしか禁止していないが、それだと
+ * 「温泉」に対して「温泉旅館」を打つだけで 1 手クリアできてしまい、
+ * デイリーのランキング（手数順）が成立しない。近傍 N 語だけを塞ぐことで
+ * 通常のプレイには影響を与えずに最短手の抜け道を消す。
+ * 0 にすると無効化される。詳細は docs/QUESTIONS.md。
+ */
+export const GOAL_NEIGHBOR_BAN = 12
 
 // ── ヒント ──────────────────────────────────────────────────
 export const HINT_COUNT = 6
