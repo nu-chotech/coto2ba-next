@@ -2,8 +2,14 @@
  * 結果画面（SPEC §8.4）。
  *
  * goal / start / 手数 / ヒント数 / tier のマスで表した経路 / 完全錬成の特別表示 /
- * 解除した実績。ボタンはシェア（**このステージではテキストのみ**。画像は次の担当者）、
- * 図鑑で見る（未実装なので無効）、ブースモード時は「次の人へ」。
+ * 解除した実績。ボタンはシェア（`features/share` の画像シェア。captureRef →
+ * Skia → テキストの 3 段で落ちる）、図鑑で見る（未実装なので無効）、
+ * ブースモード時は「次の人へ」。
+ *
+ * シェアの撮影対象 `ShareCardHost` は **この画面の中にマウントしておくこと**
+ * （`position:absolute` で画面の外に追いやるのでレイアウトには出ない。
+ * `opacity: 0` は使わない ── ARCHITECTURE §5 の通り描画されなくなる）。
+ * アンマウントされていると撮れない。
  *
  * 解除した実績はゲーム画面から `?unlocked=id1,id2` で渡ってくる。
  * 直接開いた（リロードした）ときは空でよい。
@@ -12,7 +18,7 @@
 import { DIFFICULTY_LABELS_JA, MAX_MOVES } from '@coto2ba/contracts'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
-import { ScrollView, Share, StyleSheet, Text, View } from 'react-native'
+import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   ErrorState,
@@ -22,7 +28,6 @@ import {
   PrimaryButton,
   SkeletonCard,
   TierBackground,
-  toMessageJa,
 } from '../../../../components'
 import {
   achievementDescription,
@@ -30,10 +35,10 @@ import {
   currentTier,
   LOBBY_HREF,
   parseAchievementIds,
-  shareText,
   tierPath,
   useGameQuery,
 } from '../../../../features/game'
+import { ShareCardHost, useShareResult } from '../../../../features/share'
 import { resetSession } from '../../../../lib/auth'
 import { queryClient } from '../../../../lib/queryClient'
 import { useSettingsStore } from '../../../../store/settings'
@@ -47,7 +52,6 @@ export default function ResultScreen() {
 
   const game = useGameQuery(gameId)
   const boothMode = useSettingsStore((s) => s.boothMode)
-  const [shareError, setShareError] = useState<string | null>(null)
   const [handingOver, setHandingOver] = useState(false)
 
   const achievements = useMemo(() => parseAchievementIds(unlocked), [unlocked])
@@ -56,13 +60,8 @@ export default function ResultScreen() {
   const tier = detail === null ? 'mono' : currentTier(detail)
   const colors = paletteForTier(tier)
 
-  const onShare = useCallback(() => {
-    if (detail === null) return
-    setShareError(null)
-    void Share.share({ message: shareText(detail) }).catch((error: unknown) => {
-      setShareError(toMessageJa(error))
-    })
-  }, [detail])
+  // 画像 + テキストのシェア（SPEC §8.4）。`hostRef` の先は下でマウントする。
+  const { hostRef, share, isSharing, error: shareError } = useShareResult(detail)
 
   /** ブースモード：新しい匿名ユーザーに差し替えてロビーへ戻る（SPEC §8.8）。 */
   const onNextPlayer = useCallback(() => {
@@ -163,7 +162,16 @@ export default function ResultScreen() {
         ) : null}
 
         <View style={styles.actions}>
-          <PrimaryButton title="シェア" onPress={onShare} tier={tier} />
+          <PrimaryButton title="シェア" onPress={share} tier={tier} loading={isSharing} />
+          {/* 失敗の理由はトーストではなくボタンの下に 1 行で。 */}
+          {shareError !== null ? (
+            <Text
+              style={[typography.label, styles.shareError, { color: colors.sub }]}
+              numberOfLines={1}
+            >
+              シェアできませんでした（{shareError}）
+            </Text>
+          ) : null}
           <PrimaryButton
             title="図鑑で見る（準備中）"
             onPress={() => undefined}
@@ -188,13 +196,10 @@ export default function ResultScreen() {
             />
           )}
         </View>
-
-        {shareError !== null ? (
-          <Text style={[typography.caption, styles.headline, { color: colors.sub }]}>
-            {shareError}
-          </Text>
-        ) : null}
       </ScrollView>
+
+      {/* 画面外に置く撮影用のカード。見えないがマウントは必須（ScrollView の外に置く）。 */}
+      <ShareCardHost hostRef={hostRef} game={detail} />
     </TierBackground>
   )
 }
@@ -216,5 +221,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   achievement: { gap: spacing.xs, paddingVertical: spacing.xs },
+  shareError: { textAlign: 'center' },
   actions: { gap: spacing.md, marginTop: 'auto' },
 })

@@ -19,6 +19,10 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
+# サーバーが正しく拒否した応答（障害ではない）。
+# 409 GAME_FINISHED / 422 は禁止入力（TOO_CLOSE_TO_GOAL・SAME_AS_CURRENT・GOAL_INPUT）。
+EXPECTED_GAME_STATUSES = (409, 422)
+
 MIX_WORDS = [
     "光", "海", "夜", "星", "船", "岩", "港", "火", "風", "山",
     "川", "空", "土", "石", "森", "鳥", "花", "雪", "雲", "月",
@@ -83,7 +87,10 @@ class VirtualUser:
         # ゲームが終わったら新しいゲームを作る（計測には含めない）
         if st == 200 and body.get("status") != "playing":
             self.new_game()
-        elif st == 409:
+        elif st in EXPECTED_GAME_STATUSES:
+            # 409 = 終了済みのゲームに打った / 422 = 禁止入力（ゴール近傍・現在語と同じ）。
+            # どちらもサーバーの**正しい応答**であって障害ではない。
+            # 負荷試験は同じゲームに並行して打つので構造的に起きる。
             self.new_game()
         return st, ms
 
@@ -144,7 +151,14 @@ def main() -> int:
     print("\n=== 結果 ===")
     print(f"  投入        {n}")
     for st in sorted(statuses):
-        label = "成功" if st == 200 else ("レート制限" if st == 429 else "エラー")
+        if st == 200:
+            label = "成功"
+        elif st == 429:
+            label = "レート制限"
+        elif st in EXPECTED_GAME_STATUSES:
+            label = "正しい拒否（障害ではない）"
+        else:
+            label = "エラー"
         print(f"  status {st or 'conn-fail':<9} {statuses[st]:>5}  ({label})")
 
     if not latencies:
@@ -161,7 +175,9 @@ def main() -> int:
     print(f"  p99      {pct(0.99):>7.0f}ms")
     print(f"  最大     {latencies[-1]:>7.0f}ms")
 
-    errors = sum(c for st, c in statuses.items() if st not in (200, 429))
+    errors = sum(
+        c for st, c in statuses.items() if st not in (200, 429, *EXPECTED_GAME_STATUSES)
+    )
     ok = True
     if pct(0.95) > args.p95:
         print(f"\n❌ p95 が {args.p95:.0f}ms を超えている")

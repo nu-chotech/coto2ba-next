@@ -12,6 +12,13 @@ export const QR_QUIET_ZONE_MODULES = 4
 export const QR_MAX_SIZE = 260
 /** 引き継ぎ QR の誤り訂正レベル。ブースの照明でも読めるよう少し強めにする。 */
 export const QR_EC_LEVEL = 'Q' as const
+/**
+ * 上の強さでは収まらないときに落とす誤り訂正レベル。
+ * `qr.ts` はバージョン 1〜10 までなので、EAS Update のディープリンク
+ * （`exp://u.expo.dev/<projectId>?channel-name=…&runtime-version=…&transfer=…` ＝ 150 字前後）は
+ * Q だと容量を超える。**QR が消えるより、少し弱い QR が出る方がよい。**
+ */
+export const QR_EC_FALLBACK_LEVEL = 'M' as const
 
 /** トークン文字列を読み上げやすく区切る長さ。 */
 export const TOKEN_CHUNK_SIZE = 4

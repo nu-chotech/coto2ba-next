@@ -4,8 +4,13 @@
  * - 表示名の変更（contracts の `DISPLAY_NAME_MIN/MAX_LENGTH`）
  * - ブースモード（サーバーの `users.booth` が権威。PATCH してから store に反映）
  * - 引き継ぎ QR（`POST /api/transfer` → QR + トークン文字列 + コピー）
+ *   QR に入れるのは **Expo Go が開く `exp://` のディープリンク**（SPEC §7.4）。
+ *   サーバーが返す `url` が `exp://`（EAS Update リンク）ならそれを、
+ *   そうでなければ（ローカル開発）`Linking.createURL()` で作ったこのアプリのリンクを使う。
+ *   カメラが読めない場合の保険として、**QR とコード文字列は必ず両方出す**
  * - 引き継ぎの受け取り（`POST /api/transfer/claim`）。コードの貼り付けと、
- *   `?transfer=` 付きのディープリンクで開かれたときの自動入力
+ *   `?transfer=` 付きで開かれたときの自動入力。自動の引き継ぎ自体は
+ *   ルートの `TransferDeepLinkGate`（どの画面に着地しても効く）が行う
  * - サウンド / ハプティクス（端末ローカルの好み）
  * - クレジット
  *
@@ -50,11 +55,15 @@ import {
   checkDisplayName,
   checkTransferToken,
   chunkToken,
+  encodeQr,
+  QR_EC_FALLBACK_LEVEL,
   QR_EC_LEVEL,
   QR_MAX_SIZE,
   QrCode,
+  type QrEcLevel,
   SETTINGS_ROW_MIN_HEIGHT,
   TOKEN_CHUNK_SIZE,
+  transferDeepLinkState,
   transferTokenFromUrl,
   useClaimTransferMutation,
   useCreateTransferMutation,
@@ -72,6 +81,13 @@ import {
   spacing,
   typography,
 } from '../../../theme'
+
+/**
+ * サーバーが返す引き継ぎ URL が「Expo Go が開くディープリンク」かどうかの判定。
+ * `exp://` でなければランディング（ブラウザで開くだけ）へのフォールバックなので、
+ * QR には入れずに、いま動いているこのアプリを指すリンクを作り直す。
+ */
+const EXPO_GO_URL_PREFIX = 'exp://'
 
 /** 設定は演出帯を持たない。 */
 const SETTINGS_TIER = 'mono'
@@ -154,6 +170,10 @@ export default function SettingsScreen() {
     if (incomingUrl === null) return
     const token = transferTokenFromUrl(incomingUrl)
     if (token === null) return
+    // ルートの TransferDeepLinkGate が同じ URL を見て自動で引き継ぐ。
+    // 送信中・成功済みのトークンをここに入れ直すと二重送信になり必ず失敗するので触らない。
+    const state = transferDeepLinkState(token)
+    if (state === 'pending' || state === 'done') return
     draftToken.current = token
     setPrefillToken(token)
     setClaimError(null)
@@ -248,6 +268,31 @@ export default function SettingsScreen() {
   const transferData = transfer.data ?? null
   const expiresLabel = useMemo(() => formatExpiry(transferData?.expires_at ?? null), [transferData])
 
+  /**
+   * QR に入れる文字列（SPEC §7.4）。**https のランディングは入れない**
+   * （iPhone のカメラで読むと Safari が開くだけでアプリに戻らない）。
+   *
+   * - 本番: サーバーが返す `exp://u.expo.dev/…?transfer=`（EAS Update を Expo Go で開く）
+   * - ローカル API に向けているとき: サーバーの URL は公開済みの update を指してしまうので、
+   *   いま動いているこの開発ビルドを指す `Linking.createURL()` に落とす
+   * - サーバーが `exp://` を返せない設定のとき（ランディングへのフォールバック）も同じ
+   */
+  const qrValue = useMemo(() => {
+    if (transferData === null) return null
+    if (!isDevApiUrl() && transferData.url.startsWith(EXPO_GO_URL_PREFIX)) return transferData.url
+    return Linking.createURL('/', { queryParams: { transfer: transferData.token } })
+  }, [transferData])
+
+  /**
+   * EAS Update のリンクは 150 字前後あり、`qr.ts`（バージョン 1〜10）では
+   * 誤り訂正 Q に収まらないことがある。収まらないなら M に落とす
+   * （`QrCode` は入らないと何も描かないので、**落とさないと QR が消える**）。
+   */
+  const qrEcLevel = useMemo<QrEcLevel>(() => {
+    if (qrValue === null) return QR_EC_LEVEL
+    return encodeQr(qrValue, QR_EC_LEVEL) === null ? QR_EC_FALLBACK_LEVEL : QR_EC_LEVEL
+  }, [qrValue])
+
   return (
     <TierBackground tier={SETTINGS_TIER}>
       <ScrollView
@@ -331,9 +376,9 @@ export default function SettingsScreen() {
         <GlassCard tint={colors.glassTint} style={styles.card}>
           <Text style={[typography.label, { color: colors.sub }]}>別の端末に引き継ぐ</Text>
           <Text style={[typography.caption, { color: colors.sub }]}>
-            引き継ぎコードは {TRANSFER_TOKEN_TTL_MINUTES} 分で切れます。 新しい端末の
-            「別の端末から引き継ぐ」にこのコードを入力してください（QR
-            にも同じコードが入っています）。
+            引き継ぎコードは {TRANSFER_TOKEN_TTL_MINUTES} 分で切れます。QR
+            を新しい端末のカメラで読むと Expo Go でコトコトバが開き、そのまま引き継ぎます。
+            読み取れないときは、新しい端末の「別の端末から引き継ぐ」に下のコードを入力してください。
           </Text>
 
           {transfer.isError ? (
@@ -347,14 +392,21 @@ export default function SettingsScreen() {
 
           {transferData !== null ? (
             <View style={styles.transfer}>
-              <QrCode value={transferData.url} size={qrSize} ecLevel={QR_EC_LEVEL} />
+              {qrValue !== null ? (
+                <QrCode value={qrValue} size={qrSize} ecLevel={qrEcLevel} />
+              ) : null}
+              {/* カメラが読めないときの保険。QR とコード文字列は必ず両方出す。 */}
               <Text style={[typography.mono, styles.token, { color: colors.text }]} selectable>
                 {chunkToken(transferData.token, TOKEN_CHUNK_SIZE)}
               </Text>
               <Text style={[typography.label, { color: colors.sub }]}>{expiresLabel}</Text>
               <View style={styles.copyRow}>
                 <CopyButton label="コードをコピー" onPress={() => onCopy(transferData.token)} />
-                <CopyButton label="URL をコピー" onPress={() => onCopy(transferData.url)} />
+                {/* コピーするのは QR と同じリンク（貼り付け先で開いてもアプリに入る）。 */}
+                <CopyButton
+                  label="リンクをコピー"
+                  onPress={() => onCopy(qrValue ?? transferData.url)}
+                />
               </View>
               <Text style={[typography.label, { color: colors.sub }]}>
                 {copied ? 'コピーしました' : ' '}

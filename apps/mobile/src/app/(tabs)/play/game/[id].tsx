@@ -30,6 +30,7 @@ import {
   GlassCard,
   HintSheet,
   HistoryStrip,
+  INPUT_OOV_MESSAGE,
   INPUT_SANITY_MAX_LENGTH,
   MixOverlay,
   MixSlider,
@@ -114,7 +115,7 @@ export default function GameScreen() {
     }
     if (isVocabReady() && !isKnownWord(word)) {
       feedback('error_oov')
-      setInputError('その語は辞書にありません')
+      setInputError(INPUT_OOV_MESSAGE)
       return
     }
 

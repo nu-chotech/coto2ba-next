@@ -10,18 +10,32 @@
  * 内部で `defaultValue` を差し替えて **remount** する（`setNativeProps` は使わない）。
  * これが Fabric でいちばん壊れない。
  *
- * **辞書外（OOV）の赤い警告は、入力中には出さない。**
+ * **辞書外（OOV）の赤い警告は、打鍵のたびに出さない。**
  * IME の変換途中（「ぎ」「ぎん」「ぎんが」…）は当然どれも辞書外なので、
  * 1 打ごとに判定すると枠が赤いまま・注意文が点滅し続ける（ARCHITECTURE §5:
- * composition 中の値は確定値ではない）。警告は **送信を試みたあと** だけ、
- * 親から `errorMessage` で降ってくる（ローカルの OOV 判定も親の startMix に集約）。
- * 注意文の行は常に高さを確保して、出入りでレイアウトをずらさない。
+ * composition 中の値は確定値ではない）。そこで
+ *
+ * 1. 入力が **止まって `INPUT_OOV_DEBOUNCE_MS` 経ってから** 判定する
+ * 2. **ひらがなだけの入力中は判定しない**（変換前の読みなので辞書に無くて当然）
+ * 3. 注意文の行は常に高さを確保して、出入りで下の UI をずらさない
+ *
+ * 送信ボタンを押した瞬間の判定はデバウンスを待たない。親（ゲーム画面）の
+ * `startMix` が同期で判定して `errorMessage` に降ろす。親から来た文言は
+ * 内部のデバウンス警告より優先して出す。
  *
  * 前方一致の候補チップは入力中もライブで出す（変換前のかなでも役に立つ）。
  */
 
 import { normalizeWord, SUGGEST_LIMIT, type TierId } from '@coto2ba/contracts'
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   Pressable,
   ScrollView,
@@ -32,9 +46,18 @@ import {
   View,
   type ViewStyle,
 } from 'react-native'
-import { suggest } from '../lib/vocab'
+import { isAllHiragana } from '../lib/text'
+import { isKnownWord, isVocabReady, suggest } from '../lib/vocab'
 import { layout, palette, paletteForTier, radius, spacing, typography } from '../theme'
-import { INPUT_ERROR_ROW_HEIGHT, SUGGEST_CHIP_HEIGHT } from './constants'
+import {
+  INPUT_ERROR_ROW_HEIGHT,
+  INPUT_OOV_DEBOUNCE_MS,
+  INPUT_SANITY_MAX_LENGTH,
+  SUGGEST_CHIP_HEIGHT,
+} from './constants'
+
+/** 辞書に無い語の文言。親（送信時の判定）と必ず同じものを使う。 */
+export const INPUT_OOV_MESSAGE = 'その語は辞書にありません'
 
 export type WordInputHandle = {
   /** 最新の入力（正規化前の生文字列）。 */
@@ -56,7 +79,8 @@ export type WordInputProps = {
   /**
    * 赤い注意文。**送信を試みたあとの結果だけ**を渡すこと
    * （親の `inputError`: 空入力・長すぎ・ローカル OOV・サーバーのエラー）。
-   * 入力中の値から毎打計算した値を渡してはいけない。
+   * 入力中の値から毎打計算した値を渡してはいけない
+   * （入力中の OOV はこの中でデバウンスして出す）。
    */
   errorMessage?: string | null
   style?: StyleProp<ViewStyle>
@@ -83,15 +107,46 @@ export const WordInput = forwardRef<WordInputHandle, WordInputProps>(function Wo
   const [epoch, setEpoch] = useState(0)
   // 候補チップだけは再描画したいので state に持つ（本文は ref）。
   const [text, setText] = useState('')
+  // 入力が止まってから出す辞書外の警告。打鍵のたびに一度消える。
+  const [oovWarning, setOovWarning] = useState<string | null>(null)
+  const oovTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const cancelOovCheck = useCallback(() => {
+    if (oovTimer.current !== null) {
+      clearTimeout(oovTimer.current)
+      oovTimer.current = null
+    }
+  }, [])
 
   const apply = useCallback(
     (next: string) => {
       latest.current = next
       setText(next)
       onChangeWord?.(next)
+
+      // 打った瞬間はいったん消す（赤いまま打ち続ける状態を作らない）。
+      cancelOovCheck()
+      setOovWarning(null)
+
+      const word = normalizeWord(next)
+      // 空・長すぎ・語彙未ロードは送信時に親が見る。ここでは黙っておく。
+      if (word.length === 0 || word.length > INPUT_SANITY_MAX_LENGTH) return
+      if (!isVocabReady()) return
+      // 変換前の読み。辞書に無くて当たり前なので警告しない。
+      if (isAllHiragana(word)) return
+
+      oovTimer.current = setTimeout(() => {
+        oovTimer.current = null
+        // 発火までに入力が変わっていたら出さない（古い判定を残さない）。
+        if (normalizeWord(latest.current) !== word) return
+        if (!isKnownWord(word)) setOovWarning(INPUT_OOV_MESSAGE)
+      }, INPUT_OOV_DEBOUNCE_MS)
     },
-    [onChangeWord],
+    [onChangeWord, cancelOovCheck],
   )
+
+  // 画面を離れるときにタイマーを残さない。
+  useEffect(() => cancelOovCheck, [cancelOovCheck])
 
   useImperativeHandle(
     ref,
@@ -116,8 +171,10 @@ export const WordInput = forwardRef<WordInputHandle, WordInputProps>(function Wo
     () => (normalized.length === 0 ? [] : suggest(normalized, SUGGEST_LIMIT)),
     [normalized],
   )
-  // 入力中は判定しない。警告は送信を試みたあとに親から降ってくるものだけ。
-  const showError = errorMessage !== null && errorMessage.length > 0
+
+  // 親から降ってきた文言（送信の結果）が最優先。無ければデバウンスした警告。
+  const shownError = errorMessage !== null && errorMessage.length > 0 ? errorMessage : oovWarning
+  const showError = shownError !== null && shownError.length > 0
 
   const pick = useCallback(
     (word: string) => {
@@ -160,7 +217,7 @@ export const WordInput = forwardRef<WordInputHandle, WordInputProps>(function Wo
       <View style={styles.errorRow}>
         {showError ? (
           <Text style={[typography.label, { color: palette.negative }]} numberOfLines={1}>
-            {errorMessage}
+            {shownError}
           </Text>
         ) : null}
       </View>

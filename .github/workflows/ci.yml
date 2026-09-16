@@ -44,10 +44,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # setup-uv に working-directory という入力は無い（無視される）。
+      # pyproject-file で tools/pipeline の requires-python / uv 設定を読ませる。
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
         with:
-          working-directory: tools/pipeline
+          pyproject-file: tools/pipeline/pyproject.toml
           enable-cache: true
 
       - name: ruff check

@@ -38,8 +38,10 @@ Expo Go で直接開く `exp://` リンクを `href` に直書きした素の `<
 現在の値（実リンク・設定済み）:
 
 ```
-exp://u.expo.dev/73c7cda9-727c-4b83-ba2e-674c38b951ae?channel-name=production
+exp://u.expo.dev/73c7cda9-727c-4b83-ba2e-674c38b951ae?channel-name=production&runtime-version=exposdk:57.0.0
 ```
+
+（HTML 内では `&` を `&amp;` としてエスケープしてある。）
 
 `projectId` は `apps/mobile/app.json` の `extra.eas.projectId`（owner: `ut42tech-hobby`、
 EAS プロジェクト `@ut42tech-hobby/coto2ba-next`）。`apps/mobile/app.json` の
@@ -61,14 +63,21 @@ EAS プロジェクト `@ut42tech-hobby/coto2ba-next`）。`apps/mobile/app.json
    `runtimeVersion` は `runtimeVersion: { policy: "sdkVersion" }` から決まる値で、
    `expo@~57.0.23`（SDK 57）なら `exposdk:57.0.0`
    （`cd apps/mobile && eas config --platform ios --profile production` の `sdkVersion` で確認できる）。
-   ページには **`runtime-version` を付けない形**を置いている（Expo Go は自分の SDK バージョンを
-   自動で送るため、SDK を上げてもリンクを直さずに済む）。SDK 58 へ追従したあとに ② が開かなくなった
-   場合は、上のコマンドで生成した `runtime-version` 付きの URL に差し替えて切り分けること
-   （ARCHITECTURE §0 の SDK 58 期限リスク）。
+   ページにはこの `runtime-version` を付けた形を置いている。**SDK を上げたらこの値も更新すること**
+   （SDK 58 へ追従したあとに ② が開かなくなったら、まずここを疑う。ARCHITECTURE §0 の SDK 58 期限リスク）。
 
-2. 差し替えは `index.html` の ②「コトコトバを開く」の `<a class="btn btn-indigo" href="...">` の
-   `href` を書き換えるだけでよい（`index.html` 内で `exp://` を検索すれば 1 箇所しかない）。
-   JS の差し替え機構は無いので、追加の実装も不要。
+2. 差し替えは `index.html` の ②「コトコトバを開く」の
+   `<a id="open-in-expo-go" class="btn btn-indigo" href="...">` の `href` を書き換える
+   （同じ手順を `<a>` の直前の HTML コメントにも書いてある）。
+   `index.html` 内の `exp://` はもう 1 箇所、引き継ぎカード（`#transfer-open`）の
+   `href` にもあるが、**そちらは JS が常に `#open-in-expo-go` の href から組み立て直す**ので、
+   実際に使われるのは②の値だけ（引き継ぎカードの href は JS 無効時の体裁用）。
+   ②のリンク自体に JS による差し替え機構は持たせていない（JS が動かない環境でも
+   QR の着地点が機能するように、最初から実リンクを直書きする）。この方針は変えないこと。
+
+   なお `?transfer=<code>` 付きで開かれたときだけ表示される引き継ぎカード（SPEC §7.4）は、
+   JS で②のリンクに `&transfer=<code>` を足した `exp://` リンクを出す。カメラが
+   アプリの引き継ぎ QR（`exp://…`）ではなく https のこのページを開いてしまった人の受け皿。
 
 3. `production` チャンネルへの publish 前は、リンク自体は有効でもアプリはまだ配信されない。
    公開は `.github/workflows/eas-update.yml` の `workflow_dispatch`（手動実行）で行う

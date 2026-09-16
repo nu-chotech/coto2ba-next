@@ -2,7 +2,9 @@
   "name": "coto2ba-next",
   "private": true,
   "packageManager": "pnpm@11.18.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
@@ -16,10 +18,11 @@
     "pipeline:export": "uv --directory tools/pipeline run python scripts/03_export_pgvector.py",
     "pipeline:goal-pool": "uv --directory tools/pipeline run python scripts/04_goal_pool.py",
     "pipeline:daily": "uv --directory tools/pipeline run python scripts/05_daily_schedule.py",
-    "pipeline:umap": "uv --directory tools/pipeline run python scripts/06_umap_coords.py",
+    "pipeline:umap": "uv --directory tools/pipeline run --extra umap python scripts/06_umap_coords.py",
     "pipeline:descriptions": "uv --directory tools/pipeline run python scripts/07_descriptions.py",
     "pipeline:names": "uv --directory tools/pipeline run python scripts/09_name_parts.py",
-    "pipeline:lint": "uv --directory tools/pipeline run ruff check ."
+    "pipeline:lint": "uv --directory tools/pipeline run ruff check .",
+    "pipeline:assets": "uv --directory tools/pipeline run python scripts/10_mobile_assets.py"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

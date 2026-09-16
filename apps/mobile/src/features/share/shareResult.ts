@@ -10,7 +10,9 @@
  *    - 画面にマウントする必要がない。フォントは `matchFont` でシステムから引く。
  * 3. テキストだけ（`shareText()`）
  *
- * 画像ができたら `expo-sharing`、できなければ RN の `Share`。
+ * 画像ができたら共有シートへ。iOS は RN の `Share`（`message` + `url` を同時に渡せるので
+ * SPEC §8.4 の「画像 + テキスト」になる）、それ以外・失敗時は `expo-sharing`。
+ * `expo-sharing` も使えない環境では画像を諦めてテキストだけ共有する。
  */
 
 import type { GameDetail } from '@coto2ba/contracts'
@@ -18,7 +20,7 @@ import { drawAsImage, ImageFormat } from '@shopify/react-native-skia'
 import { Directory, File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import { createElement } from 'react'
-import { Share, type View } from 'react-native'
+import { Platform, Share, type View } from 'react-native'
 import { captureRef } from 'react-native-view-shot'
 import { shareText } from '../game'
 import {
@@ -89,30 +91,32 @@ async function shareTextOnly(game: GameDetail): Promise<ShareOutcome> {
 }
 
 /**
- * 結果をシェアする。
- *
- * `host` は `ShareCardHost` の ref（画面外に置いた RN カード）。null でも動く
- * （その場合は Skia から始まる）。
- *
- * **失敗したときだけ投げる**（3 段すべて落ちたとき）。呼び出し側は
- * `toMessageJa(error)` を出せばよい。
+ * 画像を共有できる経路があるか。無ければ撮影自体を省いてテキストに落とす
+ * （Skia の書き出しは重いので、渡す先が無いのに走らせない）。
  */
-export async function shareGameResult(game: GameDetail, host: View | null): Promise<ShareOutcome> {
-  const viewShotUri = await captureWithViewShot(host)
-  if (viewShotUri !== null && (await shareImage(viewShotUri))) {
-    return { method: 'view-shot', uri: viewShotUri }
+async function canShareImage(): Promise<boolean> {
+  // iOS の RN `Share` は file:// の `url` を受け取れるので常に経路がある。
+  if (Platform.OS === 'ios') return true
+  try {
+    return await Sharing.isAvailableAsync()
+  } catch {
+    return false
   }
-
-  const skiaUri = await captureWithSkia(game)
-  if (skiaUri !== null && (await shareImage(skiaUri))) {
-    return { method: 'skia', uri: skiaUri }
-  }
-
-  return await shareTextOnly(game)
 }
 
 /** シェアシートを開く。開けなければ false（次の手段へ）。 */
-async function shareImage(uri: string): Promise<boolean> {
+async function shareImage(uri: string, game: GameDetail): Promise<boolean> {
+  // 1. iOS は画像とテキストを一緒に渡せる。
+  if (Platform.OS === 'ios') {
+    try {
+      await Share.share({ message: shareText(game), url: uri })
+      return true
+    } catch {
+      // 落ちても expo-sharing がまだ残っている。
+    }
+  }
+
+  // 2. expo-sharing（画像のみ）。
   try {
     if (!(await Sharing.isAvailableAsync())) return false
     await Sharing.shareAsync(uri, {
@@ -124,4 +128,29 @@ async function shareImage(uri: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/**
+ * 結果をシェアする。
+ *
+ * `host` は `ShareCardHost` の ref（画面外に置いた RN カード）。null でも動く
+ * （その場合は Skia から始まる）。
+ *
+ * **失敗したときだけ投げる**（3 段すべて落ちたとき）。呼び出し側は
+ * `toMessageJa(error)` を出せばよい。
+ */
+export async function shareGameResult(game: GameDetail, host: View | null): Promise<ShareOutcome> {
+  if (await canShareImage()) {
+    const viewShotUri = await captureWithViewShot(host)
+    if (viewShotUri !== null && (await shareImage(viewShotUri, game))) {
+      return { method: 'view-shot', uri: viewShotUri }
+    }
+
+    const skiaUri = await captureWithSkia(game)
+    if (skiaUri !== null && (await shareImage(skiaUri, game))) {
+      return { method: 'skia', uri: skiaUri }
+    }
+  }
+
+  return await shareTextOnly(game)
 }

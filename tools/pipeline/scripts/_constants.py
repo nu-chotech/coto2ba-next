@@ -213,15 +213,8 @@ DESCRIPTIONS_BASE_BACKOFF_SEC = 1.0
 DESCRIPTIONS_MAX_BACKOFF_SEC = 30.0
 
 # ── 10_mobile_assets ─────────────────────────────────────────
-# ゴースト点の座標が未計算（06 未実行）のときの疑似乱数フォールバック。
-# シードは日付ベース（04_goal_pool の SHUFFLE_SEED と同じ流儀）。
-GHOST_FALLBACK_SEED = 20260917
-# フィボナッチ球の半径のゆらぎの下限（apps/mobile/src/features/collection/ghost.ts の
-# generateFallbackGhosts と同じ値。中身は空点でなく実語を置く点が違う）。
-GHOST_FALLBACK_RADIUS_MIN = 0.45
-# JSON の座標精度（桁を絞ってファイルサイズを抑える）。
+# ghost.json の座標精度（桁を絞ってファイルサイズを抑える）。
 GHOST_POS3_DECIMALS = 4
-# フォールバック時に載せる語。**空文字にする**（ghost.ts の generateFallbackGhosts と
-# 同じ意味にするため）。実語 + 偽座標を書くと parseGhostJson が通してしまい、
-# hasRealGhosts() が true になって「まだ出会っていない 2,000 語」と偽表示される。
-GHOST_FALLBACK_WORD = ""
+# 疑似乱数フォールバックの定数は置かない。座標が未計算のとき、パイプラインは
+# 偽の座標を **書かない**（`{"generated": false}` を書く）。疑似乱数の球は端末側の
+# apps/mobile/src/features/collection/ghost.ts の generateFallbackGhosts が持つ。

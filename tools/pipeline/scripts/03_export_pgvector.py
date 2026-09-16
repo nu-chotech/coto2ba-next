@@ -3,7 +3,7 @@
 - ベクトルは **単位長に正規化**してから入れる（`1 - (w2v <=> goal)` がそのまま cos）。
 - psycopg3 の **binary COPY**（テキストリテラルだと 438MB、binary なら 78MB）。
 - 冪等: 一時テーブルへ COPY → `INSERT ... ON CONFLICT (word) DO UPDATE`。
-- **今回の parquet に無い語は `is_input = is_output = false` に落とす**（`--limit` 無しのときだけ）。
+- **今回の parquet に無い語は `is_input = is_output = is_concrete = false` に落とす**（`--limit` 無しのときだけ）。
   ng_words.txt に追記して `pnpm pipeline:prune && pnpm pipeline:export` を流したとき、
   新たに NG になった語が DB に残って混合結果・ヒント・rank 母集団に出続けるのを防ぐ
   （SPEC §4.2）。goal_pool / daily_challenges / word_encounters から FK で参照されて
@@ -93,9 +93,12 @@ SQL_CREATE_FREQ = (
 SQL_INDEX_LOAD = f"CREATE INDEX ON {LOAD_TABLE} (word)"
 SQL_ANALYZE_LOAD = f"ANALYZE {LOAD_TABLE}"
 # 1 パスで無効化し、落とした語をそのまま返す（サンプル用に 2 回走査しない）。
+# `is_concrete` も一緒に落とす。goal_pool の抽選は parquet 側の値を見るが、
+# DB の `is_concrete` が true のまま残ると「NG になったのに具体名詞として有効」という
+# 食い違った行が残る。
 SQL_DEACTIVATE_MISSING = f"""
-UPDATE vocab SET is_input = false, is_output = false
-WHERE (is_input OR is_output)
+UPDATE vocab SET is_input = false, is_output = false, is_concrete = false
+WHERE (is_input OR is_output OR is_concrete)
   AND NOT EXISTS (SELECT 1 FROM {LOAD_TABLE} l WHERE l.word = vocab.word)
 RETURNING word
 """
@@ -241,7 +244,7 @@ def main() -> None:
             deactivated = len(missing)
             if deactivated:
                 print(
-                    f"parquet に無い {deactivated} 語を is_input/is_output = false に"
+                    f"parquet に無い {deactivated} 語を is_input/is_output/is_concrete = false に"
                     f"落としました（行は残す。FK があるため / {time.time() - t_off:.1f}s）: "
                     f"{missing[:SAMPLE_LIMIT]}",
                     file=sys.stderr,

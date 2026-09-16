@@ -31,12 +31,15 @@ export type UseShareResult = {
 
 export function useShareResult(game: GameDetail | null): UseShareResult {
   const hostRef = useRef<View | null>(null)
+  // 二度押しの本当のガードはこちら。state は同じフレームの 2 回目にはまだ反映されない。
+  const busyRef = useRef(false)
   const [isSharing, setSharing] = useState(false)
   const [method, setMethod] = useState<ShareMethod | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const share = useCallback(() => {
-    if (game === null || isSharing) return
+    if (game === null || busyRef.current) return
+    busyRef.current = true
     setSharing(true)
     setError(null)
     void shareGameResult(game, hostRef.current)
@@ -48,9 +51,10 @@ export function useShareResult(game: GameDetail | null): UseShareResult {
         setError(toMessageJa(cause))
       })
       .finally(() => {
+        busyRef.current = false
         setSharing(false)
       })
-  }, [game, isSharing])
+  }, [game])
 
   return { hostRef, share, isSharing, method, error }
 }

@@ -50,6 +50,9 @@ import {
   SPACE_PATH_HIGHLIGHT_WIDTH,
   SPACE_PATH_WIDTH,
   SPACE_RING_WIDTH,
+  SPACE_TAP_MAX_DISTANCE,
+  SPACE_TAP_MAX_DURATION_MS,
+  SPACE_TAP_SETTLE_MS,
   SPACE_WORLD_SCALE,
 } from './constants'
 import { DEPTH_BUCKETS, nearestIndex, orderByDepth, projectAll, projectOne } from './projection'
@@ -291,24 +294,46 @@ export function SpaceCanvas({
   const goalRing = useRing(goal, xyz, sizePt, camera, viewWidth, viewHeight, SPACE_GOAL_RING_SCALE)
 
   // ── タップ ────────────────────────────────────────────────
+  /**
+   * 「宇宙を回す」が主操作。シートが開くのは、止まっている宇宙を
+   * ちょんと突いたときだけにする。誤爆を 3 段で止める。
+   *
+   * 1. `maxDistance` / `maxDuration`: RNGH の既定は距離が **無制限**
+   *    （iOS 実装は `_maxDistSq = NAN`）で、500ms 未満のフリックでも END になる。
+   * 2. `Gesture.Exclusive(pan+pinch, tap)`: パンが活性化したらタップは起きない。
+   *    ぐるっと回して出発点の近くで離す（＝移動距離の判定をすり抜ける）操作も潰せる。
+   * 3. 慣性で流れている最中に触ったときは、そのタップは「止める」操作として捨てる
+   *    （`camera.lastMovedAt` を触った瞬間に見る）。
+   */
+  const tapIgnored = useSharedValue(0)
   const tap = useMemo(
     () =>
-      Gesture.Tap().onEnd((event) => {
-        'worklet'
-        const hit = nearestIndex(
-          transformScratch.screen.value,
-          transformScratch.sizeMul.value,
-          interactiveCount.value,
-          event.x,
-          event.y,
-          SPACE_TAP_RADIUS,
-        )
-        runOnJS(onHit)(hit)
-      }),
-    [transformScratch, interactiveCount, onHit],
+      Gesture.Tap()
+        .maxDistance(SPACE_TAP_MAX_DISTANCE)
+        .maxDuration(SPACE_TAP_MAX_DURATION_MS)
+        .onBegin(() => {
+          'worklet'
+          // 触った瞬間に判定する。パンの onBegin が慣性を打ち切るより先でも後でも、
+          // 「最後に動いた時刻」は変わらないので順序に依らない。
+          tapIgnored.value = Date.now() - camera.lastMovedAt.value < SPACE_TAP_SETTLE_MS ? 1 : 0
+        })
+        .onEnd((event) => {
+          'worklet'
+          if (tapIgnored.value === 1) return
+          const hit = nearestIndex(
+            transformScratch.screen.value,
+            transformScratch.sizeMul.value,
+            interactiveCount.value,
+            event.x,
+            event.y,
+            SPACE_TAP_RADIUS,
+          )
+          runOnJS(onHit)(hit)
+        }),
+    [transformScratch, interactiveCount, onHit, camera, tapIgnored],
   )
 
-  const composed = useMemo(() => Gesture.Simultaneous(gesture, tap), [gesture, tap])
+  const composed = useMemo(() => Gesture.Exclusive(gesture, tap), [gesture, tap])
 
   const onLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout

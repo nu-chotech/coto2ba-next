@@ -15,6 +15,7 @@ import { Gesture } from 'react-native-gesture-handler'
 import {
   clamp,
   type SharedValue,
+  useAnimatedReaction,
   useSharedValue,
   withDecay,
   withSpring,
@@ -40,6 +41,13 @@ export type SpaceCamera = {
   distance: SharedValue<number>
   /** 触っている間だけ 1。ラベルの薄さなどに使う。 */
   interacting: SharedValue<number>
+  /**
+   * カメラが最後に動いた時刻（UI スレッドの `Date.now()`）。
+   * 指を離したあとも慣性（`withDecay`）やバネで動き続けるので、
+   * 「まだ流れているか」はこれを見て判断する。
+   * タップで語を開くかどうかの判定に使う（SpaceCanvas）。
+   */
+  lastMovedAt: SharedValue<number>
 }
 
 const TWO_PI = Math.PI * 2
@@ -65,6 +73,16 @@ export function useSpaceCamera(): UseSpaceCameraResult {
   const distance = useSharedValue(SPACE_DISTANCE_DEFAULT)
   const interacting = useSharedValue(0)
   const distanceStart = useSharedValue(SPACE_DISTANCE_DEFAULT)
+  const lastMovedAt = useSharedValue(0)
+
+  // カメラが動いたフレームだけ時刻を刻む。3 値の和で見る（同時に打ち消し合って
+  // 和が変わらないことは実質起きない）。UI スレッド内で完結するので安い。
+  useAnimatedReaction(
+    () => yaw.value + pitch.value + distance.value,
+    (current, previous) => {
+      if (previous !== null && current !== previous) lastMovedAt.value = Date.now()
+    },
+  )
 
   const gesture = useMemo(() => {
     const pan = Gesture.Pan()
@@ -156,5 +174,5 @@ export function useSpaceCamera(): UseSpaceCameraResult {
     [yaw, pitch, distance],
   )
 
-  return { camera: { yaw, pitch, distance, interacting }, gesture, reset, focusOn }
+  return { camera: { yaw, pitch, distance, interacting, lastMovedAt }, gesture, reset, focusOn }
 }

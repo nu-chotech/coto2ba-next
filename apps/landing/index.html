@@ -233,6 +233,46 @@
     color: var(--ink-mute);
   }
 
+  /* 引き継ぎの受け皿（?transfer= が付いて開かれたときだけ JS が表示する）。 */
+  .transfer-card {
+    background: linear-gradient(180deg, var(--panel), var(--bg-2));
+    border: 1px solid var(--gold);
+    border-radius: var(--radius);
+    padding: clamp(18px, 4vw, 26px);
+    margin: 0 0 20px;
+  }
+
+  .transfer-card h2 {
+    margin: 0 0 0.35em;
+    font-size: clamp(1.08rem, 3vw, 1.28rem);
+    font-weight: 700;
+  }
+
+  .transfer-card p {
+    margin: 0 0 1em;
+    color: var(--ink-dim);
+    font-size: 0.95rem;
+  }
+
+  .transfer-code {
+    margin: 0.8em 0 0;
+    text-align: center;
+  }
+
+  .transfer-code code {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: clamp(0.92rem, 3.6vw, 1.15rem);
+    letter-spacing: 0.14em;
+    word-break: break-all;
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 0.6em 0.9em;
+    user-select: all;
+  }
+
   footer {
     max-width: 640px;
     margin: 0 auto;
@@ -282,6 +322,38 @@
     </header>
 
     <main>
+      <!--
+        引き継ぎの受け皿（SPEC §7.4）。アプリの引き継ぎ QR は `exp://…?transfer=<code>` を
+        符号化しているが、カメラが https を優先して開いてしまった人と、サーバーが Expo の
+        リンクを組み立てられない設定のときのフォールバック（`https://…/?transfer=<code>`）が
+        ここに来る。`?transfer=` が付いていたら、②と同じ exp:// リンクに transfer を足した
+        ボタンを出す。JS が無効なら隠れたままだが、コードは URL にそのまま見えているので
+        アプリの「別の端末から引き継ぐ」に手入力すれば引き継げる。
+        ②のリンク（`#open-in-expo-go` の href）を唯一の正として組み立てるので、
+        projectId / channel / runtime-version の差し替えは②の href だけでよい。
+      -->
+      <section id="transfer" class="transfer-card" hidden>
+        <h2>引き継ぎコードを受け取りました</h2>
+        <p>
+          Expo Go でコトコトバを開くと、この端末に前の端末のデータ（図鑑・実績・記録）を
+          引き継ぎます。コードには有効期限があるので、切れていたら前の端末で作り直してください。
+        </p>
+        <!--
+          href は下の②と同じリンク（transfer 無し）。このカードは JS が
+          `&transfer=<code>` を足してから表示するので、この値がそのまま使われることはない。
+        -->
+        <a
+          class="btn btn-gold"
+          id="transfer-open"
+          href="exp://u.expo.dev/73c7cda9-727c-4b83-ba2e-674c38b951ae?channel-name=production&amp;runtime-version=exposdk:57.0.0"
+        >Expo Go で開いて引き継ぐ</a>
+        <p class="step-note">
+          Expo Go がまだ入っていない場合は、先に下の ① を済ませてください。
+          開かないときは、コトコトバの 設定 →「別の端末から引き継ぐ」に次のコードを入力します。
+        </p>
+        <p class="transfer-code"><code id="transfer-code"></code></p>
+      </section>
+
       <ol class="steps">
         <li class="step">
           <span class="step-index" aria-hidden="true">①</span>
@@ -305,7 +377,20 @@
               Expo Go がインストール済みなら、下のボタンをタップするだけで直接起動します。
               ブースでは会場の QR コードからも同じ場所に飛べます。
             </p>
+            <!--
+              ブースの QR の着地点。JS による差し替えは行わず、href に実リンクを直書きする
+              （JS が動かない環境でもリンクが機能するように）。
+              リンクの正は expo.dev → プロジェクト → Updates → production の「Open in Expo Go」。
+              同じものは下のコマンドでも取れる:
+
+                curl "https://qr.expo.dev/eas-update?projectId=73c7cda9-727c-4b83-ba2e-674c38b951ae&channel=production&runtimeVersion=exposdk:57.0.0&format=url"
+
+              projectId は apps/mobile/app.json の extra.eas.projectId、
+              runtime-version は SDK バージョン（expo@~57 なら exposdk:57.0.0）。
+              SDK を上げたら runtime-version も更新すること。詳細は apps/landing/README.md。
+            -->
             <a
+              id="open-in-expo-go"
               class="btn btn-indigo"
               href="exp://u.expo.dev/73c7cda9-727c-4b83-ba2e-674c38b951ae?channel-name=production&amp;runtime-version=exposdk:57.0.0"
             >コトコトバを開く</a>
@@ -330,5 +415,22 @@
       </p>
     </footer>
   </div>
+
+  <script>
+    // `?transfer=<code>` が付いて開かれたときだけ、引き継ぎカードを出す（SPEC §7.4）。
+    // ②の exp:// リンクに `&transfer=<code>` を足すだけ。ここ以外に URL を持たない。
+    (() => {
+      const raw = new URLSearchParams(window.location.search).get('transfer');
+      if (!raw) return;
+      // アプリの引き継ぎコードは大文字英数のみ。それ以外は落として大文字に揃える。
+      const token = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      if (!token) return;
+
+      const base = document.getElementById('open-in-expo-go').getAttribute('href');
+      document.getElementById('transfer-open').setAttribute('href', `${base}&transfer=${token}`);
+      document.getElementById('transfer-code').textContent = token;
+      document.getElementById('transfer').hidden = false;
+    })();
+  </script>
 </body>
 </html>

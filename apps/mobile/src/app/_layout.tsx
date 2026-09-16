@@ -18,6 +18,7 @@ import { StyleSheet } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
+import { TransferDeepLinkGate } from '../features/profile'
 import { ensureSession } from '../lib/auth'
 import { initFeedback } from '../lib/feedback'
 import { queryClient } from '../lib/queryClient'
@@ -45,6 +46,9 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
             <StatusBar style="light" />
+            {/* 引き継ぎ QR（`exp://…?transfer=`）で開かれたときの受け取り。SPEC §7.4。
+                どの画面に着地しても動くよう、Provider の内側にここだけ置く（描画しない）。 */}
+            <TransferDeepLinkGate />
             <Stack
               screenOptions={{
                 headerShown: false,

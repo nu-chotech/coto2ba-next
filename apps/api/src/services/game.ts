@@ -289,20 +289,7 @@ export async function playMove(
   rawInput: string,
   rawRatio: number,
 ): Promise<MoveResponse> {
-  if (!('transaction' in db)) {
-    throw appError('INTERNAL', 'playMove はトランザクションを開始できる接続で呼ぶこと')
-  }
-  return db.transaction((tx) => playMoveLocked(tx, userId, gameId, rawInput, rawRatio))
-}
-
-async function playMoveLocked(
-  db: Db,
-  userId: string,
-  gameId: string,
-  rawInput: string,
-  rawRatio: number,
-): Promise<MoveResponse> {
-  const rows = await db.select().from(games).where(eq(games.id, gameId)).limit(1).for('update')
+  const rows = await db.select().from(games).where(eq(games.id, gameId)).limit(1)
   const game = rows[0]
   if (!game) throw appError('GAME_NOT_FOUND')
   if (game.userId !== userId) throw appError('FORBIDDEN')
@@ -371,6 +358,12 @@ async function playMoveLocked(
     rank,
   })
 
+  // **楽観ロック（compare-and-swap）。**
+  // 読んだときの move_count と status が変わっていないときだけ書き込む。
+  // 同じゲームへの同時リクエストは片方しか通らないので、
+  // moves の一意制約違反（= 500）が構造的に起きない。
+  // トランザクション + FOR UPDATE でも正しいが、BEGIN と COMMIT で
+  // Neon への往復が 2 回増えて 1 手あたり約 140ms 遅くなる（実測）。
   const updated = await db
     .update(games)
     .set({
@@ -381,10 +374,19 @@ async function playMoveLocked(
       perfect: game.perfect || outcome.perfect,
       clearedAt: outcome.status === 'cleared' ? new Date() : game.clearedAt,
     })
-    .where(eq(games.id, gameId))
+    .where(
+      and(eq(games.id, gameId), eq(games.moveCount, game.moveCount), eq(games.status, 'playing')),
+    )
     .returning()
   const next = updated[0]
-  if (!next) throw appError('INTERNAL')
+  if (!next) {
+    // 別のリクエストが先に 1 手進めた（通信が遅いときの二度押し・再送）。
+    // ここで再計算して適用すると同じ入力が 2 手ぶん効いてしまうので、
+    // 明示的に失敗させてクライアントに読み直させる。
+    throw appError('ALREADY_MOVED', '直前の手が反映されました。画面を読み直してください')
+  }
+
+  // seq は CAS を通ったこの手にだけ割り当たるので一意制約に当たらない。
 
   await recordEncounters(db, userId, gameId, [
     { word: result, source: 'result', rank },

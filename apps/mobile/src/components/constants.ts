@@ -66,6 +66,10 @@ export const INPUT_SANITY_MAX_LENGTH = 32
 /** 注意文の行。**常にこの高さを確保する**（出たり消えたりで下の UI をずらさない）。
  *  typography.label の lineHeight と同じ値。 */
 export const INPUT_ERROR_ROW_HEIGHT = 18
+/** 辞書外の警告を出すまでの待ち時間。
+ *  IME の変換途中（1 打ごと）に判定すると警告が点滅するので、
+ *  **入力が止まってから**判定する。短くすると打鍵中に出てしまう。 */
+export const INPUT_OOV_DEBOUNCE_MS = 400
 
 // ── ヒントシート ────────────────────────────────────────────
 /** シートの最大高さ（画面比）。 */

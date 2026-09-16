@@ -6,10 +6,12 @@
  * - エラーは `{ code, message }` を `ApiError` に変換して throw する。
  * - `Authorization: Bearer <token>` は auth.ts のトークンから自動で付ける。
  * - タイムアウト 15 秒（AbortController）。
- * - 401 が返ったら **1 回だけ** セッションを検証し、サーバーが「このセッションは無い」と
- *   明示したときだけ作り直して同じリクエストを再送する
- *   （ブースモードで長時間動かすため。展示中の DB リセットから自力で戻る）。
- *   ネットワーク失敗・5xx ではトークンを捨てない（匿名アカウントを失わないため）。
+ * - 401 が返ったら **1 リクエストにつき 1 回だけ** 回復を試みる（`recoverSession()`）。
+ *   - セッションが生きていた → 同じトークンで再送（サーバー側の一過性の障害）
+ *   - 無効と確認できた     → 作り直して再送（展示中の DB リセットから自力で戻る）
+ *   - 判定不能             → **何も捨てず**元の 401 を投げる
+ *   ネットワーク失敗・5xx・403 ではトークンを捨てない。捨てると来場者の匿名アカウント
+ *   （図鑑・実績・連続記録）が復旧不能に失われる。判定は `sessionState.ts` の表を参照。
  */
 
 import {
@@ -40,9 +42,10 @@ import {
   wordDetailResponseSchema,
 } from '@coto2ba/contracts'
 import type { z } from 'zod'
-import { ensureSession, fetchSession, getToken, setToken } from './auth'
+import { ensureSessionResult, getToken, recoverSession } from './auth'
 import { apiUrl } from './config'
 import { API_TIMEOUT_MS } from './constants'
+import { SESSION_MESSAGE_UNREACHABLE_JA } from './sessionState'
 
 /** API が返したエラー、またはネットワーク/パースの失敗。 */
 export class ApiError extends Error {
@@ -75,7 +78,8 @@ export function hasErrorCode(error: unknown, code: ErrorCode): boolean {
   return isApiError(error) && error.code === code
 }
 
-const NETWORK_ERROR_MESSAGE = 'サーバーに接続できません'
+/** 「届かなかった」の文言は 1 か所に揃える（「セッションが切れました」とは別物）。 */
+const NETWORK_ERROR_MESSAGE = SESSION_MESSAGE_UNREACHABLE_JA
 const PARSE_ERROR_MESSAGE = 'サーバーの応答を解釈できません'
 
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE'
@@ -92,8 +96,11 @@ type RequestOptions<TSchema extends z.ZodType> = {
   signal?: AbortSignal
 }
 
+/** 401 だけは判定に使うので名前を付ける。 */
+const UNAUTHORIZED_STATUS = 401
+
 function statusToCode(status: number): ErrorCode {
-  if (status === 401) return 'UNAUTHORIZED'
+  if (status === UNAUTHORIZED_STATUS) return 'UNAUTHORIZED'
   if (status === 403) return 'FORBIDDEN'
   if (status === 404) return 'GAME_NOT_FOUND'
   if (status === 429) return 'RATE_LIMITED'
@@ -124,14 +131,30 @@ async function send(
     // **必ずセッションが立つのを待ってから送る。**
     // 起動直後は ensureSession() がまだ走っている最中なので、待たずに送ると
     // Authorization 無しのリクエストが飛んで 401 になる（実際に起きた）。
-    // ensureSession() は inflight を共有するので、同時に何本呼んでも往復は 1 回。
+    // ensureSessionResult() は inflight を共有するので、同時に何本呼んでも往復は 1 回。
     let token = await getToken()
-    if (token === null || token.length === 0) token = await ensureSession()
-    if (token !== null && token.length > 0) headers.Authorization = `Bearer ${token}`
+    if (token === null || token.length === 0) {
+      const session = await ensureSessionResult()
+      if (!session.ok) {
+        // トークンを用意できなかった。無認証で投げても 401 になるだけなので、
+        // ここで理由の分かるエラーにして止める（トークンは auth.ts 側で保持されている）。
+        const unreachable = session.reason === 'unreachable'
+        throw new ApiError(
+          unreachable ? 'INTERNAL' : 'UNAUTHORIZED',
+          session.messageJa,
+          0,
+          unreachable,
+        )
+      }
+      token = session.token
+    }
+    headers.Authorization = `Bearer ${token}`
   }
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
+  // 呼び出し側が既に中断していたら、往復せずに畳む。
+  if (signal?.aborted === true) controller.abort()
   const onAbort = () => controller.abort()
   signal?.addEventListener('abort', onAbort)
 
@@ -150,43 +173,6 @@ async function send(
   }
 }
 
-/**
- * 401 からの自己修復。
- *
- * **トークンを捨てるのは、サーバーが「このセッションは無い」と明示したときだけ。**
- * サーバーの `requireAuth` は `auth.api.getSession()` の例外も 401 に落とすため、
- * 一過性の障害で 1 回 401 が返るだけでプレイヤーの匿名アカウント
- * （図鑑・実績・連続記録）が差し替わってしまう。必ず検証してから捨てる。
- *
- * 戻り値が null のときは「回復しなかった」＝呼び出し側は元の 401 をそのまま投げる。
- *
- * 同時多発の 401 で何度もサインインしないよう、進行中のものを共有する
- * （`ensureSession()` 自体も inflight を持つが、こちらでも再入を止める）。
- */
-let recovering: Promise<string | null> | null = null
-
-function recoverSession(): Promise<string | null> {
-  if (recovering !== null) return recovering
-  recovering = (async () => {
-    try {
-      const current = await getToken()
-      // そもそもトークンが無い（起動直後など）→ 素直に匿名サインイン。
-      if (current === null || current.length === 0) return await ensureSession()
-
-      const check = await fetchSession(current)
-      // 'unknown'（ネットワーク失敗・5xx）：捨てない。元の 401 を投げさせる。
-      // 'valid'：セッションは生きている（別要因の 401）。再送しても無駄なので投げさせる。
-      if (check.status !== 'invalid') return null
-
-      await setToken(null)
-      return await ensureSession()
-    } finally {
-      recovering = null
-    }
-  })()
-  return recovering
-}
-
 async function request<TSchema extends z.ZodType>(
   path: string,
   options: RequestOptions<TSchema>,
@@ -195,11 +181,23 @@ async function request<TSchema extends z.ZodType>(
 
   let res = await send(path, method, body, auth, signal)
 
-  // 401 は 1 回だけ、セッションを検証 → 本当に無効なら作り直して再送する。
-  if (res.status === 401 && auth) {
-    const token = await recoverSession()
-    // 回復しなかった（判定不能 / まだ有効）→ 元の 401 をそのまま返す。
-    if (token === null) throw await toApiError(res)
+  // 401 の回復は **1 リクエストにつき 1 回まで**。
+  // まず get-session でトークンの生死を確かめ、生きていれば同じトークンで再送、
+  // 死んでいると確認できたときだけ作り直す（判定不能なら何も捨てない）。
+  if (res.status === UNAUTHORIZED_STATUS && auth) {
+    const recovery = await recoverSession()
+    if (!recovery.retry) {
+      // 回復しなかった（判定不能 / サインイン失敗）→ 401 をそのまま投げる。
+      // ただし文言は「何が起きたか」が分かるものに差し替える。
+      const original = await toApiError(res)
+      if (recovery.messageJa === null) throw original
+      throw new ApiError(
+        original.code,
+        recovery.messageJa,
+        original.status,
+        recovery.status === 'kept',
+      )
+    }
     res = await send(path, method, body, auth, signal)
   }
 

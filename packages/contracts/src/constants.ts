@@ -190,6 +190,22 @@ export const VECTOR_DIM = 200
 /** 最近傍を取る候補数。除外後に枯れないよう多めに取る。 */
 export const NEAREST_CANDIDATES = 32
 
+// ── Expo Go ディープリンク（引き継ぎ QR / ランディングの「開く」）──
+/**
+ * EAS プロジェクト ID（`apps/mobile/app.json` の `extra.eas.projectId`）。
+ * サーバーは `EXPO_PROJECT_ID` で上書きできる。
+ */
+export const EXPO_PROJECT_ID = '73c7cda9-727c-4b83-ba2e-674c38b951ae'
+/** EAS Update のチャンネル。展示は production。`EXPO_CHANNEL` で上書き可。 */
+export const EXPO_UPDATE_CHANNEL = 'production'
+/**
+ * `runtimeVersion: { policy: "sdkVersion" }` に対応する値。**SDK を上げたら必ず更新する**
+ * （ARCHITECTURE §0 の SDK 58 期限リスク）。`EXPO_RUNTIME_VERSION` で上書き可。
+ */
+export const EXPO_RUNTIME_VERSION = 'exposdk:57.0.0'
+/** EAS Update を Expo Go で開くディープリンクのホスト。 */
+export const EXPO_UPDATE_ORIGIN = 'exp://u.expo.dev'
+
 // ── 共有 ────────────────────────────────────────────────────
 /**
  * 本番 API のベース URL。独自ドメインを張ったらここと Vercel の環境変数、

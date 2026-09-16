@@ -1,6 +1,11 @@
 import {
   ACHIEVEMENTS,
   DEVICE_TOKEN_LENGTH,
+  EXPO_PROJECT_ID,
+  EXPO_RUNTIME_VERSION,
+  EXPO_UPDATE_CHANNEL,
+  EXPO_UPDATE_ORIGIN,
+  LANDING_URL,
   patchMeRequestSchema,
   TRANSFER_TOKEN_LENGTH,
   TRANSFER_TOKEN_TTL_MINUTES,
@@ -8,8 +13,9 @@ import {
 } from '@coto2ba/contracts'
 import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
+import { auth } from '../auth'
 import { db } from '../db/client'
-import { deviceTokens, transferTokens, user, userAchievements } from '../db/schema'
+import { deviceTokens, session, transferTokens, user, userAchievements } from '../db/schema'
 import { appError } from '../lib/errors'
 import { opaqueToken, readableToken } from '../lib/random'
 import type { AuthVariables } from '../middleware/auth'
@@ -118,21 +124,71 @@ meRoutes.get('/achievements', async (c) => {
   })
 })
 
+/**
+ * 環境変数の値。**未設定なら既定値、明示的に空にしたら空文字**を返す
+ * （空 = その設定を無効化したい、という意思表示として扱う）。
+ */
+function envOr(name: string, fallback: string): string {
+  const raw = process.env[name]
+  return raw === undefined ? fallback : raw.trim()
+}
+
+/** 末尾のスラッシュを落としたランディングのオリジン。 */
+function landingOrigin(): string {
+  const origin = envOr('LANDING_ORIGIN', LANDING_URL)
+  return (origin.length === 0 ? LANDING_URL : origin).replace(/\/+$/, '')
+}
+
+/**
+ * 引き継ぎ QR / リンクに埋める URL（SPEC §7.4）。
+ *
+ * **https のランディングを符号化してはいけない。** iPhone のカメラで読むと Safari が
+ * 開くだけでアプリに戻らない。Expo Go で直接開ける EAS Update のディープリンク
+ * `exp://u.expo.dev/<projectId>?channel-name=…&runtime-version=…&transfer=<token>`
+ * を返す（ランディングの「コトコトバを開く」と同じ形 + `transfer`）。
+ *
+ * 既定値は contracts（`EXPO_PROJECT_ID` / `EXPO_UPDATE_CHANNEL` / `EXPO_RUNTIME_VERSION`）。
+ * デプロイ側で `EXPO_PROJECT_ID` / `EXPO_CHANNEL` / `EXPO_RUNTIME_VERSION` を上書きできる。
+ * どれかを**空に潰した**ときだけ、ランディングの `?transfer=` にフォールバックする
+ * （ランディングが受け取って `exp://` のボタンを出す）。`token` は URL とは別に必ず返すので、
+ * URL がどちらの形でも手入力で引き継げる。
+ */
+function transferUrl(token: string): string {
+  const projectId = envOr('EXPO_PROJECT_ID', EXPO_PROJECT_ID)
+  const channel = envOr('EXPO_CHANNEL', EXPO_UPDATE_CHANNEL)
+  const runtimeVersion = envOr('EXPO_RUNTIME_VERSION', EXPO_RUNTIME_VERSION)
+  if (projectId.length === 0 || channel.length === 0 || runtimeVersion.length === 0) {
+    return `${landingOrigin()}/?transfer=${token}`
+  }
+  const query = new URLSearchParams({
+    'channel-name': channel,
+    'runtime-version': runtimeVersion,
+    transfer: token,
+  })
+  return `${EXPO_UPDATE_ORIGIN}/${projectId}?${query.toString()}`
+}
+
 /** 引き継ぎコードの発行（SPEC §7.4）。 */
 meRoutes.post('/transfer', async (c) => {
   const me = c.get('authUser')
   const token = readableToken(TRANSFER_TOKEN_LENGTH)
   const expiresAt = new Date(Date.now() + TRANSFER_TOKEN_TTL_MINUTES * 60_000)
   await db.insert(transferTokens).values({ token, userId: me.id, expiresAt })
-  const landing = process.env.LANDING_ORIGIN ?? 'https://coto2ba-next.chotech.dev'
   return c.json({
     token,
     expires_at: expiresAt.toISOString(),
-    url: `${landing}/?transfer=${token}`,
+    url: transferUrl(token),
   })
 })
 
-/** 引き継ぎの適用。呼び出したセッションのユーザーを既存ユーザーに差し替える。 */
+/**
+ * 引き継ぎの適用。呼び出した**資格情報**（Better Auth のセッション行と、
+ * フォールバックの端末トークン）を引き継ぎ先のユーザーに付け替える（SPEC §7.4）。
+ *
+ * セッション行を動かさないと、実アプリ（Better Auth）では 1 件も引き継がれないのに
+ * 200 と引き継ぎ元の表示名だけが返り、クライアントが「引き継ぎました」と嘘をつく。
+ * どちらも動かせなかった場合はトークンの消費を取り消して失敗させる。
+ */
 meRoutes.post('/transfer/claim', async (c) => {
   const body = transferClaimRequestSchema.safeParse(await c.req.json().catch(() => ({})))
   if (!body.success) throw appError('VALIDATION', body.error.message)
@@ -155,12 +211,49 @@ meRoutes.post('/transfer/claim', async (c) => {
   if (!row) throw appError('TRANSFER_INVALID')
   if (row.userId === me.id) throw appError('TRANSFER_INVALID', '同じ端末では引き継げません')
 
-  // 呼び出し元の端末トークンを引き継ぎ先のユーザーに付け替える
+  // 1) Better Auth のセッション行を付け替える（実アプリの本命の経路）
+  const current = await auth.api.getSession({ headers: c.req.raw.headers }).catch(() => null)
+  let moved = false
+  if (current?.session && current.session.userId === me.id) {
+    const updated = await db
+      .update(session)
+      .set({ userId: row.userId })
+      .where(and(eq(session.id, current.session.id), eq(session.userId, me.id)))
+      .returning({ id: session.id })
+    moved ||= updated.length > 0
+  }
+
+  // 2) 端末トークン（/devices のフォールバックとブースモード）も付け替える
   const bearer = c.req.header('authorization')
   const raw = bearer?.toLowerCase().startsWith('bearer ') ? bearer.slice(7).trim() : null
   if (raw) {
-    await db.update(deviceTokens).set({ userId: row.userId }).where(eq(deviceTokens.token, raw))
+    const updated = await db
+      .update(deviceTokens)
+      .set({ userId: row.userId })
+      .where(and(eq(deviceTokens.token, raw), eq(deviceTokens.userId, me.id)))
+      .returning({ token: deviceTokens.token })
+    moved ||= updated.length > 0
   }
+
+  if (!moved) {
+    // 付け替え先が無い＝この呼び出しは引き継ぎを起こせない。
+    // 成功を返すと嘘になるので、トークンの消費を取り消して失敗させる。
+    await db
+      .update(transferTokens)
+      .set({ usedAt: null })
+      .where(eq(transferTokens.token, token))
+      .catch(() => {})
+    throw appError('INTERNAL', '引き継ぎに失敗しました。アプリを再起動してやり直してください')
+  }
+
+  // 3) 旧匿名ユーザーを片付ける（SPEC §7.4）。付け替え済みのセッション行と端末トークンは
+  //    引き継ぎ先を指しているので cascade の巻き添えにはならない。失敗しても引き継ぎ自体は成立。
+  await db
+    .delete(user)
+    .where(and(eq(user.id, me.id), eq(user.isAnonymous, true)))
+    .catch((e: unknown) => {
+      console.warn('[transfer/claim] 旧匿名ユーザーの削除に失敗', e)
+    })
 
   const target = await db
     .select({ displayName: user.displayName })
