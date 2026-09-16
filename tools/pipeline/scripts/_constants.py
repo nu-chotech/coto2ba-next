@@ -41,7 +41,7 @@ START_MAX_FREQ_RANK = 20_000
 INPUT_MAX_FREQ_RANK = 300_000
 OUTPUT_MAX_FREQ_RANK = 180_000
 N_INPUT = 208_707
-N_OUTPUT = 99_805
+N_OUTPUT = 102_520
 
 # 難易度。
 DIFFICULTIES = ("easy", "normal", "hard")
@@ -54,8 +54,8 @@ DIFFICULTIES = ("easy", "normal", "hard")
 # 詳細は docs/QUESTIONS.md。
 DIFFICULTY_BOT_MOVES = {
     "easy": (0.0, 5.0),
-    "normal": (5.01, 7.0),
-    "hard": (7.01, 12.0),
+    "normal": (5.01, 8.0),
+    "hard": (8.01, 17.0),
 }
 
 # デイリー。
@@ -117,11 +117,15 @@ HEALTH_AFFIX_THRESHOLD = 5
 HEALTH_DIGIT_THRESHOLD = 3
 
 # ヒント追従ボット（SPEC §6.2）。
-BOT_MAX_MOVES = 15
-BOT_RATIOS = (0.3, 0.5, 0.8)
+# ボットの手数上限。**プレイヤーと同じ MAX_MOVES(20) にそろえる。**
+# SPEC §6.2 の擬似コードは 15 だが、プレイヤーは 20 手打てるので 15 で切ると
+# 「実際には解ける語」を到達不能として捨ててしまう（種リストの 282 語のうち
+# 21 語しか通らなかった）。ratio も 8 段階すべてを試す。
+BOT_MAX_MOVES = 20
+BOT_RATIOS = (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
 BOT_START_COUNT = 5
 # 1 回でもこの手数以上 / 未到達なら除外。
-BOT_REJECT_MOVES = 13
+BOT_REJECT_MOVES = 18
 
 # 目標サイズ（SPEC §6.2）。
 GOAL_POOL_TARGETS = {"easy": 80, "normal": 150, "hard": 70}
@@ -217,3 +221,7 @@ GHOST_FALLBACK_SEED = 20260917
 GHOST_FALLBACK_RADIUS_MIN = 0.45
 # JSON の座標精度（桁を絞ってファイルサイズを抑える）。
 GHOST_POS3_DECIMALS = 4
+# フォールバック時に載せる語。**空文字にする**（ghost.ts の generateFallbackGhosts と
+# 同じ意味にするため）。実語 + 偽座標を書くと parseGhostJson が通してしまい、
+# hasRealGhosts() が true になって「まだ出会っていない 2,000 語」と偽表示される。
+GHOST_FALLBACK_WORD = ""

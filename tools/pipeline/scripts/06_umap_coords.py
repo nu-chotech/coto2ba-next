@@ -11,11 +11,15 @@ UMAP(n_components=3, n_neighbors=15, min_dist=0.1, metric="cosine") を一度だ
 という運用でカバーする（このスクリプトは「world map」を作り直す用途のときだけ
 再実行する）。
 
+書き込み後に **DB 側のカバレッジ**（`is_output` の行数と `pos3` NULL の数）を
+必ず検証する。語リストは `data/vocab.parquet` 由来なので、02/03 を後から回すと
+DB とドリフトして `pos3` が欠けた語が無言で残る（実際に起きた）。
+
 `umap-learn` は optional dependency（`uv sync --extra umap` が要る）。
 未インストールならここで親切なメッセージを出して終了する。
 
 使い方:
-    uv run python scripts/06_umap_coords.py             # 出力語彙 99,805 語（21〜46s 目安）
+    uv run python scripts/06_umap_coords.py             # 出力語彙 全語（実測 102,520 語 / 約 4 分）
     uv run python scripts/06_umap_coords.py --limit 2000 # 動作確認
 """
 
@@ -27,6 +31,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import database_url  # noqa: E402
@@ -64,8 +69,57 @@ def normalize_axis(values: np.ndarray) -> np.ndarray:
     return (scaled * (target_hi - target_lo) + target_lo).astype(np.float32)
 
 
-def write_pos3(url: str, words: list[str], coords: np.ndarray) -> None:
-    """`vocab.pos3` を一時テーブル経由でまとめて更新する。"""
+def verify_coverage(conn: psycopg.Connection, written: int, strict: bool) -> None:
+    """書き込み後に DB 側のカバレッジを検証する。
+
+    語リストは `data/vocab.parquet` から取っているので、02_prune / 03_export を
+    後から回すと DB の `is_output` とドリフトする（実際に起きた: parquet 99,805 語
+    に対し DB 102,520 行で、差分の 2,715 行が `pos3` NULL のまま残った）。
+    `GET /api/words/ghosts` は `pos3 IS NOT NULL` で絞るので、黙って点が減る。
+    **無言のドリフトを許さないため、ここで必ず数を突き合わせる。**
+
+    `strict`（= `--limit` 無しの本番実行）なら不一致で非ゼロ終了する。
+    """
+    row = conn.execute(
+        "SELECT count(*), count(*) FILTER (WHERE pos3 IS NULL) FROM vocab WHERE is_output"
+    ).fetchone()
+    assert row is not None
+    db_output, db_missing = int(row[0]), int(row[1])
+
+    problems: list[str] = []
+    if db_output != written:
+        problems.append(
+            f"parquet の出力語数({written}) と DB の is_output 行数({db_output}) が一致しません"
+            f"（差 {db_output - written}）。02_prune.py / 03_export_pgvector.py を回した後なら "
+            "data/output_vectors.npy のキャッシュも含めて作り直してから 06 を再実行してください。"
+        )
+    if db_missing:
+        problems.append(
+            f"pos3 が NULL の出力語が {db_missing} 語残っています"
+            "（GET /api/words/ghosts は pos3 IS NOT NULL で絞るので、その分だけ点が減ります）。"
+        )
+
+    if not problems:
+        print(
+            f"カバレッジ検証 OK: is_output {db_output} 行すべてに pos3 が入っています",
+            file=sys.stderr,
+        )
+        return
+
+    for p in problems:
+        print(f"⚠ {p}", file=sys.stderr)
+    if strict:
+        raise SystemExit(
+            "カバレッジ検証に失敗しました（--limit 無しの本番実行なので中断します）。"
+        )
+    print(
+        "※ --limit 付きの実行なので警告だけにとどめます（本番は --limit 無しで実行）。",
+        file=sys.stderr,
+    )
+
+
+def write_pos3(url: str, words: list[str], coords: np.ndarray, strict: bool = True) -> None:
+    """`vocab.pos3` を一時テーブル経由でまとめて更新し、カバレッジを検証する。"""
     with connect(url) as conn:
         ensure_vocab(conn)
         conn.execute(f"DROP TABLE IF EXISTS {POS3_LOAD_TABLE}")
@@ -85,6 +139,7 @@ def write_pos3(url: str, words: list[str], coords: np.ndarray) -> None:
             """
         )
         conn.execute(f"DROP TABLE {POS3_LOAD_TABLE}")
+        verify_coverage(conn, len(words), strict)
 
 
 def main() -> None:
@@ -127,7 +182,7 @@ def main() -> None:
 
     t2 = time.time()
     print(f"vocab.pos3 を書き込み中（{len(words)} 語）…", file=sys.stderr)
-    write_pos3(database_url(), words, coords)
+    write_pos3(database_url(), words, coords, strict=not args.limit)
     print(f"書き込み完了: {time.time() - t2:.1f}s", file=sys.stderr)
 
     print(

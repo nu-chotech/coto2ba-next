@@ -119,8 +119,8 @@ export type Difficulty = (typeof DIFFICULTIES)[number]
  */
 export const DIFFICULTY_BOT_MOVES = {
   easy: [0, 5],
-  normal: [5.01, 7],
-  hard: [7.01, 12],
+  normal: [5.01, 8],
+  hard: [8.01, 17],
 } as const satisfies Record<Difficulty, readonly [number, number]>
 export const DIFFICULTY_LABELS_JA = {
   easy: 'やさしい',

@@ -41,6 +41,7 @@ from _constants import (  # noqa: E402
     DIFFICULTIES,
 )
 from _db import connect, ensure_daily_challenges  # noqa: E402
+from _goalbot import load_goal_seeds  # noqa: E402
 from _vectors import load_output_space, pick_starts  # noqa: E402
 
 # キューのキー。優先順は
@@ -165,6 +166,10 @@ def main() -> None:
 
     # 消費していくキュー（決定的にシャッフル）。clean と flagged は別キューにして、
     # clean を使い切るまで flagged には落ちない。シャッフルは各キューの中に閉じる。
+    seeds = set(load_goal_seeds())
+    if seeds:
+        print(f"  種リスト {len(seeds)} 語を優先して使う", file=sys.stderr)
+
     queues: dict[str, list[str]] = {}
     for bucket, words_by_difficulty in ((CLEAN, pool.clean), (FLAGGED, pool.flagged)):
         merged: list[str] = []
@@ -172,9 +177,13 @@ def main() -> None:
             words = list(words_by_difficulty[d])
             # hash() はプロセスごとに変わるので使わない（毎回同じ日程になる必要がある）。
             Random(seed_of(f"{first.isoformat()}:{bucket}:{d}")).shuffle(words)
+            # goal_seeds.txt（人が選んだ「絵になる語」）を先に消費する。
+            # 算法的に選んだ語は行政・報道の語彙に寄るので、良い語から使い切る。
+            words.sort(key=lambda w: 0 if w in seeds else 1)
             queues[f"{bucket}:{d}"] = words
             merged += words
         Random(seed_of(f"{first.isoformat()}:{bucket}:{ANY_DIFFICULTY}")).shuffle(merged)
+        merged.sort(key=lambda w: 0 if w in seeds else 1)
         queues[f"{bucket}:{ANY_DIFFICULTY}"] = merged
 
     if not queues[f"{CLEAN}:{ANY_DIFFICULTY}"]:
