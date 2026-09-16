@@ -70,6 +70,9 @@ COPY_TYPES = [
     "halfvec",
 ]
 
+# 報告で並べる語数の上限。
+SAMPLE_LIMIT = 5
+
 INDEX_HNSW = "vocab_output_hnsw"
 INDEX_FREQ = "vocab_output_freq"
 SQL_CREATE_HNSW = (
@@ -81,14 +84,20 @@ SQL_CREATE_FREQ = (
 )
 
 # 今回の parquet に無い語を無効化する（行は消さない。FK があるため）。
+#
+# **アンチジョインの前に索引と ANALYZE が要る。** LOAD_TABLE は COPY したままだと
+# 統計が無く、halfvec の分だけ 1 行が太い（約 80MB）。プランナが per-row な
+# サブプラン走査を選ぶと 208,707 行 × 208,707 行になり、実測で 27 分たっても
+# 終わらなかった（Neon 上で他のセッションの ALTER TABLE を巻き込んで待たせた）。
+# 索引 + ANALYZE を入れると索引プローブ 1 回/行になる。
+SQL_INDEX_LOAD = f"CREATE INDEX ON {LOAD_TABLE} (word)"
+SQL_ANALYZE_LOAD = f"ANALYZE {LOAD_TABLE}"
+# 1 パスで無効化し、落とした語をそのまま返す（サンプル用に 2 回走査しない）。
 SQL_DEACTIVATE_MISSING = f"""
 UPDATE vocab SET is_input = false, is_output = false
-WHERE (is_input OR is_output) AND word NOT IN (SELECT word FROM {LOAD_TABLE})
-"""
-SQL_SAMPLE_MISSING = f"""
-SELECT word FROM vocab
-WHERE (is_input OR is_output) AND word NOT IN (SELECT word FROM {LOAD_TABLE})
-ORDER BY freq_rank LIMIT 10
+WHERE (is_input OR is_output)
+  AND NOT EXISTS (SELECT 1 FROM {LOAD_TABLE} l WHERE l.word = vocab.word)
+RETURNING word
 """
 
 
@@ -225,18 +234,23 @@ def main() -> None:
                 file=sys.stderr,
             )
         else:
-            sample = [r[0] for r in conn.execute(SQL_SAMPLE_MISSING).fetchall()]
-            with conn.cursor() as cur:
-                cur.execute(SQL_DEACTIVATE_MISSING)
-                deactivated = cur.rowcount
+            t_off = time.time()
+            conn.execute(SQL_INDEX_LOAD)
+            conn.execute(SQL_ANALYZE_LOAD)
+            missing = [r[0] for r in conn.execute(SQL_DEACTIVATE_MISSING).fetchall()]
+            deactivated = len(missing)
             if deactivated:
                 print(
                     f"parquet に無い {deactivated} 語を is_input/is_output = false に"
-                    f"落としました（行は残す。FK があるため）: {sample[:5]}",
+                    f"落としました（行は残す。FK があるため / {time.time() - t_off:.1f}s）: "
+                    f"{missing[:SAMPLE_LIMIT]}",
                     file=sys.stderr,
                 )
             else:
-                print("parquet に無い有効語はありませんでした", file=sys.stderr)
+                print(
+                    f"parquet に無い有効語はありませんでした（{time.time() - t_off:.1f}s）",
+                    file=sys.stderr,
+                )
 
         conn.execute(f"DROP TABLE {LOAD_TABLE}")
 
