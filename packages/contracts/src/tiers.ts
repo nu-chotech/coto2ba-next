@@ -1,4 +1,4 @@
-import { type TierId, TIERS } from './constants'
+import { TIERS, type TierId } from './constants'
 
 /** rank から演出帯を決める。TIERS の先頭から rank <= maxRank を満たす最初のもの。 */
 export function tierForRank(rank: number): TierId {

@@ -1,0 +1,6 @@
+tools/
+docs/
+apps/mobile/
+apps/landing/
+**/*.log
+**/.expo/

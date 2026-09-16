@@ -15,11 +15,17 @@ export const RATIOS: readonly number[] = Array.from(
 export const RATIO_STEP_COUNT = RATIOS.length
 export const RATIO_DEFAULT = 0.5
 
-/** ratio を 8 段階のいずれかに丸める。範囲外は null（サーバーは 422 を返す）。 */
+/** 浮動小数の表現誤差（0.30000000000000004 のような値）を吸収する許容差。 */
+const RATIO_EPSILON = 1e-6
+
+/**
+ * ratio が 8 段階のいずれかであることを確認する。違えば null（サーバーは 422）。
+ * **丸めない。** 0.35 を 0.4 に丸めるとプレイヤーの意図を勝手に変えることになる。
+ */
 export function normalizeRatio(value: number): number | null {
   if (!Number.isFinite(value)) return null
-  const rounded = Math.round(value * 10) / 10
-  return RATIOS.includes(rounded) ? rounded : null
+  const match = RATIOS.find((r) => Math.abs(r - value) < RATIO_EPSILON)
+  return match ?? null
 }
 
 /** ratio のインデックス（スライダー用）。 */
@@ -159,6 +165,18 @@ export function rankToHeat(rank: number, nOutput: number = N_OUTPUT): number {
   const heat = 1 - Math.log10(Math.max(rank, 1)) / Math.log10(nOutput)
   return Math.min(1, Math.max(0, heat))
 }
+
+// ── アプリ ──────────────────────────────────────────────────
+/** app.json の scheme と一致させること。Better Auth の trustedOrigins に使う。 */
+export const APP_SCHEME = 'coto2ba'
+/** 本番 API のオリジン。EXPO_PUBLIC_API_URL 未設定時の既定値。 */
+export const API_BASE_URL = 'https://coto2ba-next-api.chotech.dev'
+/** セッションの有効期間（秒）。匿名アカウントなので長め。 */
+export const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 365
+/** ベクトルの次元。 */
+export const VECTOR_DIM = 200
+/** 最近傍を取る候補数。除外後に枯れないよう多めに取る。 */
+export const NEAREST_CANDIDATES = 32
 
 // ── 共有 ────────────────────────────────────────────────────
 export const LANDING_URL = 'https://coto2ba-next.chotech.dev'

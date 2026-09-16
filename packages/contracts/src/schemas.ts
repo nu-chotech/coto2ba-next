@@ -7,6 +7,7 @@ import {
   ENCOUNTER_SOURCES,
   GAME_MODES,
   GAME_STATUSES,
+  normalizeRatio,
   RATIOS,
   TIER_IDS,
 } from './constants'
@@ -23,13 +24,13 @@ export const encounterSourceSchema = z.enum(ENCOUNTER_SOURCES)
 export const achievementIdSchema = z.enum(ACHIEVEMENT_IDS)
 export const errorCodeSchema = z.enum(ERROR_CODES)
 
-/** 8 段階のいずれか。浮動小数の誤差に強いよう literal union で定義する。 */
+/** 8 段階のいずれか。丸めずに一致判定する（constants.normalizeRatio と同じ規則）。 */
 export const ratioSchema = z
   .number()
-  .refine((v) => RATIOS.includes(Math.round(v * 10) / 10), {
+  .refine((v) => normalizeRatio(v) !== null, {
     message: `ratio must be one of ${RATIOS.join(', ')}`,
   })
-  .transform((v) => Math.round(v * 10) / 10)
+  .transform((v) => normalizeRatio(v) as number)
 
 export const apiErrorSchema = z.object({
   code: errorCodeSchema,

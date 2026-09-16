@@ -6,8 +6,9 @@
     "lib": ["ES2023"],
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
-    "paths": { "@/*": ["./src/*"] },
-    "baseUrl": "."
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "drizzle.config.ts", "tsup.config.ts", "tests/**/*.ts"]
 }

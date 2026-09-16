@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["sin1"],
+  "outputDirectory": "public",
+  "functions": {
+    "api/index.mjs": { "maxDuration": 30 }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+}
