@@ -151,9 +151,23 @@ export const DEVICE_TOKEN_LENGTH = 48
 // ── ランキング ──────────────────────────────────────────────
 export const LEADERBOARD_LIMIT = 50
 
+// ── 対戦ルーム（マルチプレイ・SPEC §9）──────────────────────
+/** 1 部屋の最大人数。ブースの回転を考えるとこれ以上は待ち時間が長い。 */
+export const ROOM_MAX_PLAYERS = 8
+/** 開始に必要な最小人数。 */
+export const ROOM_MIN_PLAYERS = 2
+/** 参加コードの長さ。読み上げと手入力ができる長さにする。 */
+export const ROOM_CODE_LENGTH = 4
+/** 部屋の状態をポーリングする間隔（ms）。 */
+export const ROOM_POLL_INTERVAL_MS = 1_000
+/** 部屋の寿命（分）。放置された部屋を掃除する基準。 */
+export const ROOM_TTL_MINUTES = 60
+
 // ── レート制限（SPEC §7.8）──────────────────────────────────
 export const RATE_LIMIT_PER_USER_PER_SECOND = 5
 export const RATE_LIMIT_GAMES_PER_MINUTE = 10
+/** 状態取得の専用レート制限（ユーザーごと・毎秒）。ポーリング 1/s に余裕を持たせる。 */
+export const RATE_LIMIT_ROOM_POLL_PER_SECOND = 4
 
 // ── 演出タイミング ──────────────────────────────────────────
 /** API 応答が速くても混合演出は最低これだけ見せる（体感の一貫性）。 */
