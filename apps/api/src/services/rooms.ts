@@ -19,6 +19,7 @@ import {
   ROOM_CODE_LENGTH,
   ROOM_FINISH_GRACE_SECONDS,
   ROOM_MAX_PLAYERS,
+  ROOM_TTL_MINUTES,
   type RoomPlayer,
   type RoomResponse,
   type RoomStatus,
@@ -47,6 +48,14 @@ export function roomJoinUrl(code: string): string {
 
 function statusOf(row: RoomRow): RoomStatus {
   return isRoomStatus(row.status) ? row.status : 'finished'
+}
+
+/** 寿命を過ぎているか。ポーリングのたびに UPDATE を撃たないための前さばき。 */
+function isStale(room: RoomRow): boolean {
+  return (
+    statusOf(room) !== 'finished' &&
+    Date.now() - room.createdAt.getTime() > ROOM_TTL_MINUTES * 60_000
+  )
 }
 
 /** 生きている（= 終わっていない）部屋をコードで引く。 */
@@ -236,6 +245,28 @@ function assertMember(players: readonly { state: RoomPlayerState }[], userId: st
 }
 
 /**
+ * 放置された部屋を畳む（SPEC §9 / ブース運用）。
+ *
+ * **cron は使わない。** Vercel Hobby の枠と運用の複雑さを増やしたくないので、
+ * 部屋を作るときと状態を取るときに、ついでに古いものを片付ける。
+ * `rooms_created_at_idx` があるので走査は安い。
+ *
+ * 失敗しても呼び出し側の処理は止めない（掃除は本筋ではない）。
+ */
+async function closeStaleRooms(db: Db): Promise<void> {
+  await db
+    .execute(
+      sql`
+        UPDATE rooms
+           SET status = 'finished', finished_at = now()
+         WHERE status <> 'finished'
+           AND created_at < now() - ${`${ROOM_TTL_MINUTES} minutes`}::interval
+      `,
+    )
+    .catch(() => {})
+}
+
+/**
  * 部屋を作る（ホスト）。
  * **お題はここで 1 度だけ引く**（`pickChallenge`）。全員が同じ盤面を解く。
  */
@@ -244,6 +275,8 @@ export async function createRoom(
   userId: string,
   difficulty: Difficulty,
 ): Promise<RoomResponse> {
+  // ここで古い部屋を畳んでおくと、コードの取り合いも自然に解ける。
+  await closeStaleRooms(db)
   const [displayName, challenge] = await Promise.all([
     displayNameOf(db, userId),
     pickChallenge(db, difficulty),
@@ -363,6 +396,9 @@ export async function startRoom(db: Db, userId: string, code: string): Promise<R
  */
 export async function roomState(db: Db, userId: string, code: string): Promise<RoomResponse> {
   const room = await findLiveRoom(db, code)
+  // 自分の部屋が生きているうちに、放置された他の部屋を畳む。
+  // ポーリングのついでなので、部屋が 1 つでも動いていれば掃除が回り続ける。
+  if (isStale(room)) await closeStaleRooms(db)
   const players = await loadPlayers(db, room.id)
   assertMember(players, userId)
   return buildState(db, room, userId)

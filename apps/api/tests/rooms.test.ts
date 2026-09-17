@@ -7,7 +7,7 @@
  * 2. **進行中に他人が打った語が漏れない**（漏れると真似で解かれて競技にならない）
  * 3. 勝敗は**サーバーの時刻**で決まる（最初にゴールへ着いた人が勝ち）
  */
-import { CLEAR_RANK, ROOM_MIN_PLAYERS } from '@coto2ba/contracts'
+import { CLEAR_RANK, ROOM_MIN_PLAYERS, ROOM_TTL_MINUTES } from '@coto2ba/contracts'
 import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { db, pool } from '../src/db/client'
@@ -248,6 +248,26 @@ describe.runIf(true)('対戦ルーム', () => {
 
   it('クリア圏のランクは CLEAR_RANK 以下（順位付けの前提）', () => {
     expect(CLEAR_RANK).toBeGreaterThan(0)
+  })
+
+  // cron を使わない代わりに、部屋を作るときと状態を取るときに掃除する。
+  it('寿命を過ぎた部屋は次の操作のついでに畳まれる', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const other = await createTestUser()
+    const stale = await createRoom(db, host, 'normal')
+
+    // 作成時刻を寿命より前に巻き戻す。
+    await db
+      .update(rooms)
+      .set({ createdAt: new Date(Date.now() - (ROOM_TTL_MINUTES + 1) * 60_000) })
+      .where(eq(rooms.code, stale.code))
+
+    // 別の誰かが部屋を作ると、そのついでに畳まれる。
+    await createRoom(db, other, 'normal')
+
+    const rows = await db.select().from(rooms).where(eq(rooms.code, stale.code)).limit(1)
+    expect(rows[0]?.status).toBe('finished')
   })
 
   it('部屋の行が残る（cascade の確認のため作った部屋が引ける）', async () => {
