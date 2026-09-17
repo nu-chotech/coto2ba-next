@@ -73,9 +73,6 @@ export const layout = {
   buttonHeight: 50,
   /** 入力欄の高さ。最小タップ領域（44pt）を下回らない。 */
   inputHeight: 48,
-  /** ratio スライダーのトラック高さ。 */
-  sliderTrackHeight: 6,
-  sliderThumbSize: 28,
   /** 全画面 Skia 粒子の最大数。 */
   particleCount: 120,
 } as const

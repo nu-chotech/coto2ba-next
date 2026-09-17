@@ -13,18 +13,33 @@
  *
  * 解除した実績はゲーム画面から `?unlocked=id1,id2` で渡ってくる。
  * 直接開いた（リロードした）ときは空でよい。
+ *
+ * **ここが山場。** 見出しは下からひと呼吸で立ち上がり、経路は 1 手ずつ点いて
+ * 「意味空間を歩いた軌跡が繋がる」のを見せる（図鑑の経路描画と同じ見え方に揃える）。
+ * 完全錬成のときだけ、見出しの後ろで光がゆっくり息をする。
+ * **紙吹雪のような既製の演出は入れない。** この作品が見せるべきは軌跡そのもの。
  */
 
 import { DIFFICULTY_LABELS_JA, MAX_MOVES } from '@coto2ba/contracts'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   achievementIcon,
   ErrorState,
   GlassButton,
   GlassCard,
+  RESULT_HEADLINE_RISE,
+  RESULT_PERFECT_GLOW,
+  RESULT_PERFECT_GLOW_MS,
   SkeletonCard,
   SymbolIcon,
   TierBackground,
@@ -42,7 +57,16 @@ import { ShareCardHost, useShareResult } from '../../../../features/share'
 import { resetSession } from '../../../../lib/auth'
 import { queryClient } from '../../../../lib/queryClient'
 import { useSettingsStore } from '../../../../store/settings'
-import { iconSize, layout, screenPadding, spacing, typography, useTheme } from '../../../../theme'
+import {
+  duration,
+  iconSize,
+  layout,
+  radius,
+  screenPadding,
+  spacing,
+  typography,
+  useTheme,
+} from '../../../../theme'
 
 export default function ResultScreen() {
   const { id, unlocked } = useLocalSearchParams<{ id: string; unlocked?: string }>()
@@ -63,6 +87,34 @@ export default function ResultScreen() {
 
   // 画像 + テキストのシェア（SPEC §8.4）。`hostRef` の先は下でマウントする。
   const { hostRef, share, isSharing, error: shareError } = useShareResult(detail)
+
+  // 画面に入った瞬間の立ち上がり。**フックは早期 return より前に置く。**
+  const enter = useSharedValue(0)
+  const perfectGlow = useSharedValue(0)
+  const isPerfect = detail?.perfect === true
+
+  useEffect(() => {
+    enter.value = withTiming(1, { duration: duration.slow, easing: Easing.out(Easing.cubic) })
+  }, [enter])
+
+  useEffect(() => {
+    if (!isPerfect) return
+    perfectGlow.value = withRepeat(
+      withTiming(1, { duration: RESULT_PERFECT_GLOW_MS, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true,
+    )
+  }, [isPerfect, perfectGlow])
+
+  const headlineStyle = useAnimatedStyle(() => ({
+    opacity: enter.value,
+    transform: [{ translateY: RESULT_HEADLINE_RISE * (1 - enter.value) }],
+  }))
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: RESULT_PERFECT_GLOW * perfectGlow.value,
+    transform: [{ scale: 0.9 + 0.1 * perfectGlow.value }],
+  }))
 
   /** ブースモード：新しい匿名ユーザーに差し替えてロビーへ戻る（SPEC §8.8）。 */
   const onNextPlayer = useCallback(() => {
@@ -105,7 +157,14 @@ export default function ResultScreen() {
   return (
     <TierBackground tier={tier}>
       <ScrollView contentContainerStyle={[styles.content, screenPadding(insets)]}>
-        <View style={styles.header}>
+        <Animated.View style={[styles.header, headlineStyle]}>
+          {/* 完全錬成だけ、見出しの後ろで光がゆっくり息をする。 */}
+          {detail.perfect ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.glow, { backgroundColor: colors.accent }, glowStyle]}
+            />
+          ) : null}
           <Text style={[typography.largeTitle, styles.headline, { color: colors.text }]}>
             {detail.perfect ? '完全錬成' : cleared ? 'クリア' : 'ギブアップ'}
           </Text>
@@ -114,7 +173,7 @@ export default function ResultScreen() {
               ゴールの語そのものを錬成しました
             </Text>
           ) : null}
-        </View>
+        </Animated.View>
 
         <GlassCard tint={colors.glassTint} style={styles.card}>
           <View style={styles.row}>
@@ -139,7 +198,7 @@ export default function ResultScreen() {
           </View>
 
           {path.length > 0 ? (
-            <TierPath moves={path} style={styles.path} />
+            <TierPath moves={path} drawIn style={styles.path} />
           ) : (
             <Text style={[typography.caption, styles.headline, { color: colors.sub }]}>
               まだ 1 手も打っていません
@@ -226,7 +285,16 @@ const styles = StyleSheet.create({
     gap: layout.sectionGap,
   },
   center: { flex: 1, justifyContent: 'center', paddingHorizontal: layout.screenPaddingHorizontal },
-  header: { gap: spacing.xs },
+  header: { gap: spacing.xs, justifyContent: 'center' },
+  // 見出しの後ろに敷く光。**角丸の面を薄く置くだけ**（ぼかしは要らない）。
+  glow: {
+    position: 'absolute',
+    top: -spacing.md,
+    left: spacing.xxxl,
+    right: spacing.xxxl,
+    bottom: -spacing.md,
+    borderRadius: radius.pill,
+  },
   card: { gap: layout.cardGap },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headline: { textAlign: 'center' },

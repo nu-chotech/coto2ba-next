@@ -10,9 +10,24 @@
  */
 
 import type { TierId } from '@coto2ba/contracts'
+import { useEffect } from 'react'
 import { type StyleProp, StyleSheet, View, type ViewStyle } from 'react-native'
-import { radius, useTheme } from '../theme'
-import { TIER_CELL_GAP, TIER_CELL_RADIUS, TIER_CELL_SIZE, TIER_DOT_SIZE } from './constants'
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated'
+import { duration, radius, useTheme } from '../theme'
+import {
+  TIER_CELL_GAP,
+  TIER_CELL_RADIUS,
+  TIER_CELL_SIZE,
+  TIER_DOT_SIZE,
+  TIER_PATH_DRAW_STEP_MS,
+  TIER_PATH_FROM_SCALE,
+} from './constants'
 
 export type TierDotProps = {
   tier: TierId
@@ -46,26 +61,70 @@ export type TierPathProps = {
    */
   moves: readonly { seq: number; tier: TierId }[]
   size?: number
+  /**
+   * マスを**手の順に 1 つずつ点けていく**（結果画面）。
+   * 「意味空間を歩いた軌跡が繋がる」ことを見せる演出で、この作品の中身そのもの。
+   * 既定は消灯なし（図鑑のように一覧で並べる場所では動かさない）。
+   */
+  drawIn?: boolean
   style?: StyleProp<ViewStyle>
 }
 
 /** 経路を 1 手 1 マスで並べたもの（結果画面）。 */
-export function TierPath({ moves, size = TIER_CELL_SIZE, style }: TierPathProps) {
-  const { paletteForTier } = useTheme()
+export function TierPath({ moves, size = TIER_CELL_SIZE, drawIn = false, style }: TierPathProps) {
   return (
     <View style={[styles.path, style]}>
-      {moves.map((move) => (
-        <View
-          key={move.seq}
-          style={{
-            width: size,
-            height: size,
-            borderRadius: TIER_CELL_RADIUS,
-            backgroundColor: paletteForTier(move.tier).accent,
-          }}
-        />
+      {moves.map((move, order) => (
+        <PathCell key={move.seq} tier={move.tier} size={size} order={order} drawIn={drawIn} />
       ))}
     </View>
+  )
+}
+
+/** 経路のマス 1 つ。点くのを遅らせるために、マスごとに共有値を持つ。 */
+function PathCell({
+  tier,
+  size,
+  order,
+  drawIn,
+}: {
+  tier: TierId
+  size: number
+  /** 手の順（0 始まり）。これに比例して点灯を遅らせる。 */
+  order: number
+  drawIn: boolean
+}) {
+  const { paletteForTier } = useTheme()
+  const appear = useSharedValue(drawIn ? 0 : 1)
+
+  useEffect(() => {
+    if (!drawIn) {
+      appear.value = 1
+      return
+    }
+    appear.value = withDelay(
+      order * TIER_PATH_DRAW_STEP_MS,
+      withTiming(1, { duration: duration.base, easing: Easing.out(Easing.cubic) }),
+    )
+  }, [drawIn, order, appear])
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: appear.value,
+    transform: [{ scale: TIER_PATH_FROM_SCALE + (1 - TIER_PATH_FROM_SCALE) * appear.value }],
+  }))
+
+  return (
+    <Animated.View
+      style={[
+        {
+          width: size,
+          height: size,
+          borderRadius: TIER_CELL_RADIUS,
+          backgroundColor: paletteForTier(tier).accent,
+        },
+        animatedStyle,
+      ]}
+    />
   )
 }
 

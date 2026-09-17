@@ -26,6 +26,21 @@ export type UiState = {
   activeTier: TierId
   setActiveTier: (tier: TierId) => void
 
+  // ── 進行中の挑戦 ──────────────────────────────────────────
+  /**
+   * 最後に開いた挑戦の id。**ロビーの「つづきから」に使う。**
+   *
+   * デイリーは `GET /api/daily` が自分の挑戦を返すのでロビーから戻れるが、
+   * **フリーモードにはその経路が無い**。ここを覚えていないと、遊んでいる途中で
+   * ロビーに戻った来場者が二度とその挑戦に戻れない（実際にそうなっていた）。
+   *
+   * ここは id だけを持つ。終わっているかどうかはロビーがサーバーに聞く
+   * （`useGameQuery` の結果で判断するので、古い id が残っていても害はない）。
+   * 永続化はしない（store/settings.ts と同じ理由。アプリを閉じれば消える）。
+   */
+  resumeGameId: string | null
+  setResumeGameId: (gameId: string | null) => void
+
   // ── ゲーム画面のローカル状態 ──────────────────────────────
   /**
    * 入力欄の内容。
@@ -67,6 +82,9 @@ export const useUiStore = create<UiState>((set) => ({
   activeTier: 'mono',
   setActiveTier: (tier) => set({ activeTier: tier }),
 
+  resumeGameId: null,
+  setResumeGameId: (gameId) => set({ resumeGameId: gameId }),
+
   ...initialGameUi,
   setDraftWord: (word) => set({ draftWord: word }),
   setRatio: (ratio) => set({ ratio: normalizeRatio(ratio) ?? RATIO_DEFAULT }),
@@ -79,5 +97,6 @@ export const useUiStore = create<UiState>((set) => ({
 // ── セレクタ（再レンダリングを絞るために用意しておく）────────
 export const selectActiveTier = (state: UiState): TierId => state.activeTier
 export const selectRatio = (state: UiState): number => state.ratio
+export const selectResumeGameId = (state: UiState): string | null => state.resumeGameId
 export const selectIsMixing = (state: UiState): boolean => state.isMixing
 export const selectVocabLoadProgress = (state: UiState): number => state.vocabLoadProgress
