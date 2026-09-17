@@ -25,11 +25,15 @@ function validCase(value: unknown): Case {
   }
   const item = value as Record<string, unknown>
   if (
-    typeof item.goal !== 'string' || !item.goal ||
-    typeof item.current !== 'string' || !item.current ||
-    typeof item.input_word !== 'string' || !item.input_word ||
+    typeof item.goal !== 'string' ||
+    !item.goal ||
+    typeof item.current !== 'string' ||
+    !item.current ||
+    typeof item.input_word !== 'string' ||
+    !item.input_word ||
     typeof item.ratio !== 'number' || normalizeRatio(item.ratio) === null
-  ) throw new InputError('case requires goal, current, input_word and a valid ratio')
+  )
+    throw new InputError('case requires goal, current, input_word and a valid ratio')
   return item as Case
 }
 
@@ -67,16 +71,30 @@ async function main() {
       if (!goal || !current || !ingredient?.isInput) {
         throw new InputError('goal/current must exist and input_word must be input vocabulary')
       }
-      const candidates = await mixCandidateMetrics(tx, item.goal, item.current, item.input_word, item.ratio)
+      const candidates = await mixCandidateMetrics(
+        tx,
+        item.goal,
+        item.current,
+        item.input_word,
+        item.ratio,
+      )
       const comparison = compareMixCandidates(candidates)
       const production = await mixAndRank(tx, item.goal, item.current, item.input_word, item.ratio)
       const plan = explain
-        ? (await tx.execute<{ 'QUERY PLAN': string }>(sql`
-            EXPLAIN (ANALYZE, BUFFERS)
-            ${mixCandidateMetricsQuery(item.goal, item.current, item.input_word, item.ratio)}
-          `)).rows.map((row) => row['QUERY PLAN'])
+        ? (
+            await tx.execute<{ 'QUERY PLAN': string }>(sql`
+              EXPLAIN (ANALYZE, BUFFERS)
+              ${mixCandidateMetricsQuery(item.goal, item.current, item.input_word, item.ratio)}
+            `)
+          ).rows.map((row) => row['QUERY PLAN'])
         : undefined
-      results.push({ input: item, candidate_count: candidates.length, comparison, production, plan })
+      results.push({
+        input: item,
+        candidate_count: candidates.length,
+        comparison,
+        production,
+        plan,
+      })
     }
     return results
   })

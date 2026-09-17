@@ -8,15 +8,21 @@ import {
 
 describe('goal-aware mix comparison', () => {
   const candidate = (word: string, blendSimilarity: number, goalSimilarity: number) => ({
-    word, blendSimilarity, goalSimilarity,
+    word,
+    blendSimilarity,
+    goalSimilarity,
   })
 
   it('beta=0 chooses the highest blend similarity', () => {
-    expect(rankMixCandidates([candidate('a', 0.9, 0.1), candidate('b', 0.8, 1)], 0)[0]?.word).toBe('a')
+    expect(rankMixCandidates([candidate('a', 0.9, 0.1), candidate('b', 0.8, 1)], 0)[0]?.word).toBe(
+      'a',
+    )
   })
 
   it('beta=1 chooses the highest goal similarity', () => {
-    expect(rankMixCandidates([candidate('a', 0.9, 0.1), candidate('b', 0.8, 1)], 1)[0]?.word).toBe('b')
+    expect(rankMixCandidates([candidate('a', 0.9, 0.1), candidate('b', 0.8, 1)], 1)[0]?.word).toBe(
+      'b',
+    )
   })
 
   it('a small beta breaks a close blend race toward goal', () => {
@@ -32,7 +38,11 @@ describe('goal-aware mix comparison', () => {
   it('uses score, then blend, then word for deterministic ties', () => {
     const rows = [candidate('z', 0.5, 0.5), candidate('a', 0.5, 0.5), candidate('m', 0.75, 0.25)]
     expect(rankMixCandidates(rows, 0.5).map((row) => row.word)).toEqual(['m', 'a', 'z'])
-    expect(rankMixCandidates([...rows].reverse(), 0.5).map((row) => row.word)).toEqual(['m', 'a', 'z'])
+    expect(rankMixCandidates([...rows].reverse(), 0.5).map((row) => row.word)).toEqual([
+      'm',
+      'a',
+      'z',
+    ])
   })
 
   it('rejects invalid beta, even for an empty list', () => {
