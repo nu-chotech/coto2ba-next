@@ -9,13 +9,17 @@
  * 「コードを入れたのに入れない」がブースで起きるので、吸収する範囲を固定しておく。
  */
 import type { RoomResponse } from '@coto2ba/contracts'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   isHost,
+  markRoomJoinAttempted,
   myStanding,
   normalizeRoomCode,
+  openRoomFromDeepLink,
   rememberCode,
+  resetRoomCodeMemory,
   roomCodeFromUrl,
+  shouldJoinOnArrival,
   winnerOf,
 } from '../src/features/rooms/code'
 
@@ -159,6 +163,70 @@ describe('isHost', () => {
   })
 })
 
+/**
+ * **QR（ディープリンク）で着地したとき、参加リクエストが実際に投げられること。**
+ *
+ * ここは一度、沈黙して壊れた。ディープリンクの「飛ばした」印を
+ * 「参加を投げた」印と共有した瞬間、着地した部屋の画面が
+ * 「もう投げた」と判断して **join を 1 本も投げなくなった**。
+ * ポーリングは参加が通るまで止めてあるので join も poll も飛ばず、
+ * エラーも出ないまま画面が固まった。**QR ＝ ブースの主動線**が死ぬ。
+ *
+ * だから固定するのは「Set がいくつあるか」ではなく、
+ * **ゲートが処理したあとで着地先が join を投げるか**という外から見た結果。
+ */
+describe('QR で着地したときの参加', () => {
+  beforeEach(() => resetRoomCodeMemory())
+
+  it('ゲートが処理したあと、着地した画面は参加を投げる', () => {
+    const code = openRoomFromDeepLink('exp://u.expo.dev/proj?channel-name=production&room=Q83D')
+    expect(code).toBe('Q83D')
+    // ここが false になると、join も poll も飛ばないまま画面が固まる。
+    expect(shouldJoinOnArrival(code as string)).toBe(true)
+  })
+
+  it('手入力で来たときも参加を投げる', () => {
+    // 入口を経由せず直接 /play/room/Q83D を開いた場合。
+    expect(shouldJoinOnArrival('Q83D')).toBe(true)
+  })
+
+  it('着地先が二度描かれても参加は 1 回だけ', () => {
+    const code = openRoomFromDeepLink('exp://x?room=Q83D') as string
+    expect(shouldJoinOnArrival(code)).toBe(true)
+    // Web は hydrate 直後にルート木を 1 度作り直す。2 本目は投げない。
+    expect(shouldJoinOnArrival(code)).toBe(false)
+  })
+
+  it('入口から投げた直後に着地しても、二重には投げない', () => {
+    markRoomJoinAttempted('Q83D')
+    expect(shouldJoinOnArrival('Q83D')).toBe(false)
+  })
+
+  it('同じ URL が何度も届いても、飛ばすのは 1 回だけ', () => {
+    expect(openRoomFromDeepLink('exp://x?room=Q83D')).toBe('Q83D')
+    expect(openRoomFromDeepLink('exp://x?room=Q83D')).toBeNull()
+  })
+
+  it('room が付かない起動では何もしない', () => {
+    expect(openRoomFromDeepLink('exp://192.168.1.5:8081')).toBeNull()
+  })
+
+  it('別の部屋の QR なら、それぞれ参加を投げる', () => {
+    const a = openRoomFromDeepLink('exp://x?room=AAAA') as string
+    const b = openRoomFromDeepLink('exp://x?room=BBBB') as string
+    expect(shouldJoinOnArrival(a)).toBe(true)
+    expect(shouldJoinOnArrival(b)).toBe(true)
+  })
+
+  // 上限で忘れたコードに出会い直しても、参加は投げ直せる（サーバーは冪等）。
+  it('覚えきれずに忘れた部屋には、もう一度参加を投げる', () => {
+    expect(shouldJoinOnArrival('Q83D', 1)).toBe(true)
+    expect(shouldJoinOnArrival('ZZZZ', 1)).toBe(true)
+    // 上限 1 なので Q83D は忘れられている。
+    expect(shouldJoinOnArrival('Q83D', 1)).toBe(true)
+  })
+})
+
 describe('rememberCode', () => {
   it('上限までは全部覚える', () => {
     const set = new Set<string>()
@@ -180,17 +248,5 @@ describe('rememberCode', () => {
     rememberCode(set, 'D', 3)
     // A を入れ直したので、捨てられるのは B。
     expect([...set]).toEqual(['C', 'A', 'D'])
-  })
-
-  /**
-   * **印の種類ごとに別の Set を使うこと。**
-   * ここを共有すると「ディープリンクで飛ばした」印が「参加を投げた」印を兼ね、
-   * 着地先が join を一本も投げなくなる（QR 参加が沈黙して壊れた）。
-   */
-  it('別の Set は互いに影響しない', () => {
-    const pushed = new Set<string>()
-    const joined = new Set<string>()
-    rememberCode(pushed, 'A', 3)
-    expect(joined.has('A')).toBe(false)
   })
 })

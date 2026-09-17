@@ -301,6 +301,29 @@ describe.runIf(true)('対戦ルーム', () => {
       await expect(rematchRoom(db, stranger, first.code)).rejects.toThrow()
     })
 
+    /**
+     * コードは「生きている部屋の中で一意」なので、次の部屋も終わったあとに
+     * 同じコードが**別人の部屋**へ再利用されうる。そのとき 403 で行き止まりにせず、
+     * 新しい部屋を作りに進むこと。
+     */
+    it('次のコードが別人の部屋に再利用されていたら、新しく作り直す', async () => {
+      if (!hasDb) return
+      const host = await createTestUser()
+      const stranger = await createTestUser()
+      const first = await createRoom(db, host, 'normal')
+      await closeRoom(first.code)
+
+      // 他人の部屋を作り、その部屋のコードを first.next_code に差し込む
+      //（コード再利用で同じことが起きる）。
+      const others = await createRoom(db, stranger, 'normal')
+      await db.update(rooms).set({ nextCode: others.code }).where(eq(rooms.code, first.code))
+
+      const next = await rematchRoom(db, host, first.code)
+      // 他人の部屋を返さない。新しい部屋を作る。
+      expect(next.code).not.toBe(others.code)
+      expect(next.players.some((p) => p.is_me)).toBe(true)
+    })
+
     it('難易度は引き継ぐ', async () => {
       if (!hasDb) return
       const host = await createTestUser()

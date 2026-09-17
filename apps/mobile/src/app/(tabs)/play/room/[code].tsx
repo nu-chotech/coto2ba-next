@@ -29,10 +29,8 @@ import {
 } from '../../../../components'
 import { LOBBY_HREF, parseAchievementIds, resultHref, useMeQuery } from '../../../../features/game'
 import {
-  hasAttemptedRoomJoin,
   hasJoinedRoom,
   isHost,
-  markRoomJoinAttempted,
   normalizeRoomCode,
   ROOM_ENTRY_HREF,
   RoomLobby,
@@ -40,6 +38,7 @@ import {
   RoomStandings,
   roomGameHref,
   roomHref,
+  shouldJoinOnArrival,
   useJoinRoomMutation,
   useLeaveRoomMutation,
   useRematchRoomMutation,
@@ -94,12 +93,8 @@ export default function RoomScreen() {
    */
   const joinRoom = join.mutate
   useEffect(() => {
-    if (code.length === 0) return
-    if (hasAttemptedRoomJoin(code)) return
-    // **投げる前に印を付ける。** mutation の `onMutate` に任せると、
-    // Web の hydrate で作り直された側の効果が先に走って 2 本飛ぶ（実測で毎回 1 本無駄だった）。
-    markRoomJoinAttempted(code)
-    joinRoom(code)
+    // 判断と印付けは `shouldJoinOnArrival` が持つ（QR で来ても必ずここを通る）。
+    if (shouldJoinOnArrival(code)) joinRoom(code)
   }, [code, joinRoom])
 
   /**

@@ -31,12 +31,8 @@ import {
   startRoom,
 } from '../../lib/api'
 import { queryKeys } from '../../lib/queryClient'
-import { rememberCode } from './code'
-import {
-  ROOM_CODE_MEMORY_LIMIT,
-  ROOM_JOIN_RETRY_COUNT,
-  ROOM_JOIN_RETRY_DELAY_MS,
-} from './constants'
+import { markRoomJoinAttempted, markRoomJoined } from './code'
+import { ROOM_JOIN_RETRY_COUNT, ROOM_JOIN_RETRY_DELAY_MS } from './constants'
 
 /**
  * `code` が null のあいだは走らせない。
@@ -120,38 +116,6 @@ export function useJoinRoomMutation() {
       cacheRoom(queryClient, room)
     },
   })
-}
-
-/** 参加が通った部屋。**画面の作り直しを跨いで**覚えておく（下の解説を参照）。 */
-const joinedRooms = new Set<string>()
-
-/** その部屋の参加者だと分かっているか。ポーリングを始めてよいかの判断に使う。 */
-export function hasJoinedRoom(code: string): boolean {
-  return joinedRooms.has(code)
-}
-
-function markRoomJoined(code: string): void {
-  rememberCode(joinedRooms, code, ROOM_CODE_MEMORY_LIMIT)
-}
-
-/**
- * 参加を投げた部屋のコード。**モジュールスコープ**で覚える。
- *
- * - 入口の「参加する」で投げた直後に部屋の画面が開くので、そこで二重に投げない
- * - Web は hydrate 直後にルート木が 1 度作り直される（`app/_layout.tsx` の
- *   `useWebHydrationKey`）ので、`useRef` に置くと消えて二重送信になる
- *
- * 2 本目は汎用のレート制限バケツ（5 req/s）を無駄に食い、実際に 429 を踏んだ。
- * サーバー側は冪等なので**安全側に倒しても壊れない**（投げ直しは retry が行う）。
- */
-const joinAttempts = new Set<string>()
-
-export function markRoomJoinAttempted(code: string): void {
-  rememberCode(joinAttempts, code, ROOM_CODE_MEMORY_LIMIT)
-}
-
-export function hasAttemptedRoomJoin(code: string): boolean {
-  return joinAttempts.has(code)
 }
 
 /** 投げ直せば結果が変わりうる失敗か。 */

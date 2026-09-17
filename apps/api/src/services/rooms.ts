@@ -469,13 +469,21 @@ export async function rematchRoom(db: Db, userId: string, code: string): Promise
    */
   if (statusOf(room) !== 'finished') throw appError('ROOM_NOT_FINISHED')
 
-  // 既に作ってあれば作り直さない（二度押し・再送で部屋が増えない）。
+  /**
+   * 既に作ってあれば作り直さない（二度押し・再送で部屋が増えない）。
+   *
+   * ただし **`next_code` が指す先が自分の部屋とは限らない**。
+   * コードは「生きている部屋の中で一意」なので、次の部屋も終わったあとに
+   * 同じコードが別の部屋へ再利用されうる。そのときは自分が参加者ではないので、
+   * **そこで 403 を返して行き止まりにせず、新しい部屋を作りに進む**。
+   */
   if (room.nextCode !== null) {
     const existing = await findLiveRoom(db, room.nextCode).catch(() => null)
     if (existing !== null && statusOf(existing) !== 'finished') {
       const next = await loadPlayers(db, existing.id)
-      assertMember(next, userId)
-      return toResponse(existing, next, userId)
+      if (next.some((p) => p.state.userId === userId)) {
+        return toResponse(existing, next, userId)
+      }
     }
   }
 

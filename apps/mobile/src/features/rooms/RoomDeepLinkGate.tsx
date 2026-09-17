@@ -12,23 +12,8 @@
 import * as Linking from 'expo-linking'
 import { useRouter } from 'expo-router'
 import { useEffect } from 'react'
-import { rememberCode, roomCodeFromUrl } from './code'
-import { ROOM_CODE_MEMORY_LIMIT } from './constants'
+import { openRoomFromDeepLink } from './code'
 import { roomHref } from './routes'
-
-/**
- * ここで飛ばしたコード。画面を跨いで覚えておく
- * （React の state に置くと着地先で消えて、同じ URL で何度も push される）。
- *
- * **参加を投げた印（`markRoomJoinAttempted`）と共有してはいけない。**
- * 共有すると、着地した部屋の画面が「もう参加を投げた」と判断して **join を一本も
- * 投げなくなる**。ポーリングは参加が通るまで止めてあるので、
- * **join も poll も飛ばず、エラーも出ないまま画面がスケルトンで固まる**
- * （実際にそうなった。QR ＝ ブースの主動線なので致命的だった）。
- *
- * 上限つきで覚える（ブースは 1 台で何十戦も回すので際限なく貯めない）。
- */
-const pushedByDeepLink = new Set<string>()
 
 export function RoomDeepLinkGate() {
   const url = Linking.useURL()
@@ -36,11 +21,15 @@ export function RoomDeepLinkGate() {
 
   useEffect(() => {
     if (url === null) return
-    const code = roomCodeFromUrl(url)
-    // `room` が付いていない普通の起動（開発サーバーの URL など）は何もしない。
+    /**
+     * 判断と印付けは `openRoomFromDeepLink` が持つ。
+     * **ここで参加の印（`markRoomJoinAttempted`）を触らないこと。**
+     * 触ると着地した部屋の画面が join を投げなくなり、
+     * **エラーも出ないまま画面が固まる**（一度そう壊した）。
+     * その振る舞いは `tests/room-code.test.ts` が固定している。
+     */
+    const code = openRoomFromDeepLink(url)
     if (code === null) return
-    if (pushedByDeepLink.has(code)) return
-    rememberCode(pushedByDeepLink, code, ROOM_CODE_MEMORY_LIMIT)
     router.push(roomHref(code))
   }, [url, router])
 
