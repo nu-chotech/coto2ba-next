@@ -24,6 +24,7 @@ import {
 } from '@coto2ba/contracts'
 import { type SQL, sql } from 'drizzle-orm'
 import type { Db } from '../db/client'
+import { deterministicShuffle } from '../lib/random'
 import { bestRatioForCandidate, extrapolationTarget } from './hint-target'
 import type { MixCandidateScore } from './mix-scoring'
 
@@ -319,12 +320,24 @@ export async function hintCandidates(
     .map(({ word, ratio }) => ({ word, ratio }))
 
   const hints = await keepUsefulHints(db, goal, current, byArithmetic, limit)
-  if (hints.length > 0) return hints
+  if (hints.length > 0) return shuffleForDisplay(hints, goal, current)
 
   // 最後の手段。1 件も検証を通らなかったときだけ、ゴールの近傍を候補にしてもう一度試す。
   // **ここでも同じ検証を通す。** 素通しすると「混ぜても順位が下がる語」を返しうる。
   const rescue = await goalNeighborCandidates(db, goal, current, currentVec, goalVec, banned)
-  return await keepUsefulHints(db, goal, current, rescue, 1)
+  return shuffleForDisplay(await keepUsefulHints(db, goal, current, rescue, 1), goal, current)
+}
+
+/**
+ * 表示順を崩す。**選ぶところまではゴールに近い順**で、崩すのは最後の並びだけ。
+ *
+ * ゴールに近い順のまま出すと 1 位が常に勝ち確定の手になり、人は反射的に一番上を押す。
+ * かといって毎回変えると、`hint_cache`（`(goal, current)` でキャッシュ）の
+ * 「同じ盤面なら同じヒント」が壊れ、開き直すたびに探し直しになり、人によって並びも変わる。
+ * **盤面を種にした決定的な並べ替え**にすることで両方を満たす。
+ */
+function shuffleForDisplay(hints: readonly Hint[], goal: string, current: string): Hint[] {
+  return deterministicShuffle(hints, `${goal}\u0000${current}`)
 }
 
 /**

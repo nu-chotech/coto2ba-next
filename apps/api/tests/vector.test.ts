@@ -174,11 +174,40 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
     for (const hint of hints) expect(banned).not.toContain(hint.word)
   })
 
-  it('同じ入力なら同じ結果（キャッシュが決定論であるため）', async () => {
+  // 並びは盤面から決まる（ゴールに近い順ではない）。hint_cache は (goal, current) で
+  // キャッシュされるので、**並びまで含めて**同じでなければならない。
+  it('同じ入力なら並びまで含めて同じ結果（キャッシュが決定論であるため）', async () => {
     if (!hasVocab) return
     const a = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
-    const b = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
-    expect(a).toEqual(b)
+    for (let i = 0; i < 5; i++) {
+      expect(await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)).toEqual(a)
+    }
+  })
+
+  it('盤面が違えば並びも違いうる', async () => {
+    if (!hasVocab) return
+    // 同じゴールに対して current を変えると、語も並びも変わる。
+    // 「並びがゴール類似度の降順に固定されていない」ことの確認。
+    const orders = new Set<string>()
+    for (const current of [CURRENT, '宇宙', '自転車', '会議']) {
+      const hints = await hintCandidates(db, GOAL, current, [], HINT_COUNT)
+      orders.add(hints.map((h) => h.word).join(','))
+    }
+    expect(orders.size).toBeGreaterThan(1)
+  })
+
+  // 並べ替えるのは表示順だけ。選ぶところまではゴールに近い順なので、
+  // 「効く手だけ」「limit 件」という性質は崩れていない。
+  it('並べ替えても件数と中身の性質は変わらない', async () => {
+    if (!hasVocab) return
+    const hints = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
+    expect(hints).toHaveLength(HINT_COUNT)
+    expect(new Set(hints.map((h) => h.word)).size).toBe(hints.length)
+    const before = await rankOf(db, GOAL, CURRENT)
+    for (const hint of hints) {
+      const res = await mixAndRank(db, GOAL, CURRENT, hint.word, hint.ratio)
+      expect(res?.rank).toBeLessThan(before as number)
+    }
   })
 
   it('limit を超えない', async () => {
