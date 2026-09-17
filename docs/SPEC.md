@@ -338,7 +338,11 @@ POST /games/:id/moves { input_word, ratio }
 ### 5.8 ランキング
 
 - 対象：その日のデイリーで `status = cleared` のゲーム。
-- 順序：`move_count ASC, hint_count ASC, cleared_at ASC`。
+- 順序：`hint_count ASC, move_count ASC, cleared_at ASC`。
+  **ヒント数が最優先**なので、ヒントを 1 回でも使った人はノーヒントでクリアした全員より下になる。
+  ヒントを外挿にした（§3.3 / `docs/superpowers/specs/2026-09-17-exhibition-ux-overhaul-design.md`）結果、
+  ヒント 1 手でゴール圏まで届くほど強くなったため、ヒントを弱める代わりにランキングで課金する形にした
+  （経緯は `docs/QUESTIONS.md`）。
 - 表示：上位 50 + 自分の順位。名前は `users.display_name`。
 - ブースモード（§8.6）で作られた匿名ユーザーもそのまま載る。
 
