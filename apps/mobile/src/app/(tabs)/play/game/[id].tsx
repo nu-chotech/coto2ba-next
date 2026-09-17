@@ -71,6 +71,7 @@ import {
   RoomRace,
   roomHref,
   useApplyRoomStandings,
+  useMarkMyRoomGameFinished,
 } from '../../../../features/rooms'
 import { feedback, feedbackForRankChange } from '../../../../lib/feedback'
 import { isKnownWord, isVocabReady } from '../../../../lib/vocab'
@@ -134,6 +135,11 @@ export default function GameScreen() {
 
   /** ルーム戦のときだけ効く（`roomCode` が null なら何もしない）。 */
   const applyRoomStandings = useApplyRoomStandings(roomCode)
+  /**
+   * 終局を部屋のキャッシュにも写す。**これが無いと、部屋に戻った瞬間に
+   * 「まだ playing」の古い状態を読んでゲーム画面へ送り返される。**
+   */
+  const markRoomGameFinished = useMarkMyRoomGameFinished(roomCode)
 
   const inputRef = useRef<WordInputHandle | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
@@ -197,6 +203,8 @@ export default function GameScreen() {
           // ルーム戦なら、この手の順位がレスポンスに入っている。
           // ポーリングを待たずに上の順位バーへ反映する。
           applyRoomStandings(response.room_standings)
+          // 終局なら、部屋のキャッシュにもその場で写す（往復の防止）。
+          markRoomGameFinished(response.status)
         },
         onError: (error) => {
           setPending(null)
@@ -206,7 +214,7 @@ export default function GameScreen() {
         },
       },
     )
-  }, [detail, move, ratio, setHintOpen, setMixing, applyRoomStandings])
+  }, [detail, move, ratio, setHintOpen, setMixing, applyRoomStandings, markRoomGameFinished])
 
   /** 演出が終わった瞬間。ここでフィードバックを鳴らし、終局なら結果画面へ。 */
   const finishMix = useCallback(() => {
@@ -270,13 +278,14 @@ export default function GameScreen() {
     // 二度押しでゲームを 2 回終わらせに行かない（2 回目は必ず 422 になる）。
     if (surrender.isPending) return
     surrender.mutate(undefined, {
-      onSuccess: () => {
+      onSuccess: (game) => {
         setSheet(null)
+        markRoomGameFinished(game.status)
         router.replace(roomCode !== null ? roomHref(roomCode) : resultHref(gameId))
       },
       onError: () => feedback('error_oov'),
     })
-  }, [gameId, router, surrender, roomCode])
+  }, [gameId, router, surrender, roomCode, markRoomGameFinished])
 
   /**
    * 「…」の中身。**確認は 1 段だけ**（以前は Alert の入れ子で 2 段だった）。
