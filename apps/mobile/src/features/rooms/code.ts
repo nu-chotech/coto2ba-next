@@ -64,3 +64,24 @@ export function winnerOf(room: RoomResponse | undefined): RoomPlayer | null {
 export function isHost(room: RoomResponse | undefined, userId: string | null): boolean {
   return room !== undefined && userId !== null && room.host_user_id === userId
 }
+
+/**
+ * 部屋コードの印を覚える。**上限を超えたら古いものから捨てる。**
+ *
+ * ブースは 1 台で何十戦も回す（「もう一度」を押すたびに新しいコードが増える）ので、
+ * 際限なく貯めない。捨てたコードにもう一度出会っても、参加を投げ直すだけで
+ * サーバー側は冪等なので害が無い。`Set` は挿入順を保つので先頭が最も古い。
+ *
+ * **印の種類ごとに別の Set を渡すこと。** 1 つを使い回すと、
+ * 「ディープリンクで飛ばした」印が「参加を投げた」印を兼ねてしまい、
+ * **着地先が参加を投げなくなる**（実際に QR 経由の参加が沈黙して壊れた）。
+ */
+export function rememberCode(set: Set<string>, code: string, limit: number): void {
+  set.delete(code)
+  set.add(code)
+  while (set.size > limit) {
+    const oldest = set.values().next().value
+    if (oldest === undefined) break
+    set.delete(oldest)
+  }
+}

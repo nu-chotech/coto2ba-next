@@ -278,6 +278,29 @@ describe.runIf(true)('対戦ルーム', () => {
       expect(b.code).toBe(a.code)
     })
 
+    // まだ生きている部屋で作ると、そこで待っている人を置き去りにする
+    // （Critical-1 と同じ形の事故）。
+    it('終わっていない部屋からは作れない', async () => {
+      if (!hasDb) return
+      const host = await createTestUser()
+      const guest = await createTestUser()
+      const waiting = await createRoom(db, host, 'normal')
+      await joinRoom(db, guest, waiting.code)
+      await expect(rematchRoom(db, host, waiting.code)).rejects.toThrow()
+
+      await startRoom(db, host, waiting.code)
+      await expect(rematchRoom(db, host, waiting.code)).rejects.toThrow()
+    })
+
+    it('参加していない人は作れない', async () => {
+      if (!hasDb) return
+      const host = await createTestUser()
+      const stranger = await createTestUser()
+      const first = await createRoom(db, host, 'normal')
+      await closeRoom(first.code)
+      await expect(rematchRoom(db, stranger, first.code)).rejects.toThrow()
+    })
+
     it('難易度は引き継ぐ', async () => {
       if (!hasDb) return
       const host = await createTestUser()
@@ -377,8 +400,13 @@ describe.runIf(true)('対戦ルーム', () => {
     expect(rows[0]?.status).toBe('finished')
   })
 
-  // ブースは匿名ユーザーを作り直す（「次の人へ」）。
-  // そのとき部屋が残ると、コードが取られたままになる。
+  /**
+   * 引き継ぎ（`POST /api/transfer/claim`）は、成功すると**旧匿名ユーザーを消す**。
+   * ブースで部屋を立てた来場者が、持ち帰り QR で自分の端末へ引き継ぐと実際に起きる。
+   * そのとき部屋が残ると、コードが取られたままになる。
+   *
+   * （「次の人へ」はユーザーを消さない。新しい匿名ユーザーを作るだけ。）
+   */
   it('ホストのユーザーを消すと部屋も消える（cascade）', async () => {
     if (!hasDb) return
     const host = await createTestUser()

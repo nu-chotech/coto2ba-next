@@ -12,15 +12,23 @@
 import * as Linking from 'expo-linking'
 import { useRouter } from 'expo-router'
 import { useEffect } from 'react'
-import { roomCodeFromUrl } from './code'
-import { hasAttemptedRoomJoin, markRoomJoinAttempted } from './queries'
+import { rememberCode, roomCodeFromUrl } from './code'
+import { ROOM_CODE_MEMORY_LIMIT } from './constants'
 import { roomHref } from './routes'
 
 /**
- * 画面を跨いで覚えておく（React の state に置くと着地先で消えて再送になる）。
- * **参加を投げた印と同じもの**を使うので、ここで別の Set を持たない
- * （持つと、ブースで何十戦も回したときに 2 つとも際限なく膨らむ）。
+ * ここで飛ばしたコード。画面を跨いで覚えておく
+ * （React の state に置くと着地先で消えて、同じ URL で何度も push される）。
+ *
+ * **参加を投げた印（`markRoomJoinAttempted`）と共有してはいけない。**
+ * 共有すると、着地した部屋の画面が「もう参加を投げた」と判断して **join を一本も
+ * 投げなくなる**。ポーリングは参加が通るまで止めてあるので、
+ * **join も poll も飛ばず、エラーも出ないまま画面がスケルトンで固まる**
+ * （実際にそうなった。QR ＝ ブースの主動線なので致命的だった）。
+ *
+ * 上限つきで覚える（ブースは 1 台で何十戦も回すので際限なく貯めない）。
  */
+const pushedByDeepLink = new Set<string>()
 
 export function RoomDeepLinkGate() {
   const url = Linking.useURL()
@@ -31,8 +39,8 @@ export function RoomDeepLinkGate() {
     const code = roomCodeFromUrl(url)
     // `room` が付いていない普通の起動（開発サーバーの URL など）は何もしない。
     if (code === null) return
-    if (hasAttemptedRoomJoin(code)) return
-    markRoomJoinAttempted(code)
+    if (pushedByDeepLink.has(code)) return
+    rememberCode(pushedByDeepLink, code, ROOM_CODE_MEMORY_LIMIT)
     router.push(roomHref(code))
   }, [url, router])
 

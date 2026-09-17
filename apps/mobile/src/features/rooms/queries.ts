@@ -31,6 +31,7 @@ import {
   startRoom,
 } from '../../lib/api'
 import { queryKeys } from '../../lib/queryClient'
+import { rememberCode } from './code'
 import {
   ROOM_CODE_MEMORY_LIMIT,
   ROOM_JOIN_RETRY_COUNT,
@@ -130,7 +131,7 @@ export function hasJoinedRoom(code: string): boolean {
 }
 
 function markRoomJoined(code: string): void {
-  remember(joinedRooms, code)
+  rememberCode(joinedRooms, code, ROOM_CODE_MEMORY_LIMIT)
 }
 
 /**
@@ -146,29 +147,11 @@ function markRoomJoined(code: string): void {
 const joinAttempts = new Set<string>()
 
 export function markRoomJoinAttempted(code: string): void {
-  remember(joinAttempts, code)
+  rememberCode(joinAttempts, code, ROOM_CODE_MEMORY_LIMIT)
 }
 
 export function hasAttemptedRoomJoin(code: string): boolean {
   return joinAttempts.has(code)
-}
-
-/**
- * 印を覚える。**上限を超えたら古いものから捨てる。**
- *
- * ブースは 1 台で何十戦も回す（「もう一度」を押すたびに新しいコードが増える）ので、
- * 際限なく貯めない。捨てた部屋にもう一度入ったときは参加を投げ直すだけで、
- * サーバー側は冪等なので害が無い。
- * `Set` は挿入順を保つので、先頭が最も古い。
- */
-function remember(set: Set<string>, code: string): void {
-  set.delete(code)
-  set.add(code)
-  while (set.size > ROOM_CODE_MEMORY_LIMIT) {
-    const oldest = set.values().next().value
-    if (oldest === undefined) break
-    set.delete(oldest)
-  }
 }
 
 /** 投げ直せば結果が変わりうる失敗か。 */

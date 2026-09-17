@@ -459,13 +459,23 @@ export async function leaveRoom(db: Db, userId: string, code: string): Promise<R
  */
 export async function rematchRoom(db: Db, userId: string, code: string): Promise<RoomResponse> {
   const room = await findLiveRoom(db, code)
+  const players = await loadPlayers(db, room.id)
+  assertMember(players, userId)
   if (room.hostUserId !== userId) throw appError('ROOM_NOT_HOST')
+  /**
+   * **決着した部屋からしか作れない。**
+   * まだ生きている部屋で作ると、そこで待っている人を置き去りにしたまま
+   * ホストだけ別の部屋へ行くことになる（`Critical-1` と同じ形の事故）。
+   */
+  if (statusOf(room) !== 'finished') throw appError('ROOM_NOT_FINISHED')
 
   // 既に作ってあれば作り直さない（二度押し・再送で部屋が増えない）。
   if (room.nextCode !== null) {
     const existing = await findLiveRoom(db, room.nextCode).catch(() => null)
     if (existing !== null && statusOf(existing) !== 'finished') {
-      return buildState(db, existing, userId)
+      const next = await loadPlayers(db, existing.id)
+      assertMember(next, userId)
+      return toResponse(existing, next, userId)
     }
   }
 

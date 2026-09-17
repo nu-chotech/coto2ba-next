@@ -32,6 +32,7 @@ import {
   hasAttemptedRoomJoin,
   hasJoinedRoom,
   isHost,
+  markRoomJoinAttempted,
   normalizeRoomCode,
   ROOM_ENTRY_HREF,
   RoomLobby,
@@ -95,6 +96,9 @@ export default function RoomScreen() {
   useEffect(() => {
     if (code.length === 0) return
     if (hasAttemptedRoomJoin(code)) return
+    // **投げる前に印を付ける。** mutation の `onMutate` に任せると、
+    // Web の hydrate で作り直された側の効果が先に走って 2 本飛ぶ（実測で毎回 1 本無駄だった）。
+    markRoomJoinAttempted(code)
     joinRoom(code)
   }, [code, joinRoom])
 
@@ -155,8 +159,16 @@ export default function RoomScreen() {
 
   const onStart = useCallback(() => start.mutate(), [start])
 
-  // 遷移は上の `next_code` の効果に任せる（ホストも参加者も同じ 1 本の経路を通る）。
-  const onRematch = useCallback(() => rematch.mutate(), [rematch])
+  /**
+   * 押した本人は**レスポンスで直接**次の部屋へ移る。
+   *
+   * `next_code` のポーリング頼みにすると、見張りが `ROOM_REMATCH_WATCH_MS` で
+   * 切れたあとに押したとき**サーバーには部屋ができるのに画面が動かない**
+   * （リロードすると飛ぶ）。ほかの参加者は今までどおりポーリングで移る。
+   */
+  const onRematch = useCallback(() => {
+    rematch.mutate(undefined, { onSuccess: (next) => router.replace(roomHref(next.code)) })
+  }, [rematch, router])
 
   /**
    * 部屋を出る。**待機中にホストが出たらサーバーが部屋ごと畳む**ので、

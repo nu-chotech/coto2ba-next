@@ -22,6 +22,7 @@ export const ERROR_CODES = [
   'ROOM_CLOSED',
   'ROOM_NOT_HOST',
   'ROOM_NOT_ENOUGH_PLAYERS',
+  'ROOM_NOT_FINISHED',
   'VALIDATION',
   'INTERNAL',
 ] as const
@@ -51,6 +52,7 @@ export const ERROR_MESSAGES_JA: Record<ErrorCode, string> = {
   ROOM_CLOSED: 'この部屋はもう始まっています',
   ROOM_NOT_HOST: '部屋を始められるのはホストだけです',
   ROOM_NOT_ENOUGH_PLAYERS: 'もう 1 人集まると始められます',
+  ROOM_NOT_FINISHED: 'この対戦はまだ終わっていません',
   VALIDATION: '入力が不正です',
   INTERNAL: 'サーバーエラーが発生しました',
 }
@@ -79,6 +81,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   ROOM_CLOSED: 409,
   ROOM_NOT_HOST: 403,
   ROOM_NOT_ENOUGH_PLAYERS: 409,
+  ROOM_NOT_FINISHED: 409,
   VALIDATION: 400,
   INTERNAL: 500,
 }

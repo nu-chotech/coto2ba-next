@@ -14,6 +14,7 @@ import {
   isHost,
   myStanding,
   normalizeRoomCode,
+  rememberCode,
   roomCodeFromUrl,
   winnerOf,
 } from '../src/features/rooms/code'
@@ -155,5 +156,41 @@ describe('isHost', () => {
 
   it('部屋がまだ無ければ false', () => {
     expect(isHost(undefined, 'host')).toBe(false)
+  })
+})
+
+describe('rememberCode', () => {
+  it('上限までは全部覚える', () => {
+    const set = new Set<string>()
+    for (const code of ['A', 'B', 'C']) rememberCode(set, code, 3)
+    expect([...set]).toEqual(['A', 'B', 'C'])
+  })
+
+  // ブースは 1 台で何十戦も回すので、際限なく貯めない。
+  it('上限を超えたら古いものから捨てる', () => {
+    const set = new Set<string>()
+    for (const code of ['A', 'B', 'C', 'D']) rememberCode(set, code, 3)
+    expect([...set]).toEqual(['B', 'C', 'D'])
+  })
+
+  it('同じコードを入れ直すと新しい扱いになる', () => {
+    const set = new Set<string>()
+    for (const code of ['A', 'B', 'C']) rememberCode(set, code, 3)
+    rememberCode(set, 'A', 3)
+    rememberCode(set, 'D', 3)
+    // A を入れ直したので、捨てられるのは B。
+    expect([...set]).toEqual(['C', 'A', 'D'])
+  })
+
+  /**
+   * **印の種類ごとに別の Set を使うこと。**
+   * ここを共有すると「ディープリンクで飛ばした」印が「参加を投げた」印を兼ね、
+   * 着地先が join を一本も投げなくなる（QR 参加が沈黙して壊れた）。
+   */
+  it('別の Set は互いに影響しない', () => {
+    const pushed = new Set<string>()
+    const joined = new Set<string>()
+    rememberCode(pushed, 'A', 3)
+    expect(joined.has('A')).toBe(false)
   })
 })
