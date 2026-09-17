@@ -86,6 +86,17 @@
     secrets 無しでも毎回走る**（コードの健全性は鍵の有無と無関係なので）。
   - secrets を登録すれば、次の push から実際にデプロイが動く。
 
+### 対戦ルーム（マルチプレイ・SPEC §9）— ローカルで通し確認済み
+- `POST /api/rooms` / `POST /api/rooms/:code/join` / `POST /api/rooms/:code/start` /
+  `GET /api/rooms/:code`（**ポーリング専用のレート制限バケツ**）
+- お題は部屋で 1 度だけ抽選して全員に配る。**進行中に他人が打った語は返さない**
+- 勝敗は `games.cleared_at`（サーバーの時刻）。全員終了か最初のクリアから
+  `ROOM_FINISH_GRACE_SECONDS` で部屋を畳む。放置された部屋は `ROOM_TTL_MINUTES` で掃除
+- 端末側は `/play/room`（入口）→ `/play/room/[code]`（待機・結果）→
+  **既存のゲーム画面に順位のオーバーレイを重ねる**（画面を複製していない）
+- **落とせる**: `app.ts` の `app.route('/api', roomsRoutes)`、ロビーの「みんなで対戦」、
+  ルートの `RoomDeepLinkGate`、`playMove` の `roomStandingsForGame` の 4 か所で切り離せる
+
 ### モバイル（apps/mobile）
 - Expo SDK 57 公式テンプレートから起こし、pnpm モノレポ用に Metro を設定
 - **iOS バンドルのビルドが通ることを確認済み**（`expo export --platform ios`、
@@ -125,7 +136,8 @@
 | SE 音源 | `assets/sounds/` は空。対応表だけ先に作ってあり、ファイルを置けば鳴る |
 | Noto Sans JP の同梱 | 図鑑の Skia ラベル用。現状は RN の `<Text>` オーバーレイで代替 |
 | 独自ドメイン | `coto2ba-next.chotech.dev` / `coto2ba-next-api.chotech.dev` の DNS 未設定（下記） |
-| 負荷試験（k6） | 未実施 |
+| 負荷試験（k6） | 未実施。`apps/api/tests/load.py` は実施済み（`--scenario moves` / `--scenario room`） |
+| 対戦ルームの本番使用量確認 | **未実施**。展示前日に Vercel の Usage で invocations を見る（下記の見積もりと突き合わせ） |
 | Tier B（§12） | 契約しない前提 |
 
 ---
@@ -191,6 +203,42 @@ Vercel の各プロジェクトに以下を足して、`chotech.dev` の DNS に
 ---
 
 ## 注意していること
+
+### ⚠️ 対戦ルームのポーリングと Hobby の invocations 枠
+
+対戦ルーム（SPEC §9）は WebSocket を使わず 1 秒ポーリングで同期する
+（採用しない理由は `docs/QUESTIONS.md` §8）。**Hobby は枠を超えると
+従量課金ではなく API 全体が 30 日停止する**ので、消費を見ておくこと。
+
+**ローカルの実測**（`python3 apps/api/tests/load.py --scenario room --seconds 60 --users 8`）:
+
+| 項目 | 実測 |
+| --- | --- |
+| ポーリング（GET /api/rooms/:code） | 8 人 60 秒で 459 件（= 1 人 0.96 req/s） |
+| 手（POST /moves） | 112 件 |
+| 429 | **0 件**（ポーリングは専用バケツ 4 req/s、手は汎用 5 req/s） |
+| p95 | ポーリング 30ms / 手 96ms |
+
+**1 レースあたりの見積もり**（8 人・ロビー 60 秒 + レース 180 秒）:
+
+| 内訳 | 計算 | 回数 |
+| --- | --- | --- |
+| ロビーのポーリング（2.5 秒間隔） | 8 × 60 / 2.5 | 192 |
+| レースのポーリング（1 秒間隔） | 8 × 180 / 1 | 1,440 |
+| 手とその後の再取得（1 手につき最大 4 本） | 8 × 10 × 4 | 320 |
+| 部屋の作成・参加・開始 | — | 約 10 |
+| **合計** | | **約 2,000** |
+
+**8 時間の展示に掛けると**: 1 レース + 入れ替えで約 5 分 → 12 レース/時 →
+8 時間で約 96 レース → **1 日あたり約 19 万回**。3 日なら **約 58 万回**で、
+Hobby の月 100 万回に対して**残りは約 4 割**（ここに 1 人用プレイぶんが乗る）。
+
+**余裕が無いときのつまみ**: `ROOM_POLL_INTERVAL_RACE_MS` を 1,000 → 1,500 にすると
+いちばん大きい項（1,440）が 960 に減り、1 レースが約 1,500 回になる。
+体験への影響は「順位バーの追従が 0.5 秒遅くなる」だけ。
+
+**展示前日にやること**: Vercel の Usage で invocations と Active CPU を見て、
+上の見積もりと突き合わせる。**この確認はまだ行っていない**（機能が未デプロイのため）。
 
 ### ⚠️ Expo SDK 58 の期限リスク
 SDK 58 beta が **2026-09-15 に告知済み**（beta 3〜4 週間）。安定版が出ると
