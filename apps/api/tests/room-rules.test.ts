@@ -13,6 +13,7 @@ const player = (over: Partial<RoomPlayerState> = {}): RoomPlayerState => ({
   displayName: '静かな蚕',
   moveCount: 0,
   bestRank: 9999,
+  hintCount: 0,
   finishedAt: null,
   ...over,
 })
@@ -78,6 +79,62 @@ describe('rankPlayers', () => {
   it('完全に同値なら userId で決める（表示が毎秒入れ替わらないように）', () => {
     const ranked = rankPlayers([player({ userId: 'b' }), player({ userId: 'a' })])
     expect(ranked.map((p) => p.userId)).toEqual(['a', 'b'])
+  })
+
+  /**
+   * **ヒントは順位で課金する（デイリーのランキングと同じ原則）。**
+   *
+   * ヒントの一番上に従うと実測で 51% がクリア圏に着地する。対戦で無料なら
+   * 押した側が数秒で勝ち、真面目に混ぜている側はまず勝てない。
+   * 禁止も隠蔽もせず、**使ったぶんだけ順位で不利**にする。
+   */
+  it('同じ状況なら、ヒントを使っていない人が上', () => {
+    const ranked = rankPlayers([
+      player({ userId: 'a', bestRank: 5, moveCount: 2, hintCount: 1 }),
+      player({ userId: 'b', bestRank: 5, moveCount: 2, hintCount: 0 }),
+    ])
+    expect(ranked.map((p) => p.userId)).toEqual(['b', 'a'])
+  })
+
+  // ヒントは手数より先に効く（デイリーの「ヒント数 → 手数」と同じ順序）。
+  it('ヒント数は手数より先に効く', () => {
+    const ranked = rankPlayers([
+      player({ userId: 'a', bestRank: 5, moveCount: 1, hintCount: 2 }),
+      player({ userId: 'b', bestRank: 5, moveCount: 9, hintCount: 0 }),
+    ])
+    expect(ranked.map((p) => p.userId)).toEqual(['b', 'a'])
+  })
+
+  // ヒントより「ゴールにどれだけ近いか」が先。未クリアの順序が逆転しない。
+  it('ヒントを使っていても、ランクが良ければ上', () => {
+    const ranked = rankPlayers([
+      player({ userId: 'a', bestRank: 2, hintCount: 3 }),
+      player({ userId: 'b', bestRank: 40, hintCount: 0 }),
+    ])
+    expect(ranked.map((p) => p.userId)).toEqual(['a', 'b'])
+  })
+
+  /**
+   * **対戦の主ルールは「最初にゴールへ着いた人が勝ち」。**
+   * ヒントを使って先に着いた人を後着の人より下げてはいけない
+   * （レースの勝者が後から入れ替わると、その場で見ていた全員の理解と食い違う）。
+   */
+  it('クリア済み同士はヒント数より着順が優先', () => {
+    const ranked = rankPlayers([
+      player({ userId: 'a', finishedAt: '2026-10-01T00:00:10.000Z', hintCount: 3 }),
+      player({ userId: 'b', finishedAt: '2026-10-01T00:00:20.000Z', hintCount: 0 }),
+    ])
+    expect(ranked.map((p) => p.userId)).toEqual(['a', 'b'])
+  })
+
+  // 同着（サーバーが打つ時刻がミリ秒まで並んだとき）はヒント数で解く。
+  it('クリアが同着ならヒント数の少ない人が上', () => {
+    const at = '2026-10-01T00:00:10.000Z'
+    const ranked = rankPlayers([
+      player({ userId: 'a', finishedAt: at, hintCount: 2 }),
+      player({ userId: 'b', finishedAt: at, hintCount: 0 }),
+    ])
+    expect(ranked.map((p) => p.userId)).toEqual(['b', 'a'])
   })
 
   it('入力を破壊しない', () => {

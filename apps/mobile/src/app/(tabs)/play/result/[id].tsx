@@ -54,7 +54,9 @@ import {
   spaceHref,
   useGameQuery,
 } from '../../../../features/game'
+import { handOverToNextPlayer } from '../../../../features/profile'
 import { ShareCardHost, useShareResult } from '../../../../features/share'
+import { patchMe } from '../../../../lib/api'
 import { resetSession } from '../../../../lib/auth'
 import { queryClient } from '../../../../lib/queryClient'
 import { useSettingsStore } from '../../../../store/settings'
@@ -78,6 +80,8 @@ export default function ResultScreen() {
   const game = useGameQuery(gameId)
   const boothMode = useSettingsStore((s) => s.boothMode)
   const [handingOver, setHandingOver] = useState(false)
+  /** 「次の人へ」がうまくいかなかったときの一言。**黙って進まない。** */
+  const [handOverError, setHandOverError] = useState<string | null>(null)
 
   const achievements = useMemo(() => parseAchievementIds(unlocked), [unlocked])
 
@@ -117,15 +121,33 @@ export default function ResultScreen() {
     transform: [{ scale: 0.9 + 0.1 * perfectGlow.value }],
   }))
 
-  /** ブースモード：新しい匿名ユーザーに差し替えてロビーへ戻る（SPEC §8.8）。 */
+  /**
+   * ブースモード：新しい匿名ユーザーに差し替えてロビーへ戻る（SPEC §8.8）。
+   *
+   * **新しいユーザーの `booth` は DB 既定の false なので、必ず入れ直す。**
+   * 入れ直さないと、係員が設定タブを開くか Expo Go をリロードした瞬間に
+   * ブースモードが OFF に落ち、以後の来場者が同一アカウントを共有する
+   * （判断は `features/profile/booth.ts`）。
+   *
+   * **うまくいかなかったときは進まない。** 黙ってロビーへ送ると、
+   * 係員は「切り替わったつもり」で次の来場者に渡してしまう。
+   */
   const onNextPlayer = useCallback(() => {
     setHandingOver(true)
-    void resetSession().finally(() => {
-      queryClient.clear()
+    setHandOverError(null)
+    void handOverToNextPlayer({
+      boothMode,
+      resetSession,
+      applyBooth: () => patchMe({ booth: true }),
+    }).then((result) => {
       setHandingOver(false)
+      setHandOverError(result.messageJa)
+      if (result.messageJa !== null) return
+      // 前の人のデータを残さない（ランキング・図鑑・結果が混ざる）。
+      queryClient.clear()
       router.replace(LOBBY_HREF)
     })
-  }, [router])
+  }, [boothMode, router])
 
   if (game.isPending) {
     return (
@@ -241,28 +263,40 @@ export default function ResultScreen() {
           {/* 失敗の理由はトーストではなくボタンの下に 1 行で。 */}
           {shareError !== null ? (
             <Text
-              style={[typography.label, styles.shareError, { color: colors.sub }]}
+              style={[typography.label, styles.buttonNote, { color: colors.sub }]}
               numberOfLines={1}
             >
               シェアできませんでした（{shareError}）
             </Text>
           ) : null}
-          {/* タブをまたぐので push で行く（プレイタブのスタックは残る）。 */}
-          <GlassButton
-            title="この軌跡を見る"
-            icon="sparkles"
-            onPress={() => router.push(spaceHref(gameId))}
-            tier={tier}
-            variant="ghost"
-          />
-          {boothMode ? (
+          {/* 図鑑に残るのは**クリアした挑戦だけ**（`GET /api/collection` が
+              cleared しか返さない）。ギブアップでここを出すと、図鑑は指された
+              軌跡を見つけられず、**自分の別の試合の軌跡**を開いてしまう。
+              タブをまたぐので push で行く（プレイタブのスタックは残る）。 */}
+          {cleared ? (
             <GlassButton
-              title="次の人へ"
-              onPress={onNextPlayer}
+              title="この軌跡を見る"
+              icon="sparkles"
+              onPress={() => router.push(spaceHref(gameId))}
               tier={tier}
-              variant="secondary"
-              loading={handingOver}
+              variant="ghost"
             />
+          ) : null}
+          {boothMode ? (
+            <>
+              <GlassButton
+                title="次の人へ"
+                onPress={onNextPlayer}
+                tier={tier}
+                variant="secondary"
+                loading={handingOver}
+              />
+              {handOverError !== null ? (
+                <Text style={[typography.label, styles.buttonNote, { color: colors.sub }]}>
+                  {handOverError}
+                </Text>
+              ) : null}
+            </>
           ) : (
             <GlassButton
               title="ロビーに戻る"
@@ -308,6 +342,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   achievementText: { flex: 1, gap: spacing.xs },
-  shareError: { textAlign: 'center' },
+  // ボタンの下に 1 行で添える注記（シェアの失敗・引き継ぎの失敗）。
+  buttonNote: { textAlign: 'center' },
   actions: { gap: spacing.md, marginTop: 'auto', paddingTop: layout.sectionGap },
 })

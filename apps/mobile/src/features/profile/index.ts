@@ -1,3 +1,4 @@
+export * from './booth'
 export * from './constants'
 export * from './QrCode'
 export * from './qr'

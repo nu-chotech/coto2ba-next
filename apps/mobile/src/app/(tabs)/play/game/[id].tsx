@@ -71,6 +71,7 @@ import {
   RoomRace,
   roomHref,
   useApplyRoomStandings,
+  useMarkMyRoomGameFinished,
 } from '../../../../features/rooms'
 import { feedback, feedbackForRankChange } from '../../../../lib/feedback'
 import { isKnownWord, isVocabReady } from '../../../../lib/vocab'
@@ -134,6 +135,11 @@ export default function GameScreen() {
 
   /** ルーム戦のときだけ効く（`roomCode` が null なら何もしない）。 */
   const applyRoomStandings = useApplyRoomStandings(roomCode)
+  /**
+   * 終局を部屋のキャッシュにも写す。**これが無いと、部屋に戻った瞬間に
+   * 「まだ playing」の古い状態を読んでゲーム画面へ送り返される。**
+   */
+  const markRoomGameFinished = useMarkMyRoomGameFinished(roomCode)
 
   const inputRef = useRef<WordInputHandle | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
@@ -197,6 +203,8 @@ export default function GameScreen() {
           // ルーム戦なら、この手の順位がレスポンスに入っている。
           // ポーリングを待たずに上の順位バーへ反映する。
           applyRoomStandings(response.room_standings)
+          // 終局なら、部屋のキャッシュにもその場で写す（往復の防止）。
+          markRoomGameFinished(response.status)
         },
         onError: (error) => {
           setPending(null)
@@ -206,7 +214,7 @@ export default function GameScreen() {
         },
       },
     )
-  }, [detail, move, ratio, setHintOpen, setMixing, applyRoomStandings])
+  }, [detail, move, ratio, setHintOpen, setMixing, applyRoomStandings, markRoomGameFinished])
 
   /** 演出が終わった瞬間。ここでフィードバックを鳴らし、終局なら結果画面へ。 */
   const finishMix = useCallback(() => {
@@ -257,10 +265,27 @@ export default function GameScreen() {
     else router.replace(LOBBY_HREF)
   }, [router])
 
+  /**
+   * ギブアップ。**行き先は終局の他の経路と同じ**（`finishMix` / 「結果を見る」）。
+   * ルーム戦で結果画面へ飛ばすと、その端末だけ部屋から外れてしまい、
+   * ホストの「もう一度」が届かなくなる。
+   *
+   * **シートは通ってから閉じる。** 先に閉じると、会場の Wi-Fi が瞬断したときに
+   * 押しても画面が 1 ミリも動かない。係員が「次の人へ」へ辿り着く唯一の経路の
+   * 1 段目なので、ここで沈黙するとブースが詰まる（ヒントと同じ形にしてある）。
+   */
   const giveUp = useCallback(() => {
-    setSheet(null)
-    surrender.mutate(undefined, { onSuccess: () => router.replace(resultHref(gameId)) })
-  }, [gameId, router, surrender])
+    // 二度押しでゲームを 2 回終わらせに行かない（2 回目は必ず 422 になる）。
+    if (surrender.isPending) return
+    surrender.mutate(undefined, {
+      onSuccess: (game) => {
+        setSheet(null)
+        markRoomGameFinished(game.status)
+        router.replace(roomCode !== null ? roomHref(roomCode) : resultHref(gameId))
+      },
+      onError: () => feedback('error_oov'),
+    })
+  }, [gameId, router, surrender, roomCode, markRoomGameFinished])
 
   /**
    * 「…」の中身。**確認は 1 段だけ**（以前は Alert の入れ子で 2 段だった）。
@@ -276,8 +301,18 @@ export default function GameScreen() {
     if (sheet === 'giveUp') {
       return {
         title: 'ギブアップしますか？',
-        message: 'この挑戦は終了します。やり直しはできません。',
-        items: [{ label: 'ギブアップする', onPress: giveUp, destructive: true }],
+        // 失敗の理由は同じ場所に出す（トーストにしない。見逃すと押し直せない）。
+        message: surrender.isError
+          ? `${toMessageJa(surrender.error)}\nもう一度押してください。`
+          : 'この挑戦は終了します。やり直しはできません。',
+        items: [
+          {
+            label: surrender.isPending ? 'ギブアップしています…' : 'ギブアップする',
+            onPress: giveUp,
+            destructive: true,
+            disabled: surrender.isPending,
+          },
+        ],
         cancelLabel: 'やめる',
         messageAlign: 'center',
       }
@@ -297,7 +332,16 @@ export default function GameScreen() {
     ]
     // 終わった挑戦にギブアップは出さない（サーバーが 422 を返すだけの操作）。
     if (detail !== null && detail.status === 'playing') {
-      items.push({ label: 'ギブアップ', onPress: () => setSheet('giveUp'), destructive: true })
+      items.push({
+        label: 'ギブアップ',
+        // 前回の失敗を持ち越さない（開き直したのに赤いエラーが残っていると、
+        // いま失敗したのかと思って押し直せない）。
+        onPress: () => {
+          surrender.reset()
+          setSheet('giveUp')
+        },
+        destructive: true,
+      })
     }
     return { title: null, message: null, items, cancelLabel: 'キャンセル', messageAlign: 'center' }
   })()

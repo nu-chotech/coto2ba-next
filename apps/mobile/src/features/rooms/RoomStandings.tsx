@@ -1,9 +1,12 @@
 /**
  * 順位の一覧（レース中のオーバーレイと結果画面で共有する）。
  *
- * **出すのは順位・名前・手数・到達したいちばん良いランクだけ。**
+ * **出すのは順位・名前・手数・ヒント数・到達したいちばん良いランクだけ。**
  * 他人が打った語は**サーバーが返してこない**（§9.2）ので、ここに描く手段も無い。
  * 真似で解かれると競技にならないため、将来も足さないこと。
+ *
+ * **ヒント数は必ず出す。** サーバーはヒントを順位キーに入れている（`rankPlayers`）ので、
+ * 画面に出ていないと「押すと不利になる」ことが誰にも分からず、課金にならない。
  *
  * 並びは**サーバーが返した順のまま**（`rankPlayers`）。端末で並べ替えない。
  */
@@ -110,6 +113,15 @@ export function RoomStandingRow({ player, rank, tier, compact = false }: RoomSta
           <Text style={[typography.label, { color: colors.sub }]}>{progressLabel(player)}</Text>
         </View>
       )}
+
+      {/* ヒントは順位で不利になる。**使った人にだけ**印を付ける
+          （0 を並べても情報が増えず、行が狭くなるだけ）。 */}
+      {player.hint_count > 0 ? (
+        <View style={styles.trailing}>
+          <SymbolIcon name="lightbulb" size={iconSize.sm} color={colors.sub} />
+          <Text style={[typography.label, { color: colors.sub }]}>{player.hint_count}</Text>
+        </View>
+      ) : null}
 
       <Text style={[typography.mono, styles.moves, { color: colors.sub }]}>
         {player.move_count} 手

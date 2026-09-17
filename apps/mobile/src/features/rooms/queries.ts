@@ -14,6 +14,7 @@
 
 import {
   type CreateRoomRequest,
+  type GameStatus,
   ROOM_POLL_INTERVAL_LOBBY_MS,
   ROOM_POLL_INTERVAL_RACE_MS,
   type RoomPlayer,
@@ -176,6 +177,31 @@ export function useApplyRoomStandings(code: string | null) {
       if (code === null || standings === null || standings === undefined) return
       queryClient.setQueryData<RoomResponse>(queryKeys.room(code), (previous) =>
         previous === undefined ? previous : { ...previous, players: [...standings] },
+      )
+    },
+    [queryClient, code],
+  )
+}
+
+/**
+ * **自分のゲームが終わったことを、部屋のキャッシュにもその場で書く。**
+ *
+ * 部屋の画面は `my_game_status === 'playing'` を見てゲーム画面へ送り出す。
+ * ギブアップやクリアの直後に戻ると、ポーリング（最短でも
+ * `ROOM_POLL_INTERVAL_RACE_MS`）が追いつく前の**古い状態**が読まれて、
+ * その場でゲーム画面へ送り返される（部屋 → ゲーム → 部屋 の往復になる。
+ * ギブアップで実際に起きた）。
+ *
+ * サーバーの値を作り変えているのではなく、**サーバーが返した終局を先に写している**だけ
+ * （次のポーリングで同じ値に上書きされる）。
+ */
+export function useMarkMyRoomGameFinished(code: string | null) {
+  const queryClient = useQueryClient()
+  return useCallback(
+    (status: GameStatus) => {
+      if (code === null || status === 'playing') return
+      queryClient.setQueryData<RoomResponse>(queryKeys.room(code), (previous) =>
+        previous === undefined ? previous : { ...previous, my_game_status: status },
       )
     },
     [queryClient, code],

@@ -24,8 +24,6 @@ import { GlassCard, SkiaGate, SymbolIcon, toMessageJa } from '../../../component
 import {
   buildSpaceScene,
   collectionSummary,
-  defaultPathIndex,
-  findPathByGameId,
   type GoalMarker,
   hasRealGhosts,
   overviewPoints,
@@ -35,6 +33,7 @@ import {
   SPACE_SEARCH_BUTTON_SIZE,
   SpaceCanvas,
   SpaceLabels,
+  selectPath,
   useCollectionQuery,
   useSpaceCamera,
   useWordDetailQuery,
@@ -102,10 +101,16 @@ export default function SpaceScreen() {
   const [pickedGameId, setPickedGameId] = useState<string | null>(null)
   /** フレーミングをやり直させるための合図（同じ経路をもう一度指されたとき）。 */
   const [frameRequest, setFrameRequest] = useState(0)
-  const activePathIndex = useMemo(
-    () => findPathByGameId(scene.paths, pickedGameId) ?? defaultPathIndex(scene.paths),
+  /**
+   * **指された軌跡が無いときに黙って別の軌跡を開かない。**
+   * 図鑑に残るのはクリアした挑戦だけなので、ギブアップした挑戦を指されると外れる。
+   * 落ちたことは下の一言で伝える（`pathNotice`）。
+   */
+  const selection = useMemo(
+    () => selectPath(scene.paths, pickedGameId),
     [scene.paths, pickedGameId],
   )
+  const activePathIndex = selection.index
   const activePath = activePathIndex === null ? null : (scene.paths[activePathIndex] ?? null)
   const options = useMemo(() => pathOptions(scene.paths, jstToday()), [scene.paths])
   /**
@@ -195,6 +200,17 @@ export default function SpaceScreen() {
 
   const sheetNode = sheetIndex >= 0 ? (scene.nodes[sheetIndex] ?? null) : null
   const summary = collectionSummary(collection.data)
+  /**
+   * 指された軌跡を開けなかったときの一言。**無言のフォールバックにしない。**
+   * 読み込み中は `scene.paths` が空なので、**コレクションが届いてから**判断する
+   * （届く前に出すと、正しい軌跡が開く直前に一瞬だけ赤い文字が出る）。
+   */
+  const pathNotice =
+    collection.data === undefined || !selection.fellBack
+      ? null
+      : activePathIndex === null
+        ? 'この挑戦の軌跡は図鑑にありません（残るのはクリアした挑戦だけです）'
+        : 'この挑戦の軌跡は図鑑にありません。いちばん新しい軌跡を出しています'
   const activeGameId = activePathIndex === null ? null : scene.paths[activePathIndex]?.gameId
 
   return (
@@ -320,8 +336,17 @@ export default function SpaceScreen() {
           </GlassCard>
         ) : (
           <View style={styles.statusRow} pointerEvents="box-none">
-            <Text style={[typography.label, styles.status, { color: colors.sub }]}>
-              {options.length === 0 ? 'クリアすると、歩いた軌跡がここに残ります' : (summary ?? '')}
+            <Text
+              style={[
+                typography.label,
+                styles.status,
+                { color: pathNotice === null ? colors.sub : colors.accent },
+              ]}
+            >
+              {pathNotice ??
+                (options.length === 0
+                  ? 'クリアすると、歩いた軌跡がここに残ります'
+                  : (summary ?? ''))}
             </Text>
           </View>
         )}

@@ -201,6 +201,56 @@ describe.skipIf(SKIP_WITHOUT_GOAL_POOL_ROWS)('対戦ルーム', () => {
     expect(state.players[0]?.display_name).toBe('先着')
   })
 
+  /**
+   * **ヒントは対戦でも順位で課金する（デイリーのランキングと同じ原則）。**
+   *
+   * ここで見ているのは「継ぎ目」──
+   * `games.hint_count`（ヒントを開いた回数）が `loadPlayers` の SELECT に乗り、
+   * `rankPlayers` の順位キーに届き、レスポンスの行に出るところまで。
+   * どれか 1 つでも欠けると、対戦でヒントが完全に無料になる。
+   */
+  it('同じ手数・同じランクなら、ヒントを使っていない人が上に出る', async () => {
+    if (!hasDb) return
+    const host = await createTestUser('ヒントを押した人')
+    const guest = await createTestUser('自力の人')
+    const created = await createRoom(db, host, 'normal')
+    await joinRoom(db, guest, created.code)
+    await startRoom(db, host, created.code)
+
+    const hostGame = await myRoomGame(host, created.code)
+    const guestGame = await myRoomGame(guest, created.code)
+    // 進み具合は完全に同じ。違うのはヒントを開いた回数だけ。
+    for (const id of [hostGame.id, guestGame.id]) {
+      await db.update(games).set({ currentRank: 30, moveCount: 2 }).where(eq(games.id, id))
+    }
+    await db.update(games).set({ hintCount: 2 }).where(eq(games.id, hostGame.id))
+
+    const state = await roomState(db, guest, created.code)
+    expect(state.players.map((p) => p.display_name)).toEqual(['自力の人', 'ヒントを押した人'])
+    expect(state.players.map((p) => p.hint_count)).toEqual([0, 2])
+  })
+
+  // 主ルールは「最初にゴールへ着いた人が勝ち」。ヒントで着順は覆らない。
+  it('ヒントを使っても、先にゴールへ着いた人が 1 位のまま', async () => {
+    if (!hasDb) return
+    const host = await createTestUser('ヒント先着')
+    const guest = await createTestUser('自力後着')
+    const created = await createRoom(db, host, 'normal')
+    await joinRoom(db, guest, created.code)
+    await startRoom(db, host, created.code)
+
+    const hostGame = await myRoomGame(host, created.code)
+    const guestGame = await myRoomGame(guest, created.code)
+    const now = Date.now()
+    await forceClear(hostGame.id, new Date(now + 10_000))
+    await forceClear(guestGame.id, new Date(now + 20_000))
+    await db.update(games).set({ hintCount: 5 }).where(eq(games.id, hostGame.id))
+
+    const state = await roomState(db, guest, created.code)
+    expect(state.players[0]?.display_name).toBe('ヒント先着')
+    expect(state.players[0]?.hint_count).toBe(5)
+  })
+
   it('全員が終わったら部屋が finished になる', async () => {
     const host = await createTestUser()
     const guest = await createTestUser()
