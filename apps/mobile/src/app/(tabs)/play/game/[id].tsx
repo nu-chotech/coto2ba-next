@@ -181,13 +181,9 @@ export default function GameScreen() {
     if (response.status !== 'playing') {
       // ルーム戦の行き先は部屋の結果（勝敗はそこで決まる）。
       // 自分ひとりの結果は、部屋の結果から「自分の結果を見る」で開ける。
+      const unlocked = response.unlocked_achievements.map((achievement) => achievement.id)
       router.replace(
-        roomCode !== null
-          ? roomHref(roomCode)
-          : resultHref(
-              gameId,
-              response.unlocked_achievements.map((achievement) => achievement.id),
-            ),
+        roomCode !== null ? roomHref(roomCode, unlocked) : resultHref(gameId, unlocked),
       )
     }
   }, [revealed, setMixing, router, gameId, roomCode])

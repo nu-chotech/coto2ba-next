@@ -5,6 +5,7 @@
  * ロビーの入口（`play/index.tsx` の「みんなで対戦」）とルートの
  * `RoomDeepLinkGate` を外すだけで機能ごと落とせる。
  */
+export * from './code'
 export * from './constants'
 export * from './queries'
 export * from './RoomDeepLinkGate'
@@ -13,4 +14,3 @@ export * from './RoomRace'
 export * from './RoomResult'
 export * from './RoomStandings'
 export * from './routes'
-export * from './standings'

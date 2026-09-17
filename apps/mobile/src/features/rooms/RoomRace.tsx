@@ -7,26 +7,26 @@
  * ここに出せるのは**順位・名前・手数・到達したいちばん良いランクだけ**。
  * 他人の語はサーバーが返さない（§9.2）。
  *
- * **人数が多いときは畳む。** 8 人ぶんを全部出すとゲームの入力欄と「混ぜる」が
- * 画面外に落ちて、満員に近いほど遊べなくなる（レビューで実測）。
- * 畳んだときは見出し（自分の順位 / ゴールした人）と自分の行だけを出し、
- * 見出しをタップすると全員に広がる。
+ * **既定は見出しだけに畳む。** 全員ぶんを出すとゲームの入力欄と「混ぜる」が
+ * 画面外に落ちて、人が多いほど遊べなくなる（レビューで実測）。
+ * 畳んだ高さは**人数によらず一定**なので、部屋が変わっても入力欄の位置が動かない。
+ * 見出し（何人中の何位か / ゴールした人）をタップすると全員に広がる。
  *
  * 通信が数回失敗しても**画面を覆わない**。会場の Wi-Fi は不安定な前提で、
  * 前の順位を出したまま裏で追いつく（`useRoomQuery` の `placeholderData`）。
  */
 
-import type { TierId } from '@coto2ba/contracts'
+import { ROOM_FINISH_GRACE_SECONDS, type TierId } from '@coto2ba/contracts'
 import { useRouter } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { GlassCard, MIN_TAP_SIZE, SymbolIcon } from '../../components'
 import { feedback } from '../../lib/feedback'
 import { iconSize, radius, spacing, typography, useTheme } from '../../theme'
-import { useRoomQuery, winnerOf } from './queries'
+import { winnerOf } from './code'
+import { useRoomQuery } from './queries'
 import { RoomStandings } from './RoomStandings'
 import { roomHref } from './routes'
-import { collapsedRowsFor } from './standings'
 
 export type RoomRaceProps = {
   code: string
@@ -62,9 +62,17 @@ export function RoomRace({ code, tier }: RoomRaceProps) {
   const players = room.data?.players ?? []
   if (players.length === 0) return null
 
-  const collapsedRows = collapsedRowsFor(players.length)
-  const hidden = players.length - collapsedRows
-  const canToggle = hidden > 0
+  /**
+   * **畳んだときは見出しだけ。人数によらず高さが変わらない。**
+   *
+   * 人数で行数を変えると、3 人のときに 8 人より背が高くなる（実測 172px / 62px）という
+   * ねじれが起き、入力欄の位置も部屋ごとに動く。ブースでは**同じ位置に同じものがある**
+   * ほうが速いので、畳んだ高さは固定にして、見たい人だけ広げる。
+   *
+   * 見出しには「何人中の何位か」と「誰かがゴールしたか」が入る。自分の順位と温度は
+   * ゲーム画面本体が大きく出しているので、これで足りる。
+   */
+  const canToggle = players.length > 0
   const me = players.find((p) => p.is_me)
   const myRank = me === undefined ? null : players.indexOf(me) + 1
 
@@ -106,13 +114,7 @@ export function RoomRace({ code, tier }: RoomRaceProps) {
       {canToggle ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={
-            expanded
-              ? '順位を畳む'
-              : collapsedRows === 0
-                ? `${players.length} 人の順位を見る`
-                : `ほか ${hidden} 人の順位を見る`
-          }
+          accessibilityLabel={expanded ? '順位を畳む' : `${players.length} 人の順位を見る`}
           accessibilityState={{ expanded }}
           onPress={toggle}
           style={styles.headerPress}
@@ -123,12 +125,15 @@ export function RoomRace({ code, tier }: RoomRaceProps) {
         header
       )}
 
-      <RoomStandings
-        players={players}
-        tier={tier}
-        compact
-        maxRows={expanded ? undefined : collapsedRows}
-      />
+      {expanded ? <RoomStandings players={players} tier={tier} compact /> : null}
+
+      {/* 誰かがゴールしたあとも打てる。**あと何秒で締め切られるのか**を書かないと
+          「もう終わったのに入力できる」に見えて、来場者が手を止めてしまう。 */}
+      {winner === null ? null : (
+        <Text style={[typography.label, styles.note, { color: colors.sub }]}>
+          あと {ROOM_FINISH_GRACE_SECONDS} 秒で結果に進みます
+        </Text>
+      )}
     </GlassCard>
   )
 }
@@ -146,4 +151,5 @@ const styles = StyleSheet.create({
     marginVertical: -spacing.sm,
   },
   trailing: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexShrink: 1 },
+  note: { textAlign: 'center' },
 })

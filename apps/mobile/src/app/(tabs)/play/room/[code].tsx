@@ -14,7 +14,7 @@
  * ときだけ、入口へ戻す案内を出す。
  */
 
-import { ROOM_REMATCH_WATCH_MS } from '@coto2ba/contracts'
+import { ROOM_FINISH_GRACE_SECONDS, ROOM_REMATCH_WATCH_MS } from '@coto2ba/contracts'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
@@ -27,7 +27,7 @@ import {
   TierBackground,
   toMessageJa,
 } from '../../../../components'
-import { LOBBY_HREF, resultHref, useMeQuery } from '../../../../features/game'
+import { LOBBY_HREF, parseAchievementIds, resultHref, useMeQuery } from '../../../../features/game'
 import {
   hasAttemptedRoomJoin,
   hasJoinedRoom,
@@ -51,8 +51,14 @@ import { layout, screenPadding, typography, useTheme } from '../../../../theme'
 const ROOM_TIER = 'mono'
 
 export default function RoomScreen() {
-  const { code: raw } = useLocalSearchParams<{ code: string }>()
+  const { code: raw, unlocked } = useLocalSearchParams<{ code: string; unlocked?: string }>()
   const code = normalizeRoomCode(typeof raw === 'string' ? raw : '')
+  /**
+   * ルーム戦でクリアしたときに解除された実績。
+   * **自分の結果画面へ渡すためだけに持ち回る**（渡さないと、解除されたのに
+   * どこにも出ないまま消える）。直接開いた（リロードした）ときは空でよい。
+   */
+  const unlockedIds = typeof unlocked === 'string' ? unlocked : ''
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const { paletteForTier } = useTheme()
@@ -200,7 +206,10 @@ export default function RoomScreen() {
             onOpenMyResult={
               data.my_game_id === null
                 ? null
-                : () => router.push(resultHref(data.my_game_id as string))
+                : () =>
+                    router.push(
+                      resultHref(data.my_game_id as string, parseAchievementIds(unlockedIds)),
+                    )
             }
             onLeave={onLeave}
             error={rematch.isError ? toMessageJa(rematch.error) : null}
@@ -218,6 +227,12 @@ export default function RoomScreen() {
               <Text style={[typography.label, { color: colors.sub }]}>対戦 {data.code}</Text>
               <Text style={[typography.subtitle, { color: colors.text }]}>
                 ほかの人を待っています
+              </Text>
+              {/* **なぜ待たされるのかを書く。** 来場者から見て理由が分からないと
+                  「固まった」と思われてブースの流れが止まる。 */}
+              <Text style={[typography.caption, { color: colors.sub }]}>
+                誰かがゴールしてから {ROOM_FINISH_GRACE_SECONDS} 秒、
+                または全員が終わると結果に進みます
               </Text>
               <RoomStandings players={data.players} tier={ROOM_TIER} />
               <GlassButton

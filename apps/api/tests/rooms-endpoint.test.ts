@@ -7,12 +7,12 @@
  *
  * DB が無ければスキップする（CI で落ちないように）。
  */
-import { moveResponseSchema, roomResponseSchema } from '@coto2ba/contracts'
+import { moveResponseSchema, ROOM_CODE_LENGTH, roomResponseSchema } from '@coto2ba/contracts'
 import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { app } from '../src/app'
 import { db, pool } from '../src/db/client'
-import { session, user } from '../src/db/schema'
+import { games, session, user } from '../src/db/schema'
 
 let hasDb = false
 const createdUserIds: string[] = []
@@ -87,13 +87,63 @@ async function playAnyMove(bearer: string, gameId: string): Promise<unknown> {
   throw new Error('どの語も打てませんでした')
 }
 
-/** そのプレイヤーの現在の語（漏れていないことを確かめるためだけに使う）。 */
-async function currentWordOf(bearer: string, code: string): Promise<string> {
+/**
+ * 順位の 1 行が持ってよいキー。**ここに語（current / input / result）を足さないこと。**
+ * 増やすとレース中に他人の手が見えて、真似で解かれる（§9.2）。
+ */
+const ALLOWED_STANDING_KEYS = [
+  'best_rank',
+  'display_name',
+  'finished_at',
+  'is_me',
+  'move_count',
+  'user_id',
+].sort()
+
+/** そのユーザーのルーム戦のゲーム ID。 */
+async function myGameId(bearer: string, code: string): Promise<string> {
   const room = roomResponseSchema.parse(await (await get(`/api/rooms/${code}`, bearer)).json())
   const gameId = room.my_game_id
   if (gameId === null) throw new Error('ゲームがありません')
-  const game = (await (await get(`/api/games/${gameId}`, bearer)).json()) as { current: string }
-  return game.current
+  return gameId
+}
+
+/** ホストの Bearer を覚えておく（部屋のコードから引けるように）。 */
+const hostBearerByCode = new Map<string, string>()
+async function hostOf(code: string): Promise<string> {
+  const bearer = hostBearerByCode.get(code)
+  if (bearer === undefined) throw new Error('ホストが分かりません')
+  return bearer
+}
+
+/**
+ * ゲームの現在語を直接書き換える。
+ * **漏れ検査の目印を仕込むためだけ**に使う（語彙に無い文字列でよい）。
+ */
+async function setCurrentWord(gameId: string, word: string): Promise<void> {
+  await db.update(games).set({ current: word }).where(eq(games.id, gameId))
+}
+
+/** 2 人が入って開始済みの部屋を作る。 */
+async function startedRoom(): Promise<{
+  host: string
+  guest: string
+  code: string
+  hostGameId: string
+}> {
+  const host = await signIn('打つ人')
+  const guest = await signIn('待つ人')
+  const created = roomResponseSchema.parse(
+    await (await post('/api/rooms', host, { difficulty: 'normal' })).json(),
+  )
+  hostBearerByCode.set(created.code, host)
+  await post(`/api/rooms/${created.code}/join`, guest)
+  const started = roomResponseSchema.parse(
+    await (await post(`/api/rooms/${created.code}/start`, host)).json(),
+  )
+  const hostGameId = started.my_game_id
+  if (hostGameId === null) throw new Error('ホストのゲームがありません')
+  return { host, guest, code: created.code, hostGameId }
 }
 
 async function get(path: string, bearer: string): Promise<Response> {
@@ -139,25 +189,64 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('対戦ルームのエンド�
 
   it('ルーム戦の手のレスポンスに、その時点の順位が入る', async () => {
     if (!hasDb) return
-    const host = await signIn('打つ人')
-    const guest = await signIn('待つ人')
-    const created = roomResponseSchema.parse(
-      await (await post('/api/rooms', host, { difficulty: 'normal' })).json(),
-    )
-    await post(`/api/rooms/${created.code}/join`, guest)
-    const started = roomResponseSchema.parse(
-      await (await post(`/api/rooms/${created.code}/start`, host)).json(),
-    )
-    const gameId = started.my_game_id
-    expect(gameId).not.toBeNull()
-
-    const move = await playAnyMove(host, gameId as string)
+    const { host, code, hostGameId } = await startedRoom()
+    const move = await playAnyMove(host, hostGameId)
     const standings = moveResponseSchema.parse(move).room_standings
     expect(standings).not.toBeNull()
     expect(standings?.length).toBe(2)
-    // 順位は入るが、**他人の語は 1 文字も入らない**（§9.2）。
-    const guestCurrent = await currentWordOf(guest, created.code)
-    expect(JSON.stringify(standings)).not.toContain(guestCurrent)
+    expect(code).toHaveLength(ROOM_CODE_LENGTH)
+  })
+
+  /**
+   * **競技性の核心。** 進行中に他人が打った語が見えると、真似で解かれてレースにならない。
+   *
+   * 検証は 2 段構えにしてある。
+   *
+   * 1. **目印になる語を相手のゲームに埋めて、生のレスポンスに出てこないこと**
+   *    相手の `current` を「他のどこにも存在しない文字列」にするので、
+   *    1 文字でも漏れれば必ず捕まる。
+   * 2. **順位の各行が持つキーが決まった 6 つだけであること**
+   *    将来フィールドが増えたときに、語を載せる隙間ができたら落ちる
+   *
+   * **どちらも `moveResponseSchema.parse()` を通す前の生の JSON で見る。**
+   * zod の object は既定で未知のキーを捨てるので、パース後の値を見ると
+   * **漏れていても消えてしまう**（前の版はそれで実質何も検証していなかった）。
+   */
+  it('手のレスポンスの順位に、他人が打った語は入らない', async () => {
+    if (!hasDb) return
+    const { host, guest, code, hostGameId } = await startedRoom()
+
+    // 相手だけが知っている語（他のどこにも現れない）。
+    const sentinel = `ゲストだけの秘密語-${crypto.randomUUID()}`
+    await setCurrentWord(await myGameId(guest, code), sentinel)
+
+    const raw = await playAnyMove(host, hostGameId)
+    expect(JSON.stringify(raw)).not.toContain(sentinel)
+  })
+
+  it('順位の各行が持つキーは決まった 6 つだけ', async () => {
+    if (!hasDb) return
+    const { host, hostGameId } = await startedRoom()
+    const raw = (await playAnyMove(host, hostGameId)) as {
+      room_standings?: Record<string, unknown>[]
+    }
+    const rows = raw.room_standings ?? []
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      expect(Object.keys(row).sort()).toEqual(ALLOWED_STANDING_KEYS)
+    }
+  })
+
+  it('部屋の状態（ポーリング先）にも他人が打った語は入らない', async () => {
+    if (!hasDb) return
+    const { guest, code } = await startedRoom()
+
+    const sentinel = `ホストだけの秘密語-${crypto.randomUUID()}`
+    const hostGame = await myGameId(await hostOf(code), code)
+    await setCurrentWord(hostGame, sentinel)
+
+    const raw = await (await get(`/api/rooms/${code}`, guest)).json()
+    expect(JSON.stringify(raw)).not.toContain(sentinel)
   })
 
   it('ルーム戦でない手には順位が入らない', async () => {

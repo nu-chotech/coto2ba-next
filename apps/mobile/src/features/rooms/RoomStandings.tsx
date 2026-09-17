@@ -8,7 +8,13 @@
  * 並びは**サーバーが返した順のまま**（`rankPlayers`）。端末で並べ替えない。
  */
 
-import { type RoomPlayer, rankToHeat, type TierId, tierForRank } from '@coto2ba/contracts'
+import {
+  ROOM_MAX_PLAYERS,
+  type RoomPlayer,
+  rankToHeat,
+  type TierId,
+  tierForRank,
+} from '@coto2ba/contracts'
 import { StyleSheet, Text, View } from 'react-native'
 import { SymbolIcon, TierDot } from '../../components'
 import {
@@ -24,9 +30,7 @@ import {
   ROOM_ME_BORDER_WIDTH,
   ROOM_RANK_BADGE_SIZE,
   ROOM_STANDING_ROW_MIN_HEIGHT,
-  ROOM_STANDING_VISIBLE_LIMIT,
 } from './constants'
-import { pickImportantRows } from './standings'
 
 /** ゴールに着いた人だけに付ける印。上位 3 位の色分けはしない（勝者は 1 人）。 */
 const WINNER_RANK = 1
@@ -36,20 +40,19 @@ export type RoomStandingsProps = {
   tier: TierId
   /** レース中のオーバーレイ用。名前と順位だけの詰めた行にする。 */
   compact?: boolean
-  /** 何行に畳むか。渡さなければ全員出す。 */
-  maxRows?: number
 }
 
-export function RoomStandings({ players, tier, compact = false, maxRows }: RoomStandingsProps) {
-  const capped = players.slice(0, ROOM_STANDING_VISIBLE_LIMIT)
-  const visible = pickImportantRows(capped, maxRows ?? capped.length)
+export function RoomStandings({ players, tier, compact = false }: RoomStandingsProps) {
+  // 1 部屋の上限は contracts（`ROOM_MAX_PLAYERS`）。ここで数字を重ねて持たない。
+  // 順位は**サーバーが返した並びのまま**（`rankPlayers`）。端末で並べ替えない。
+  const visible = players.slice(0, ROOM_MAX_PLAYERS)
   return (
     <View style={styles.list}>
-      {visible.map((entry) => (
+      {visible.map((player, index) => (
         <RoomStandingRow
-          key={entry.player.user_id}
-          player={entry.player}
-          rank={entry.rank}
+          key={player.user_id}
+          player={player}
+          rank={index + 1}
           tier={tier}
           compact={compact}
         />

@@ -31,7 +31,11 @@ import {
   startRoom,
 } from '../../lib/api'
 import { queryKeys } from '../../lib/queryClient'
-import { ROOM_JOIN_RETRY_COUNT, ROOM_JOIN_RETRY_DELAY_MS } from './constants'
+import {
+  ROOM_CODE_MEMORY_LIMIT,
+  ROOM_JOIN_RETRY_COUNT,
+  ROOM_JOIN_RETRY_DELAY_MS,
+} from './constants'
 
 /**
  * `code` が null のあいだは走らせない。
@@ -84,7 +88,7 @@ export function useCreateRoomMutation() {
       cacheRoom(queryClient, room)
       // 作った人は既に参加者。部屋の画面が着地で join を投げ直さないように印を付ける。
       markRoomJoinAttempted(room.code)
-      joinedRooms.add(room.code)
+      markRoomJoined(room.code)
     },
   })
 }
@@ -111,7 +115,7 @@ export function useJoinRoomMutation() {
     retry: (failureCount, error) => failureCount < ROOM_JOIN_RETRY_COUNT && isTransient(error),
     retryDelay: (failureCount) => ROOM_JOIN_RETRY_DELAY_MS * (failureCount + 1),
     onSuccess: (room) => {
-      joinedRooms.add(room.code)
+      markRoomJoined(room.code)
       cacheRoom(queryClient, room)
     },
   })
@@ -123,6 +127,10 @@ const joinedRooms = new Set<string>()
 /** その部屋の参加者だと分かっているか。ポーリングを始めてよいかの判断に使う。 */
 export function hasJoinedRoom(code: string): boolean {
   return joinedRooms.has(code)
+}
+
+function markRoomJoined(code: string): void {
+  remember(joinedRooms, code)
 }
 
 /**
@@ -138,11 +146,29 @@ export function hasJoinedRoom(code: string): boolean {
 const joinAttempts = new Set<string>()
 
 export function markRoomJoinAttempted(code: string): void {
-  joinAttempts.add(code)
+  remember(joinAttempts, code)
 }
 
 export function hasAttemptedRoomJoin(code: string): boolean {
   return joinAttempts.has(code)
+}
+
+/**
+ * 印を覚える。**上限を超えたら古いものから捨てる。**
+ *
+ * ブースは 1 台で何十戦も回す（「もう一度」を押すたびに新しいコードが増える）ので、
+ * 際限なく貯めない。捨てた部屋にもう一度入ったときは参加を投げ直すだけで、
+ * サーバー側は冪等なので害が無い。
+ * `Set` は挿入順を保つので、先頭が最も古い。
+ */
+function remember(set: Set<string>, code: string): void {
+  set.delete(code)
+  set.add(code)
+  while (set.size > ROOM_CODE_MEMORY_LIMIT) {
+    const oldest = set.values().next().value
+    if (oldest === undefined) break
+    set.delete(oldest)
+  }
 }
 
 /** 投げ直せば結果が変わりうる失敗か。 */
@@ -171,7 +197,7 @@ export function useRematchRoomMutation(code: string) {
   return useMutation({
     mutationFn: () => rematchRoom(code),
     onSuccess: (room) => {
-      joinedRooms.add(room.code)
+      markRoomJoined(room.code)
       markRoomJoinAttempted(room.code)
       cacheRoom(queryClient, room)
     },
@@ -207,40 +233,4 @@ export function useApplyRoomStandings(code: string | null) {
     },
     [queryClient, code],
   )
-}
-
-// ── 表示用のちいさな導出 ────────────────────────────────────
-
-/** ディープリンク（`exp://…?room=CODE`）から参加コードを取り出す。 */
-export function roomCodeFromUrl(url: string): string | null {
-  const match = /[?&]room=([^&#\s]+)/.exec(url)
-  const raw = match?.[1]
-  if (raw === undefined) return null
-  const code = normalizeRoomCode(decodeURIComponent(raw))
-  return code.length === 0 ? null : code
-}
-
-/** 手入力のゆれ（小文字・空白・全角）を吸収する。判定の権威はサーバー。 */
-export function normalizeRoomCode(raw: string): string {
-  return raw
-    .trim()
-    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-}
-
-/** 自分の行。まだ参加していなければ null。 */
-export function myStanding(room: RoomResponse | undefined) {
-  return room?.players.find((p) => p.is_me) ?? null
-}
-
-/** 先頭でゴールした人。まだ誰も着いていなければ null。 */
-export function winnerOf(room: RoomResponse | undefined) {
-  const first = room?.players[0]
-  return first !== undefined && first.finished_at !== null ? first : null
-}
-
-/** 自分がホストか。 */
-export function isHost(room: RoomResponse | undefined, userId: string | null): boolean {
-  return room !== undefined && userId !== null && room.host_user_id === userId
 }

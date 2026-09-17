@@ -12,11 +12,15 @@
 import * as Linking from 'expo-linking'
 import { useRouter } from 'expo-router'
 import { useEffect } from 'react'
-import { roomCodeFromUrl } from './queries'
+import { roomCodeFromUrl } from './code'
+import { hasAttemptedRoomJoin, markRoomJoinAttempted } from './queries'
 import { roomHref } from './routes'
 
-/** 画面を跨いで覚えておく（React の state に置くと着地先で消えて再送になる）。 */
-const seen = new Set<string>()
+/**
+ * 画面を跨いで覚えておく（React の state に置くと着地先で消えて再送になる）。
+ * **参加を投げた印と同じもの**を使うので、ここで別の Set を持たない
+ * （持つと、ブースで何十戦も回したときに 2 つとも際限なく膨らむ）。
+ */
 
 export function RoomDeepLinkGate() {
   const url = Linking.useURL()
@@ -27,8 +31,8 @@ export function RoomDeepLinkGate() {
     const code = roomCodeFromUrl(url)
     // `room` が付いていない普通の起動（開発サーバーの URL など）は何もしない。
     if (code === null) return
-    if (seen.has(code)) return
-    seen.add(code)
+    if (hasAttemptedRoomJoin(code)) return
+    markRoomJoinAttempted(code)
     router.push(roomHref(code))
   }, [url, router])
 
