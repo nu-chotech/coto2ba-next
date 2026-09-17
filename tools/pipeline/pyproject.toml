@@ -19,7 +19,7 @@ dependencies = [
 umap = ["umap-learn>=0.5.7", "scikit-learn>=1.5"]
 
 [dependency-groups]
-dev = ["ruff>=0.9"]
+dev = ["ruff>=0.9", "pytest>=8.0"]
 
 [tool.ruff]
 line-length = 100
@@ -34,4 +34,4 @@ package = false
 
 [tool.ruff.lint.isort]
 # scripts/ 直下の共通モジュール（アンダースコア始まり）を自前扱いにする。
-known-first-party = ["_common", "_constants", "_db", "_vectors", "_goalbot"]
+known-first-party = ["_common", "_constants", "_db", "_vectors", "_goalbot", "sounds_lib"]

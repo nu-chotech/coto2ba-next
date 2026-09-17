@@ -47,8 +47,10 @@
     "zustand": "5.0.15"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "@types/react": "~19.2.2",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "5.0.1"
   },
   "scripts": {
     "start": "expo start",
@@ -58,7 +60,7 @@
     "web": "expo start --web",
     "export:web": "expo export --platform web",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'no unit tests (UI)'",
+    "test": "vitest run",
     "doctor": "npx expo-doctor"
   },
   "private": true

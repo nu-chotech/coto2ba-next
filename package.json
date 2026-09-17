@@ -22,7 +22,8 @@
     "pipeline:descriptions": "uv --directory tools/pipeline run python scripts/07_descriptions.py",
     "pipeline:names": "uv --directory tools/pipeline run python scripts/09_name_parts.py",
     "pipeline:lint": "uv --directory tools/pipeline run ruff check .",
-    "pipeline:assets": "uv --directory tools/pipeline run python scripts/10_mobile_assets.py"
+    "pipeline:assets": "uv --directory tools/pipeline run python scripts/10_mobile_assets.py",
+    "pipeline:sounds": "uv --directory tools/pipeline run python scripts/11_sounds.py"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

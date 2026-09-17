@@ -37,8 +37,35 @@ jobs:
       - name: Test
         run: pnpm test
 
+  mobile-bundle:
+    name: Bundle (Expo web export)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `pnpm lint`/`typecheck`/`test` は Metro が実際にバンドルできるかを見ない
+      # （変数で組み立てた require、存在しないアセット参照、workspace パッケージ
+      # （@coto2ba/contracts）の解決失敗などは通り抜ける）。EAS の実配信より前に
+      # 静的サイト書き出しでバンドル可否だけを確認する。書き出した成果物は使わない。
+      - name: expo export --platform web
+        working-directory: apps/mobile
+        run: pnpm exec expo export --platform web
+
   pipeline:
-    name: Lint (Python pipeline)
+    name: Lint / Test (Python pipeline)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -55,3 +82,7 @@ jobs:
       - name: ruff check
         working-directory: tools/pipeline
         run: uv run ruff check .
+
+      - name: pytest
+        working-directory: tools/pipeline
+        run: uv run pytest
