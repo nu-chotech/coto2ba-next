@@ -47,6 +47,8 @@ export const SYMBOLS = {
   'arrow.down': 'arrow_downward',
   lightbulb: 'lightbulb',
   'square.and.arrow.up': 'ios_share',
+  'doc.on.doc': 'content_copy',
+  'arrow.up.right': 'open_in_new',
   flag: 'flag',
   'crown.fill': 'workspace_premium',
   checkmark: 'check',

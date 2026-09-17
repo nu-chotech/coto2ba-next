@@ -23,6 +23,8 @@ export type TierPalette = {
   sub: string
   /** 強調色（ランク、ボタン、下線）。 */
   accent: string
+  /** accent の上に載る文字（primary ボタンのラベル）。地に沈む色を選ぶ。 */
+  onAccent: string
   /** GlassView の tintColor。null なら無着色（素のガラス）。 */
   glassTint: string | null
   /** 粒子の色。 */
@@ -39,6 +41,7 @@ export const tierPalettes = {
     text: '#E8E8EC',
     sub: '#8A8A96',
     accent: '#B8B8C4',
+    onAccent: '#0B0B10',
     glassTint: null,
     particle: '#FFFFFF12',
   },
@@ -48,6 +51,7 @@ export const tierPalettes = {
     text: '#F2EAE2',
     sub: '#A08F80',
     accent: '#E8B98A',
+    onAccent: '#141017',
     glassTint: '#E8B98A22',
     particle: '#E8B98A20',
   },
@@ -57,6 +61,7 @@ export const tierPalettes = {
     text: '#E6E9FF',
     sub: '#7C85C4',
     accent: '#8B93FF',
+    onAccent: '#080A1C',
     glassTint: '#6B76FF2A',
     particle: '#AEB6FF',
   },
@@ -66,6 +71,7 @@ export const tierPalettes = {
     text: '#FFF6E0',
     sub: '#BFA469',
     accent: '#F5C542',
+    onAccent: '#14100A',
     glassTint: '#F5C5422E',
     particle: '#FFD770',
   },

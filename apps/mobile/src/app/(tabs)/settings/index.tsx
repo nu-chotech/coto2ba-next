@@ -30,7 +30,6 @@ import * as Linking from 'expo-linking'
 import * as WebBrowser from 'expo-web-browser'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -43,8 +42,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   ErrorState,
+  GlassButton,
   GlassCard,
-  PrimaryButton,
+  ListRow,
   Skeleton,
   TierBackground,
   toMessageJa,
@@ -346,7 +346,7 @@ export default function SettingsScreen() {
             {nameError ?? (nameSaved ? '保存しました' : ' ')}
           </Text>
 
-          <PrimaryButton
+          <GlassButton
             title="名前を保存"
             onPress={onSaveName}
             tier={SETTINGS_TIER}
@@ -401,11 +401,22 @@ export default function SettingsScreen() {
               </Text>
               <Text style={[typography.label, { color: colors.sub }]}>{expiresLabel}</Text>
               <View style={styles.copyRow}>
-                <CopyButton label="コードをコピー" onPress={() => onCopy(transferData.token)} />
+                <GlassButton
+                  title="コード"
+                  icon="doc.on.doc"
+                  onPress={() => onCopy(transferData.token)}
+                  tier={SETTINGS_TIER}
+                  variant="secondary"
+                  compact
+                />
                 {/* コピーするのは QR と同じリンク（貼り付け先で開いてもアプリに入る）。 */}
-                <CopyButton
-                  label="リンクをコピー"
+                <GlassButton
+                  title="リンク"
+                  icon="doc.on.doc"
                   onPress={() => onCopy(qrValue ?? transferData.url)}
+                  tier={SETTINGS_TIER}
+                  variant="secondary"
+                  compact
                 />
               </View>
               <Text style={[typography.label, { color: colors.sub }]}>
@@ -414,7 +425,7 @@ export default function SettingsScreen() {
             </View>
           ) : null}
 
-          <PrimaryButton
+          <GlassButton
             title={transferData === null ? '引き継ぎコードを作る' : 'コードを作り直す'}
             onPress={onCreateTransfer}
             tier={SETTINGS_TIER}
@@ -461,7 +472,7 @@ export default function SettingsScreen() {
             {claimError ?? (claimedName !== null ? `${claimedName} のデータを引き継ぎました` : ' ')}
           </Text>
 
-          <PrimaryButton
+          <GlassButton
             title="この端末に引き継ぐ"
             onPress={onClaim}
             tier={SETTINGS_TIER}
@@ -493,21 +504,19 @@ export default function SettingsScreen() {
         {/* ── クレジット ── */}
         <GlassCard tint={colors.glassTint} style={styles.card}>
           <Text style={[typography.label, { color: colors.sub }]}>クレジット</Text>
-          {CREDITS.map((credit) => (
-            <Pressable
+          {CREDITS.map((credit, index) => (
+            <ListRow
               key={credit.id}
-              disabled={credit.url === null}
-              onPress={() => {
-                if (credit.url !== null) void WebBrowser.openBrowserAsync(credit.url)
-              }}
-              style={({ pressed }) => [
-                styles.credit,
-                { backgroundColor: pressed ? palette.pressed : palette.transparent },
-              ]}
-            >
-              <Text style={[typography.body, { color: colors.text }]}>{credit.title}</Text>
-              <Text style={[typography.label, { color: colors.sub }]}>{credit.description}</Text>
-            </Pressable>
+              title={credit.title}
+              description={credit.description}
+              onPress={
+                credit.url === null ? null : () => void WebBrowser.openBrowserAsync(credit.url)
+              }
+              accessory="arrow.up.right"
+              textColor={colors.text}
+              subColor={colors.sub}
+              divided={index > 0}
+            />
           ))}
           <Text style={[typography.label, { color: colors.sub }]}>
             ベクトルは CC BY-SA 3.0 の継承対象です。派生データを公開するときは同じ条件で。
@@ -554,24 +563,6 @@ function ToggleRow({
   )
 }
 
-function CopyButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.copyButton,
-        {
-          borderColor: colors.sub,
-          backgroundColor: pressed ? palette.pressed : palette.transparent,
-        },
-      ]}
-    >
-      <Text style={[typography.label, { color: colors.text }]}>{label}</Text>
-    </Pressable>
-  )
-}
-
 /** 「あと 9 分で切れます」。壊れた値なら TTL をそのまま案内する。 */
 function formatExpiry(expiresAt: string | null): string {
   if (expiresAt === null) return ''
@@ -604,17 +595,5 @@ const styles = StyleSheet.create({
   transfer: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
   token: { textAlign: 'center', letterSpacing: 1 },
   copyRow: { flexDirection: 'row', gap: spacing.sm },
-  copyButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.pill,
-    borderWidth: borderWidth.hairline,
-  },
-  credit: {
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.sm,
-  },
   footer: { textAlign: 'center' },
 })

@@ -17,7 +17,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
-import { GlassCard, PrimaryButton, Skeleton, TierDot } from '../../components'
+import { GlassButton, GlassCard, Skeleton, TierDot } from '../../components'
 import { borderWidth, palette, paletteForTier, radius, spacing, typography } from '../../theme'
 import { formatJstDateLabel, toJstDateString } from '../ranking/dates'
 import { SPACE_SHEET_MAX_HEIGHT_RATIO } from './constants'
@@ -129,7 +129,7 @@ export function WordSheet({ node, onClose, onPickWord }: WordSheetProps) {
             </ScrollView>
           )}
 
-          <PrimaryButton title="閉じる" onPress={onClose} tier={SHEET_TIER} variant="secondary" />
+          <GlassButton title="閉じる" onPress={onClose} tier={SHEET_TIER} variant="secondary" />
         </GlassCard>
       </View>
     </Modal>

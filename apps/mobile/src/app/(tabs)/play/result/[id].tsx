@@ -23,8 +23,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   achievementIcon,
   ErrorState,
+  GlassButton,
   GlassCard,
-  PrimaryButton,
   SkeletonCard,
   SymbolIcon,
   TierBackground,
@@ -174,7 +174,13 @@ export default function ResultScreen() {
         ) : null}
 
         <View style={styles.actions}>
-          <PrimaryButton title="シェア" onPress={share} tier={tier} loading={isSharing} />
+          <GlassButton
+            title="シェア"
+            icon="square.and.arrow.up"
+            onPress={share}
+            tier={tier}
+            loading={isSharing}
+          />
           {/* 失敗の理由はトーストではなくボタンの下に 1 行で。 */}
           {shareError !== null ? (
             <Text
@@ -184,7 +190,7 @@ export default function ResultScreen() {
               シェアできませんでした（{shareError}）
             </Text>
           ) : null}
-          <PrimaryButton
+          <GlassButton
             title="図鑑で見る（準備中）"
             onPress={() => undefined}
             tier={tier}
@@ -192,7 +198,7 @@ export default function ResultScreen() {
             disabled
           />
           {boothMode ? (
-            <PrimaryButton
+            <GlassButton
               title="次の人へ"
               onPress={onNextPlayer}
               tier={tier}
@@ -200,7 +206,7 @@ export default function ResultScreen() {
               loading={handingOver}
             />
           ) : (
-            <PrimaryButton
+            <GlassButton
               title="ロビーに戻る"
               onPress={() => router.replace(LOBBY_HREF)}
               tier={tier}

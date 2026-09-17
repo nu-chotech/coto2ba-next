@@ -21,9 +21,9 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   ErrorState,
+  GlassButton,
   GlassCard,
   HERO_LINE_HEIGHT_RATIO,
-  PrimaryButton,
   Segmented,
   Skeleton,
   SkeletonCard,
@@ -181,7 +181,7 @@ export default function LobbyScreen() {
               </Text>
             </View>
 
-            <PrimaryButton
+            <GlassButton
               title={dailyActionLabel(state)}
               onPress={onDailyPress}
               tier={LOBBY_TIER}
@@ -204,7 +204,7 @@ export default function LobbyScreen() {
             tier={LOBBY_TIER}
           />
 
-          <PrimaryButton
+          <GlassButton
             title="あそぶ"
             onPress={onFreePress}
             tier={LOBBY_TIER}

@@ -26,6 +26,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   ErrorState,
+  GlassButton,
   GlassCard,
   HintSheet,
   HistoryStrip,
@@ -34,7 +35,6 @@ import {
   MIN_TAP_SIZE,
   MixOverlay,
   MixSlider,
-  PrimaryButton,
   RankMeter,
   SkeletonCard,
   SymbolIcon,
@@ -286,7 +286,7 @@ export default function GameScreen() {
         <RankMeter rank={detail.current_rank} prevRank={previousRank(detail)} tier={tier} />
 
         {finished ? (
-          <PrimaryButton
+          <GlassButton
             title="結果を見る"
             onPress={() => router.replace(resultHref(gameId))}
             tier={tier}
@@ -306,16 +306,12 @@ export default function GameScreen() {
             <MixSlider value={ratio} onChange={setRatio} tier={tier} disabled={pending !== null} />
 
             {/* 6. 混合ボタン */}
-            <PrimaryButton
-              title="混ぜる"
-              onPress={startMix}
-              tier={tier}
-              loading={pending !== null}
-            />
+            <GlassButton title="混ぜる" onPress={startMix} tier={tier} loading={pending !== null} />
 
             {/* 7. ヒント */}
-            <PrimaryButton
+            <GlassButton
               title={`ヒント（使った回数 ${detail.hint_count}）`}
+              icon="lightbulb"
               onPress={openHints}
               tier={tier}
               variant="ghost"

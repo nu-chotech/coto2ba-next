@@ -4,7 +4,7 @@
  * 使い方（結果画面）:
  * ```tsx
  * const { hostRef, share, isSharing, error, method } = useShareResult(game)
- * <PrimaryButton title="シェア" onPress={share} tier={tier} loading={isSharing} />
+ * <GlassButton title="シェア" onPress={share} tier={tier} loading={isSharing} />
  * <ShareCardHost hostRef={hostRef} game={game} />
  * ```
  * `ShareCardHost` は画面外に置かれるのでレイアウトに影響しない。

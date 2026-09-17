@@ -9,7 +9,7 @@ import type { TierId } from '@coto2ba/contracts'
 import { type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native'
 import { isApiError } from '../lib/api'
 import { paletteForTier, spacing, typography } from '../theme'
-import { PrimaryButton } from './PrimaryButton'
+import { GlassButton } from './GlassButton'
 
 /** 何が起きても日本語の 1 文にする。 */
 export function toMessageJa(error: unknown): string {
@@ -41,7 +41,7 @@ export function ErrorState({
       <Text style={[typography.caption, styles.message, { color: colors.sub }]}>
         {toMessageJa(error)}
       </Text>
-      <PrimaryButton title="もう一度" onPress={onRetry} tier={tier} variant="secondary" />
+      <GlassButton title="もう一度" onPress={onRetry} tier={tier} variant="secondary" />
     </View>
   )
 }

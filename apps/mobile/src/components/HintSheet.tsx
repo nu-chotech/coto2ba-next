@@ -15,10 +15,11 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
-import { borderWidth, palette, paletteForTier, radius, spacing, typography } from '../theme'
+import { palette, paletteForTier, radius, spacing, typography } from '../theme'
 import { HINT_SHEET_MAX_HEIGHT_RATIO, HINT_SLOT_HEIGHT } from './constants'
+import { GlassButton } from './GlassButton'
 import { GlassCard } from './GlassCard'
-import { PrimaryButton } from './PrimaryButton'
+import { ListRow } from './ListRow'
 import { Skeleton } from './Skeleton'
 
 /** ローディング中に並べる枠。index を key にしないため、先に固定の id を作っておく。 */
@@ -71,37 +72,37 @@ export function HintSheet({
           </Text>
 
           <ScrollView contentContainerStyle={styles.list}>
-            {loading
-              ? HINT_SLOT_IDS.map((slotId) => (
+            {loading ? (
+              <View style={styles.slots}>
+                {HINT_SLOT_IDS.map((slotId) => (
                   <Skeleton key={slotId} height={HINT_SLOT_HEIGHT} cornerRadius={radius.md} />
-                ))
-              : words.map((word) => (
-                  <Pressable
-                    key={word}
-                    onPress={() => onPick(word)}
-                    style={({ pressed }) => [
-                      styles.item,
-                      {
-                        borderColor: colors.sub,
-                        backgroundColor: pressed ? palette.pressed : colors.surface,
-                      },
-                    ]}
-                  >
-                    <Text style={[typography.body, { color: colors.text }]}>{word}</Text>
-                  </Pressable>
                 ))}
+              </View>
+            ) : (
+              words.map((word, index) => (
+                <ListRow
+                  key={word}
+                  title={word}
+                  onPress={() => onPick(word)}
+                  accessory="arrow.up.right"
+                  textColor={colors.text}
+                  subColor={colors.sub}
+                  divided={index > 0}
+                />
+              ))
+            )}
 
             {errorMessage !== null && errorMessage.length > 0 ? (
               <View style={styles.error}>
                 <Text style={[typography.caption, { color: palette.negative }]}>
                   {errorMessage}
                 </Text>
-                <PrimaryButton title="もう一度" onPress={onRetry} tier={tier} variant="ghost" />
+                <GlassButton title="もう一度" onPress={onRetry} tier={tier} variant="ghost" />
               </View>
             ) : null}
           </ScrollView>
 
-          <PrimaryButton title="閉じる" onPress={onClose} tier={tier} variant="secondary" />
+          <GlassButton title="閉じる" onPress={onClose} tier={tier} variant="secondary" />
         </GlassCard>
       </View>
     </Modal>
@@ -120,12 +121,7 @@ const styles = StyleSheet.create({
   dock: { flex: 1, justifyContent: 'flex-end', padding: spacing.lg },
   sheet: { gap: spacing.md },
   header: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
-  list: { gap: spacing.sm, paddingVertical: spacing.sm },
-  item: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.md,
-    borderWidth: borderWidth.hairline,
-  },
+  list: { paddingVertical: spacing.sm },
+  slots: { gap: spacing.sm },
   error: { gap: spacing.sm, paddingTop: spacing.sm },
 })
