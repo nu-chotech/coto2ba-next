@@ -45,6 +45,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "current_rank": {
+          "name": "current_rank",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
         "turn": {
           "name": "turn",
           "type": "integer",

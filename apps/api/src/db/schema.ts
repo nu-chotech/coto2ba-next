@@ -136,6 +136,7 @@ export const craftGames = pgTable('craft_games', {
   goal: text('goal').notNull(),
   start: text('start').notNull(),
   current: text('current').notNull(),
+  currentRank: integer('current_rank').notNull(),
   turn: integer('turn').notNull().default(0),
   combo: integer('combo').notNull().default(0),
   comboEnabled: boolean('combo_enabled').notNull().default(true),

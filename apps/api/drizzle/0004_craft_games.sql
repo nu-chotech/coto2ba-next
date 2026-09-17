@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS "craft_games" (
   "goal" text NOT NULL,
   "start" text NOT NULL,
   "current" text NOT NULL,
+  "current_rank" integer NOT NULL,
   "turn" integer DEFAULT 0 NOT NULL,
   "combo" integer DEFAULT 0 NOT NULL,
   "combo_enabled" boolean DEFAULT true NOT NULL,

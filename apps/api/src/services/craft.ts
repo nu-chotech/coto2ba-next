@@ -1,4 +1,4 @@
-import type { Difficulty } from '@coto2ba/contracts'
+import { tierForRank, type Difficulty } from '@coto2ba/contracts'
 import { and, eq, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { db, type Tx } from '../db/client'
@@ -6,7 +6,7 @@ import { craftGames } from '../db/schema'
 import { appError } from '../lib/errors'
 import { chooseGoal, chooseStart } from './game'
 import { craftBeta } from './craft-config'
-import { craftCandidateWords, lookupWord, similarityToGoal } from './vector'
+import { craftCandidateWords, lookupWord, rankOf, similarityToGoal } from './vector'
 
 type CraftRow = typeof craftGames.$inferSelect
 type CraftOption = { id: string; word: string; score: number }
@@ -14,8 +14,9 @@ type CraftOption = { id: string; word: string; score: number }
 function state(row: CraftRow) {
   return {
     id: row.id, goal: row.goal, start: row.start, current: row.current,
+    current_rank: row.currentRank, current_tier: tierForRank(row.currentRank),
     difficulty: row.difficulty, combo_enabled: row.comboEnabled,
-    goal_bias_enabled: row.goalBiasEnabled, turn: row.turn, combo: row.combo,
+    goal_bias_enabled: row.goalBiasEnabled, turn: row.turn, move_count: row.turn, combo: row.combo,
     history: row.history, status: row.status,
   }
 }
@@ -33,8 +34,10 @@ export async function createCraft(userId: string, input: {
 }) {
   const goal = await chooseGoal(db, input.difficulty)
   const start = await chooseStart(db, goal)
+  const startRank = await rankOf(db, goal, start)
+  if (startRank === null) throw appError('INTERNAL', 'スタート語の順位を取得できませんでした')
   const rows = await db.insert(craftGames).values({
-    userId, difficulty: input.difficulty, goal, start, current: start,
+    userId, difficulty: input.difficulty, goal, start, current: start, currentRank: startRank,
     history: [start], comboEnabled: input.combo_enabled, goalBiasEnabled: input.goal_bias_enabled,
   }).returning()
   return state(rows[0]!)
@@ -75,14 +78,16 @@ export async function confirmCraft(userId: string, id: string, setId: string, ca
     const selected = row.activeOptions?.find((option) => option.id === candidateId)
     if (!selected) throw appError('CRAFT_STALE_SET')
     const similarity = await similarityToGoal(tx, selected.word, row.goal)
+    const rank = await rankOf(tx, row.goal, selected.word)
+    if (rank === null) throw appError('INTERNAL', '候補語の順位を取得できませんでした')
     const combo = row.comboEnabled && row.previousSimilarity !== null && similarity > row.previousSimilarity
       ? row.combo + 1 : 0
     const rows = await tx.update(craftGames).set({
-      current: selected.word, turn: sql`${craftGames.turn} + 1`, combo,
+      current: selected.word, currentRank: rank, turn: sql`${craftGames.turn} + 1`, combo,
       previousSimilarity: similarity, history: [...row.history, selected.word],
       activeSetId: null, activeOptions: null,
       status: selected.word === row.goal ? 'cleared' : 'playing',
     }).where(eq(craftGames.id, id)).returning()
-    return state(rows[0]!)
+    return { ...state(rows[0]!), result: selected.word, rank, tier: tierForRank(rank), perfect: rank === 0 }
   })
 }

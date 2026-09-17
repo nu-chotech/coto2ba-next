@@ -146,13 +146,22 @@ export const craftStateSchema = z.object({
   goal: wordSchema,
   start: wordSchema,
   current: wordSchema,
+  current_rank: z.number().int().nonnegative(),
+  current_tier: tierSchema,
   difficulty: difficultySchema,
   combo_enabled: z.boolean(),
   goal_bias_enabled: z.boolean(),
   turn: z.number().int().nonnegative(),
+  move_count: z.number().int().nonnegative(),
   combo: z.number().int().nonnegative(),
   history: z.array(wordSchema),
   status: z.enum(['playing', 'cleared']),
+})
+export const craftConfirmResponseSchema = craftStateSchema.extend({
+  result: wordSchema,
+  rank: z.number().int().nonnegative(),
+  tier: tierSchema,
+  perfect: z.boolean(),
 })
 export const craftCandidatesResponseSchema = z.object({
   candidate_set_id: z.string().uuid(),
