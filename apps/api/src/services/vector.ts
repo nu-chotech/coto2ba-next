@@ -331,8 +331,30 @@ export async function hintCandidates(
     .slice(0, HINT_VERIFY_LIMIT)
     .map(({ word, ratio }) => ({ word, ratio }))
 
-  const ratioOf = new Map(byArithmetic.map((h) => [h.word, h.ratio]))
-  const verified = await verifyMixes(db, goal, current, byArithmetic)
+  const hints = await keepUsefulHints(db, goal, current, byArithmetic, limit)
+  if (hints.length > 0) return hints
+
+  // 最後の手段。1 件も検証を通らなかったときだけ、ゴールの近傍を候補にしてもう一度試す。
+  // **ここでも同じ検証を通す。** 素通しすると「ゴールの類義語を 0.8 で混ぜろ」＝
+  // クリアそのものを渡すことになり、歯止めが意味を失う。
+  const rescue = await goalNeighborCandidates(db, goal, current, currentVec, goalVec, banned)
+  return await keepUsefulHints(db, goal, current, rescue, 1)
+}
+
+/**
+ * 候補を実際に混ぜて検証し、「効く」かつ「強すぎない」手だけを残す。
+ * 並びは (結果のゴール類似度降順, 語の昇順) で決定論。
+ */
+async function keepUsefulHints(
+  db: Db,
+  goal: string,
+  current: string,
+  candidates: readonly Hint[],
+  limit: number,
+): Promise<Hint[]> {
+  if (candidates.length === 0) return []
+  const ratioOf = new Map(candidates.map((h) => [h.word, h.ratio]))
+  const verified = await verifyMixes(db, goal, current, candidates)
   const improving = verified
     // 効く手であること。かつ強すぎない（HINT_MIN_RESULT_RANK より良い手は渡さない）こと。
     .filter(
@@ -349,22 +371,18 @@ export async function hintCandidates(
     if (ratio === undefined) continue
     hints.push({ word: v.input, ratio })
   }
-  if (hints.length > 0) return hints
-
-  // 最後の手段。1 件も検証を通らなかったときだけ、ゴールの近傍を 1 件返す。
-  const fallback = await goalFallbackHint(db, goal, current, currentVec, goalVec, banned)
-  return fallback ? [fallback] : []
+  return hints
 }
 
-/** 検証が全滅したときの保険。禁止語・表記揺れを除いたゴール近傍の先頭 1 件。 */
-async function goalFallbackHint(
+/** 外挿の候補が全滅したときの second pool。禁止語・表記揺れを除いたゴール近傍。 */
+async function goalNeighborCandidates(
   db: Db,
   goal: string,
   current: string,
   currentVec: Float32Array,
   goalVec: Float32Array,
   banned: ReadonlySet<string>,
-): Promise<Hint | null> {
+): Promise<Hint[]> {
   const rows = await db.execute<{ word: string }>(sql`
     SELECT v.word FROM vocab v
     WHERE v.is_output AND v.word <> ${goal}
@@ -377,11 +395,14 @@ async function goalFallbackHint(
       (w) =>
         !banned.has(w) && !isMorphologicalVariant(w, current) && !isMorphologicalVariant(w, goal),
     )
-  const word = words[0]
-  if (!word) return null
-  const v = (await wordVectors(db, [word])).get(word)
-  if (!v) return null
-  return { word, ratio: bestRatioForCandidate(currentVec, v, goalVec, RATIOS).ratio }
+  const vectors = await wordVectors(db, words)
+  const out: Hint[] = []
+  for (const word of words) {
+    const v = vectors.get(word)
+    if (!v) continue
+    out.push({ word, ratio: bestRatioForCandidate(currentVec, v, goalVec, RATIOS).ratio })
+  }
+  return out.slice(0, HINT_VERIFY_LIMIT)
 }
 
 export interface VocabInfo {

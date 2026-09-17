@@ -2,7 +2,7 @@
  * ベクトル演算の統合テスト。DATABASE_URL が指す DB に vocab が入っている必要がある。
  * 入っていなければスキップする（CI で DB が無くても落ちないように）。
  */
-import { HINT_COUNT, RATIOS } from '@coto2ba/contracts'
+import { CLEAR_RANK, HINT_COUNT, RATIOS } from '@coto2ba/contracts'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { db, pool } from '../src/db/client'
@@ -135,6 +135,34 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
       expect(res).toBeTruthy()
       // ヒントは「順位が上がる手」でなければ意味がない。これが契約。
       expect(res?.rank).toBeLessThan(before as number)
+    }
+  })
+
+  it('クリアそのものは渡さない', async () => {
+    if (!hasVocab) return
+    const hints = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
+    for (const hint of hints) {
+      const res = await mixAndRank(db, GOAL, CURRENT, hint.word, hint.ratio)
+      expect(res?.rank).toBeGreaterThan(CLEAR_RANK)
+    }
+  })
+
+  // ゴールのすぐ近くに立っていると「効くが強すぎない手」が存在しないことがある。
+  // そのときは 0 件を返す（保険の経路でクリアを渡さないことの確認）。
+  it('ゴールの目前でもクリアを渡さない', async () => {
+    if (!hasVocab) return
+    const near = await db.execute<{ word: string }>(sql`
+      SELECT v.word FROM vocab v
+      WHERE v.is_output AND v.word <> ${GOAL}
+      ORDER BY v.w2v <=> (SELECT w2v FROM vocab WHERE word = ${GOAL})
+      LIMIT 1 OFFSET ${CLEAR_RANK + 4}
+    `)
+    const current = near.rows[0]?.word
+    expect(current).toBeTruthy()
+    const hints = await hintCandidates(db, GOAL, current as string, [], HINT_COUNT)
+    for (const hint of hints) {
+      const res = await mixAndRank(db, GOAL, current as string, hint.word, hint.ratio)
+      expect(res?.rank).toBeGreaterThan(CLEAR_RANK)
     }
   })
 
