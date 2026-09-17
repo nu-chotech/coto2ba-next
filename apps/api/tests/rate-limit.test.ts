@@ -20,15 +20,16 @@ import {
   RATE_LIMIT_ROOM_POLL_BURST,
   RATE_LIMIT_ROOM_POLL_PER_SECOND,
 } from '@coto2ba/contracts'
-import { eq, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import { app } from '../src/app'
 import { db, pool } from '../src/db/client'
 import { user } from '../src/db/schema'
 import { AppError } from '../src/lib/errors'
 import type { AuthVariables } from '../src/middleware/auth'
 import { rateLimit, rateLimitRoomPoll } from '../src/middleware/rateLimit'
+import { SKIP_WITHOUT_DB } from './db-available'
 
 /**
  * **Web でアプリを開いた瞬間に飛ぶリクエスト本数の実測値**（2026-09-18）。
@@ -200,21 +201,10 @@ describe('部屋のポーリングのレート制限', () => {
  * アプリの起動（必ず `/api/me` を呼ぶ）で 429 を出やすくしていた。
  *
  * ミドルウェアの単体試験では見つからない（ルートの登録の仕方の問題なので）。
- * DB が無ければスキップする。
+ * DB が無ければ skipped として報告する（実行 0 件の passed にしない）。
  */
-describe('1 リクエストが食うトークンは 1 つ', () => {
-  let hasDb = false
+describe.skipIf(SKIP_WITHOUT_DB)('1 リクエストが食うトークンは 1 つ', () => {
   const createdUserIds: string[] = []
-
-  beforeAll(async () => {
-    try {
-      await db.execute(sql`SELECT 1 FROM "user" LIMIT 1`)
-      hasDb = true
-    } catch {
-      hasDb = false
-      console.warn('DB が無いのでレート制限の消費量テストをスキップします')
-    }
-  })
 
   afterAll(async () => {
     for (const id of createdUserIds) {
@@ -262,14 +252,12 @@ describe('1 リクエストが食うトークンは 1 つ', () => {
 
   // `/api/me` は起動時に必ず呼ぶので、ここが 2 倍食うと起動 429 が出やすくなる。
   it('GET /api/me は 1 本につき 1 トークン', async () => {
-    if (!hasDb) return
     expect(await okBefore429('/api/me', await device())).toBeGreaterThanOrEqual(
       RATE_LIMIT_BURST_PER_USER,
     )
   })
 
   it('POST /api/transfer は 1 本につき 1 トークン', async () => {
-    if (!hasDb) return
     expect(await okBefore429('/api/transfer', await device(), 'POST')).toBeGreaterThanOrEqual(
       RATE_LIMIT_BURST_PER_USER,
     )
@@ -277,7 +265,6 @@ describe('1 リクエストが食うトークンは 1 つ', () => {
 
   // 二重登録していない対照。ここが壊れたら原因は別にある。
   it('GET /api/daily も 1 本につき 1 トークン', async () => {
-    if (!hasDb) return
     expect(await okBefore429('/api/daily', await device())).toBeGreaterThanOrEqual(
       RATE_LIMIT_BURST_PER_USER,
     )

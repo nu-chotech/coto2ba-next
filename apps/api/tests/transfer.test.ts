@@ -1,34 +1,24 @@
 /**
  * 引き継ぎ（SPEC §7.4）の統合テスト。DATABASE_URL の DB に直接書き込む。
- * DB が無ければスキップする（CI で落ちないように）。
+ * DB が無ければ skipped として報告する（実行 0 件の passed にしない）。
  *
  * ここで守りたいのは「200 を返したなら本当に引き継がれている」こと。
  * Better Auth のセッション行を付け替えないと、実アプリでは 1 件も引き継がれないのに
  * 成功が返り、クライアントが「引き継ぎました」と嘘をつく。
  */
 import { TRANSFER_TOKEN_TTL_MINUTES } from '@coto2ba/contracts'
-import { eq, sql } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { afterAll, describe, expect, it } from 'vitest'
 import { app } from '../src/app'
 import { db, pool } from '../src/db/client'
 import { deviceTokens, session, transferTokens, user } from '../src/db/schema'
+import { SKIP_WITHOUT_DB } from './db-available'
 
-let hasDb = false
 /** 後片付け用に作ったユーザー ID を控えておく。 */
 const createdUserIds: string[] = []
 
-beforeAll(async () => {
-  try {
-    await db.execute(sql`SELECT 1 FROM "user" LIMIT 1`)
-    hasDb = true
-  } catch {
-    hasDb = false
-    console.warn('DB が無いので引き継ぎの統合テストをスキップします')
-  }
-})
-
 afterAll(async () => {
-  if (hasDb) {
+  if (!SKIP_WITHOUT_DB) {
     for (const id of createdUserIds) {
       await db
         .delete(user)
@@ -91,9 +81,8 @@ async function claim(bearer: string, token: string): Promise<Response> {
   })
 }
 
-describe.runIf(process.env.SKIP_DB_TESTS !== '1')('POST /api/transfer/claim', () => {
+describe.skipIf(SKIP_WITHOUT_DB)('POST /api/transfer/claim', () => {
   it('Better Auth のセッションを引き継ぎ先に付け替える', async () => {
-    if (!hasDb) return
     const sourceId = await createUser('引き継ぎ元')
     const newDeviceId = await createUser('新しい端末')
     const s = await createSession(newDeviceId)
@@ -123,7 +112,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('POST /api/transfer/claim', ()
   })
 
   it('端末トークン（フォールバック）も付け替える', async () => {
-    if (!hasDb) return
     const sourceId = await createUser('端末元')
     const newDeviceId = await createUser('端末新')
     const deviceToken = crypto.randomUUID().replaceAll('-', '')
@@ -146,7 +134,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('POST /api/transfer/claim', ()
   })
 
   it('同じコードは 2 回使えない', async () => {
-    if (!hasDb) return
     const sourceId = await createUser('二重元')
     const firstId = await createUser('二重新1')
     const secondId = await createUser('二重新2')
@@ -169,7 +156,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('POST /api/transfer/claim', ()
   })
 
   it('自分のコードは使えない', async () => {
-    if (!hasDb) return
     const id = await createUser('自分')
     const s = await createSession(id)
     const token = await createTransferToken(id)

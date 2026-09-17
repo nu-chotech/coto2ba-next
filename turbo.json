@@ -13,6 +13,10 @@
     },
     "test": {
       "dependsOn": ["^build"],
+      // DB の有無でテストの結果（実行 / skipped）が変わるので、接続先をハッシュに含める。
+      // 含めないと「DB ありで通した結果」が DB 無しの実行で replay され、
+      // また「嘘の緑」に戻る。
+      "env": ["DATABASE_URL", "DATABASE_URL_DIRECT", "SKIP_DB_TESTS"],
       "outputs": []
     },
     "dev": {

@@ -1,10 +1,10 @@
 /**
  * ベクトル演算の統合テスト。DATABASE_URL が指す DB に vocab が入っている必要がある。
- * 入っていなければスキップする（CI で DB が無くても落ちないように）。
+ * 入っていなければ skipped として報告する（実行 0 件の passed にしない）。
  */
 import { CLEAR_RANK, HINT_COUNT, RATIOS } from '@coto2ba/contracts'
 import { sql } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import { db, pool } from '../src/db/client'
 import {
   hintCandidates,
@@ -13,30 +13,14 @@ import {
   rankOf,
   sampleStartWord,
 } from '../src/services/vector'
-
-let hasVocab = false
-
-beforeAll(async () => {
-  try {
-    const r = await db.execute<{ n: number }>(
-      sql`SELECT count(*)::int AS n FROM vocab WHERE is_output`,
-    )
-    hasVocab = Number(r.rows[0]?.n ?? 0) > 1000
-  } catch {
-    hasVocab = false
-  }
-  if (!hasVocab) {
-    console.warn('vocab が無いのでベクトルの統合テストをスキップします')
-  }
-})
+import { SKIP_WITHOUT_VOCAB } from './db-available'
 
 afterAll(async () => {
   await pool.end().catch(() => {})
 })
 
-describe.runIf(process.env.SKIP_DB_TESTS !== '1')('ベクトル演算', () => {
+describe.skipIf(SKIP_WITHOUT_VOCAB)('ベクトル演算', () => {
   it('ゴールの最近傍のランクは 1（gensim との契約）', async () => {
-    if (!hasVocab) return
     const goal = '銀河'
     const nn = await db.execute<{ word: string }>(sql`
       WITH g AS (SELECT w2v FROM vocab WHERE word = ${goal})
@@ -51,12 +35,10 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('ベクトル演算', () => {
   })
 
   it('ゴール自身のランクは 0（完全錬成）', async () => {
-    if (!hasVocab) return
     expect(await rankOf(db, '銀河', '銀河')).toBe(0)
   })
 
   it('ランクは近いほど小さい', async () => {
-    if (!hasVocab) return
     const goal = '銀河'
     const rows = await db.execute<{ word: string; rk: number }>(sql`
       WITH g AS (SELECT w2v FROM vocab WHERE word = ${goal})
@@ -73,7 +55,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('ベクトル演算', () => {
   })
 
   it('混合の結果は current / input を含まない', async () => {
-    if (!hasVocab) return
     const res = await mixAndRank(db, '銀河', '宇宙', '船', 0.5)
     expect(res).toBeTruthy()
     expect(res?.result).not.toBe('宇宙')
@@ -82,34 +63,29 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('ベクトル演算', () => {
   })
 
   it('混合は決定論的（同じ入力なら同じ結果）', async () => {
-    if (!hasVocab) return
     const a = await mixAndRank(db, '銀河', '宇宙', '船', 0.3)
     const b = await mixAndRank(db, '銀河', '宇宙', '船', 0.3)
     expect(a).toEqual(b)
   })
 
   it('ratio が大きいほど input 側に寄る', async () => {
-    if (!hasVocab) return
     const low = await mixAndRank(db, '銀河', '宇宙', '味噌汁', 0.1)
     const high = await mixAndRank(db, '銀河', '宇宙', '味噌汁', 0.8)
     expect(low?.result).not.toBe(high?.result)
   })
 
   it('mixAndRank の rank は rankOf と一致する', async () => {
-    if (!hasVocab) return
     const res = await mixAndRank(db, '銀河', '宇宙', '船', 0.5)
     expect(res).toBeTruthy()
     expect(await rankOf(db, '銀河', res?.result as string)).toBe(res?.rank)
   })
 
   it('語彙の引き当て', async () => {
-    if (!hasVocab) return
     expect((await lookupWord(db, '銀河'))?.isInput).toBe(true)
     expect(await lookupWord(db, 'ぎゃぴぴぴぴ')).toBeNull()
   })
 
   it('スタート語は規定のランク帯から選ばれる', async () => {
-    if (!hasVocab) return
     const words = await sampleStartWord(db, '銀河', 20000, 3000, 30000, 5)
     expect(words.length).toBeGreaterThan(0)
     for (const w of words) {
@@ -120,12 +96,11 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('ベクトル演算', () => {
   })
 })
 
-describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
+describe.skipIf(SKIP_WITHOUT_VOCAB)('hintCandidates', () => {
   const GOAL = '温泉'
   const CURRENT = '味噌汁'
 
   it('提案どおりに混ぜるとゴールに近づく', async () => {
-    if (!hasVocab) return
     const hints = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
 
     expect(hints.length).toBeGreaterThan(0)
@@ -142,7 +117,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
   // ここで空になると、いちばんヒントが欲しい場面で何も出せない。
   // 強さの上限を設けていないので、結果がクリア圏に入ることもある（それは正しい）。
   it('ゴールの目前でもヒントが出る', async () => {
-    if (!hasVocab) return
     const near = await db.execute<{ word: string }>(sql`
       SELECT v.word FROM vocab v
       WHERE v.is_output AND v.word <> ${GOAL}
@@ -161,13 +135,11 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
   })
 
   it('比率は 8 段階のいずれか', async () => {
-    if (!hasVocab) return
     const hints = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
     for (const hint of hints) expect(RATIOS).toContain(hint.ratio)
   })
 
   it('除外語を返さない', async () => {
-    if (!hasVocab) return
     const first = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
     const banned = [GOAL, CURRENT, ...first.map((h) => h.word)]
     const hints = await hintCandidates(db, GOAL, CURRENT, banned, HINT_COUNT)
@@ -177,7 +149,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
   // 並びは盤面から決まる（ゴールに近い順ではない）。hint_cache は (goal, current) で
   // キャッシュされるので、**並びまで含めて**同じでなければならない。
   it('同じ入力なら並びまで含めて同じ結果（キャッシュが決定論であるため）', async () => {
-    if (!hasVocab) return
     const a = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
     for (let i = 0; i < 5; i++) {
       expect(await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)).toEqual(a)
@@ -185,7 +156,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
   })
 
   it('盤面が違えば並びも違いうる', async () => {
-    if (!hasVocab) return
     // 同じゴールに対して current を変えると、語も並びも変わる。
     // 「並びがゴール類似度の降順に固定されていない」ことの確認。
     const orders = new Set<string>()
@@ -199,7 +169,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
   // 並べ替えるのは表示順だけ。選ぶところまではゴールに近い順なので、
   // 「効く手だけ」「limit 件」という性質は崩れていない。
   it('並べ替えても件数と中身の性質は変わらない', async () => {
-    if (!hasVocab) return
     const hints = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
     expect(hints).toHaveLength(HINT_COUNT)
     expect(new Set(hints.map((h) => h.word)).size).toBe(hints.length)
@@ -211,7 +180,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
   })
 
   it('limit を超えない', async () => {
-    if (!hasVocab) return
     const hints = await hintCandidates(db, GOAL, CURRENT, [], 2)
     expect(hints.length).toBeLessThanOrEqual(2)
   })

@@ -5,29 +5,17 @@
  * `apps/mobile/src/lib/api.ts` はレスポンスを必ず契約スキーマに通すので、
  * 形が 1 つずれると画面が「サーバーの応答を解釈できません」で止まる。
  *
- * DB が無ければスキップする（CI で落ちないように）。
+ * goal_pool のデータが無ければ skipped として報告する（実行 0 件の passed にしない）。
  */
 import { moveResponseSchema, ROOM_CODE_LENGTH, roomResponseSchema } from '@coto2ba/contracts'
-import { eq, sql } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { afterAll, describe, expect, it } from 'vitest'
 import { app } from '../src/app'
 import { db, pool } from '../src/db/client'
 import { games, session, user } from '../src/db/schema'
+import { SKIP_WITHOUT_GOAL_POOL_ROWS } from './db-available'
 
-let hasDb = false
 const createdUserIds: string[] = []
-
-beforeAll(async () => {
-  try {
-    const r = await db.execute<{ n: number }>(
-      sql`SELECT count(*)::int AS n FROM goal_pool WHERE enabled`,
-    )
-    hasDb = Number(r.rows[0]?.n ?? 0) > 0
-  } catch {
-    hasDb = false
-  }
-  if (!hasDb) console.warn('goal_pool が無いので対戦ルームのエンドポイント試験をスキップします')
-})
 
 afterAll(async () => {
   for (const id of createdUserIds) {
@@ -150,9 +138,8 @@ async function get(path: string, bearer: string): Promise<Response> {
   return await app.request(path, { headers: { authorization: `Bearer ${bearer}` } })
 }
 
-describe.runIf(process.env.SKIP_DB_TESTS !== '1')('対戦ルームのエンドポイント', () => {
+describe.skipIf(SKIP_WITHOUT_GOAL_POOL_ROWS)('対戦ルームのエンドポイント', () => {
   it('作成 → 参加 → 開始 → 取得が、すべて契約どおりの形で返る', async () => {
-    if (!hasDb) return
     const host = await signIn('ホスト')
     const guest = await signIn('ゲスト')
 
@@ -188,7 +175,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('対戦ルームのエンド�
   })
 
   it('ルーム戦の手のレスポンスに、その時点の順位が入る', async () => {
-    if (!hasDb) return
     const { host, code, hostGameId } = await startedRoom()
     const move = await playAnyMove(host, hostGameId)
     const standings = moveResponseSchema.parse(move).room_standings
@@ -213,7 +199,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('対戦ルームのエンド�
    * **漏れていても消えてしまう**（前の版はそれで実質何も検証していなかった）。
    */
   it('手のレスポンスの順位に、他人が打った語は入らない', async () => {
-    if (!hasDb) return
     const { host, guest, code, hostGameId } = await startedRoom()
 
     // 相手だけが知っている語（他のどこにも現れない）。
@@ -225,7 +210,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('対戦ルームのエンド�
   })
 
   it('順位の各行が持つキーは決まった 6 つだけ', async () => {
-    if (!hasDb) return
     const { host, hostGameId } = await startedRoom()
     const raw = (await playAnyMove(host, hostGameId)) as {
       room_standings?: Record<string, unknown>[]
@@ -238,7 +222,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('対戦ルームのエンド�
   })
 
   it('部屋の状態（ポーリング先）にも他人が打った語は入らない', async () => {
-    if (!hasDb) return
     const { guest, code } = await startedRoom()
 
     const sentinel = `ホストだけの秘密語-${crypto.randomUUID()}`
@@ -250,7 +233,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('対戦ルームのエンド�
   })
 
   it('ルーム戦でない手には順位が入らない', async () => {
-    if (!hasDb) return
     const solo = await signIn('ひとり')
     const game = (await (
       await post('/api/games', solo, { mode: 'free', difficulty: 'normal' })
@@ -260,14 +242,12 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('対戦ルームのエンド�
   })
 
   it('存在しないコードは 404', async () => {
-    if (!hasDb) return
     const someone = await signIn('通りすがり')
     const res = await get('/api/rooms/ZZZZ', someone)
     expect(res.status).toBe(404)
   })
 
   it('POST /api/games に mode=room は投げられない（ルーム戦はサーバーだけが作る）', async () => {
-    if (!hasDb) return
     const someone = await signIn('直接作る人')
     const res = await post('/api/games', someone, { mode: 'room' })
     expect(res.status).toBe(400)

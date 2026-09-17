@@ -6,29 +6,17 @@
  * - 提案どおりに混ぜたとき rank が改善する
  * - hint_cache（jsonb）を経由しても同じヒントが返る
  *
- * DB が無ければスキップする（CI で落ちないように）。
+ * vocab のデータが無ければ skipped として報告する（実行 0 件の passed にしない）。
  */
 import { hintResponseSchema, RATIOS } from '@coto2ba/contracts'
-import { eq, sql } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { afterAll, describe, expect, it } from 'vitest'
 import { app } from '../src/app'
 import { db, pool } from '../src/db/client'
 import { session, user } from '../src/db/schema'
+import { SKIP_WITHOUT_VOCAB } from './db-available'
 
-let hasDb = false
 const createdUserIds: string[] = []
-
-beforeAll(async () => {
-  try {
-    const r = await db.execute<{ n: number }>(
-      sql`SELECT count(*)::int AS n FROM vocab WHERE is_output`,
-    )
-    hasDb = Number(r.rows[0]?.n ?? 0) > 1000
-  } catch {
-    hasDb = false
-  }
-  if (!hasDb) console.warn('vocab が無いのでヒントの統合テストをスキップします')
-})
 
 afterAll(async () => {
   for (const id of createdUserIds) {
@@ -71,9 +59,8 @@ async function post(path: string, bearer: string, body?: unknown): Promise<Respo
   })
 }
 
-describe.runIf(process.env.SKIP_DB_TESTS !== '1')('POST /api/games/:id/hints', () => {
+describe.skipIf(SKIP_WITHOUT_VOCAB)('POST /api/games/:id/hints', () => {
   it('提案されたヒントをそのまま打てて、順位が上がる', async () => {
-    if (!hasDb) return
     const bearer = await signIn()
     const created = await post('/api/games', bearer, { mode: 'free', difficulty: 'normal' })
     expect(created.status).toBe(200)
@@ -103,7 +90,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('POST /api/games/:id/hints', (
   })
 
   it('2 回目は hint_cache 経由でも同じヒントを返す', async () => {
-    if (!hasDb) return
     const bearer = await signIn()
     const created = await post('/api/games', bearer, { mode: 'free', difficulty: 'normal' })
     const game = (await created.json()) as { id: string }
