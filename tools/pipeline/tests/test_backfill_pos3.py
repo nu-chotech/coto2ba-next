@@ -199,6 +199,53 @@ def test_no_overlapping_words_fails_loudly_real_run(make_db, monkeypatch):
     assert _null_count(target_url) == 500  # pos3 も一切更新されていない
 
 
+@requires_local_pg
+def test_intersection_below_ratio_threshold_fails_loudly(make_db, monkeypatch):
+    """交差が 0 ではないが MIN_INTERSECTION_RATIO 未満（Round 3 レビュー指摘の核心）。
+
+    Round 2 の実装は「交差が 1 語でもあれば通す」だったため、たまたま 1 語だけ
+    一致する全く無関係な target を見逃していた。ここでは 10 語中 1 語（10%）だけ
+    一致させ、既定のしきい値（50%）を満たさないことを確認する。
+    """
+    source_url = make_db("pos3_src")
+    words = [(f"word{i}", [0.1, 0.2, 0.3]) for i in range(10)]
+    _seed_source(source_url, words)
+
+    target_url = make_db("pos3_tgt_low_overlap")
+    # word0 だけ一致させ、残りは無関係な語で埋める（一致率 10%）。
+    target_words = ["word0"] + [f"other{i}" for i in range(9)]
+    _seed_target_all_null(target_url, target_words)
+
+    monkeypatch.setattr(module, "database_url", lambda: source_url)
+
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--target", target_url, "--dry-run"])
+
+    assert _exit_status(exc.value.code) != 0
+    assert "一致" in str(exc.value)
+    assert _null_count(target_url) == len(target_words)  # 書き込みなし
+
+
+@requires_local_pg
+def test_intersection_at_ratio_threshold_passes(make_db, monkeypatch, capsys):
+    """交差がちょうど MIN_INTERSECTION_RATIO を満たせば通ること（過剰検知しない）。"""
+    source_url = make_db("pos3_src")
+    words = [(f"word{i}", [0.1, 0.2, 0.3]) for i in range(10)]
+    _seed_source(source_url, words)
+
+    target_url = make_db("pos3_tgt_half_overlap")
+    # ちょうど 50%（5/10）だけ一致させる。
+    target_words = [f"word{i}" for i in range(5)] + [f"other{i}" for i in range(5)]
+    _seed_target_all_null(target_url, target_words)
+
+    monkeypatch.setattr(module, "database_url", lambda: source_url)
+
+    module.main(["--target", target_url, "--dry-run"])  # 例外が飛ばないこと自体を確認
+
+    err = capsys.readouterr().err
+    assert "対象（target の pos3 が NULL かつソースに値あり）: 5 語" in err
+
+
 # ── 2. --dry-run は target に一切書き込まない ───────────────────
 
 @requires_local_pg
@@ -316,6 +363,70 @@ def test_main_allow_pooled_flag_bypasses_the_guard(monkeypatch):
     assert exc.value is sentinel
 
 
+def test_resolve_host_handles_libpq_keyword_format():
+    """libpq の keyword=value 形式（host=... dbname=...）からもホストを取り出せること。
+
+    Round 2 までの実装は `urlparse(url).hostname` だけに頼っており、
+    keyword=value 形式では `.hostname` が `None` になるため pooled ガードを
+    無条件に素通りしていた（Round 3 レビュー指摘）。
+    """
+    assert (
+        module.resolve_host("host=ep-xxx-pooler.aws.neon.tech dbname=neondb")
+        == "ep-xxx-pooler.aws.neon.tech"
+    )
+    assert (
+        module.resolve_host("host='ep-xxx.aws.neon.tech' dbname=neondb")
+        == "ep-xxx.aws.neon.tech"
+    )
+    assert module.resolve_host("dbname=coto2ba user=coto2ba") is None
+    # URI 形式は従来どおり urlparse に任せる。
+    assert (
+        module.resolve_host("postgres://coto2ba:coto2ba@127.0.0.1:55432/coto2ba")
+        == "127.0.0.1"
+    )
+
+
+def test_is_pooled_host_detects_libpq_keyword_format():
+    assert module.is_pooled_host("host=ep-xxx-pooler.aws.neon.tech dbname=neondb")
+    assert not module.is_pooled_host("host=ep-xxx.aws.neon.tech dbname=neondb")
+
+
+def test_main_rejects_unresolvable_host_without_connecting(monkeypatch):
+    """host を特定できない接続文字列は、pooled かどうか判定できないので安全側に倒して拒否する。"""
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("host 不明なら connect() に到達する前に拒否されるべき")
+
+    monkeypatch.setattr(module, "connect", fail_if_called)
+    monkeypatch.setattr(module, "fetch_source_rows", fail_if_called)
+    monkeypatch.setattr(module, "database_url", fail_if_called)
+
+    # host= も無く、スキームも無い、host を特定する手段が無い接続文字列。
+    weird_target = "dbname=coto2ba user=coto2ba"
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--target", weird_target, "--dry-run"])
+
+    assert _exit_status(exc.value.code) != 0
+    assert "ホスト" in str(exc.value)
+
+
+def test_main_allow_pooled_flag_bypasses_unresolvable_host_guard(monkeypatch):
+    monkeypatch.setattr(module, "database_url", lambda: "unused")
+    monkeypatch.setattr(module, "fetch_source_rows", lambda _url: [("word", [0.0, 0.0, 0.0])])
+    sentinel = RuntimeError("reached connect() past the unresolvable-host guard")
+
+    def fake_connect(_url):
+        raise sentinel
+
+    monkeypatch.setattr(module, "connect", fake_connect)
+
+    weird_target = "dbname=coto2ba user=coto2ba"
+    with pytest.raises(RuntimeError) as exc:
+        module.main(["--target", weird_target, "--dry-run", "--allow-pooled"])
+
+    assert exc.value is sentinel
+
+
 # ── 4. 通し実行 / 冪等性 / --max-bytes 中断と再開（回帰） ────────
 
 @requires_local_pg
@@ -364,4 +475,104 @@ def test_max_bytes_interrupts_and_resume_completes(make_db, monkeypatch):
 
     # 上限を戻して再実行すれば、残りが完走する（WHERE pos3 IS NULL による再開）。
     module.main(["--target", target_url, "--batch-size", "10"])
+    assert _null_count(target_url) == 0
+
+
+# ── 5. --batch-size 0 で何もせず成功したことにする経路を塞ぐ ─────
+
+def test_batch_size_zero_rejected_by_argparse():
+    """`--batch-size 0` は argparse の段階で拒否する（Round 3 レビュー指摘の核心）。
+
+    0 を許すと `apply_batch` の `LIMIT 0` が常に空集合を返し、ループが
+    即座に終わって「完了」と exit 0 で誤報告してしまっていた。DB にすら
+    到達しない段階の話なので `--target` はダミーでよい。
+    """
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--target", "postgres://example/db", "--batch-size", "0"])
+    assert _exit_status(exc.value.code) != 0
+
+
+def test_batch_size_negative_rejected_by_argparse():
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--target", "postgres://example/db", "--batch-size", "-5"])
+    assert _exit_status(exc.value.code) != 0
+
+
+@requires_local_pg
+def test_zero_progress_with_remaining_work_fails_loudly(make_db, monkeypatch):
+    """`apply_batch` が万一 0 のまま返し続けても、残件がある限り exit 0 にしない防御線。
+
+    `--batch-size` を argparse で 1 以上に強制していれば通常は起きないはずだが、
+    その防御線自体が壊れていないかを確認する（Round 3 レビュー指摘）。
+    """
+    source_url = make_db("pos3_src")
+    words = [(f"word{i}", [0.1, 0.2, 0.3]) for i in range(10)]
+    _seed_source(source_url, words)
+
+    target_url = make_db("pos3_tgt")
+    _seed_target_all_null(target_url, [w for w, _ in words])
+
+    monkeypatch.setattr(module, "database_url", lambda: source_url)
+    # apply_batch を「常に 0 行更新」に差し替えて、進捗ゼロのまま残件がある状況を作る。
+    monkeypatch.setattr(module, "apply_batch", lambda _conn, _batch_size: 0)
+
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--target", target_url, "--batch-size", "5"])
+
+    assert _exit_status(exc.value.code) != 0
+    assert "残" in str(exc.value)
+    assert _null_count(target_url) == len(words)  # 実際には何も更新されていない
+
+
+# ── 6. VACUUM が無言でスキップされたら警告する ────────────────────
+
+@pytest.fixture
+def make_nonowner_role():
+    """`vocab` の所有者ではないログインロールを作る。後始末は fixture が行う。"""
+    role = f"pos3_nonowner_{uuid.uuid4().hex[:8]}"
+    password = "testpass"  # テスト用の使い捨てロールなので固定値でよい
+    with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
+        admin.execute(f"CREATE ROLE {role} LOGIN PASSWORD '{password}'")
+
+    yield role, password
+
+    with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
+        admin.execute(f'DROP ROLE IF EXISTS "{role}"')
+
+
+@requires_local_pg
+def test_vacuum_skip_is_detected_and_warned(make_nonowner_role, make_db, monkeypatch, capsys):
+    """ロールが vocab の所有者でないと VACUUM が無言スキップされる。それを検知して警告する。
+
+    権限エラーはエラーにならず WARNING の NOTICE として握り潰されるため、
+    実測（本レポート参照）どおり `last_vacuum=(never)` のまま完走してしまう。
+    処理は止めなくてよいが、標準エラーに気づける形で警告を出すことを確認する
+    （Round 3 レビュー指摘）。
+    """
+    source_url = make_db("pos3_src")
+    words = [(f"word{i}", [0.1, 0.2, 0.3]) for i in range(20)]
+    _seed_source(source_url, words)
+
+    target_url = make_db("pos3_tgt")
+    _seed_target_all_null(target_url, [w for w, _ in words])
+
+    role, password = make_nonowner_role
+    target_dbname = target_url.rsplit("/", 1)[-1]
+
+    with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
+        admin.execute(f'GRANT CONNECT ON DATABASE "{target_dbname}" TO "{role}"')
+    with psycopg.connect(target_url, autocommit=True) as owner_conn:
+        # 所有権は渡さず、SELECT/UPDATE だけ許可する（VACUUM には所有権が要る）。
+        owner_conn.execute(f'GRANT SELECT, UPDATE ON vocab TO "{role}"')
+
+    nonowner_target_url = f"postgres://{role}:{password}@127.0.0.1:55432/{target_dbname}"
+
+    monkeypatch.setattr(module, "database_url", lambda: source_url)
+
+    module.main(["--target", nonowner_target_url, "--batch-size", "5"])  # 例外は飛ばない
+
+    err = capsys.readouterr().err
+    assert "VACUUM" in err
+    assert "効いていない" in err
+    # 容量的には完走しているはず（--max-bytes のバックストップ内）。
     assert _null_count(target_url) == 0

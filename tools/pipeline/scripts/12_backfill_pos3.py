@@ -17,14 +17,17 @@ Neon Free は 512MB 中 318MB 使用済みで、102,520 行の一括 UPDATE は�
 
 **このスクリプトは vocab を新規作成しない。** `--target` が空の DB / 別プロジェクト /
 `word` の正規化がずれた環境を誤って指していた場合に「対象 0 件 = 完了」と誤報告して
-サイレントに成功したように見えてしまう事故（レビュー Round 1・Round 2 指摘）を防ぐため、
+サイレントに成功したように見えてしまう事故（レビュー Round 1・2・3 指摘）を防ぐため、
 書き込み・一時テーブル作成の前に必ず 2 段のチェックを通す:
 
 1. `ensure_target_sane`: `vocab` テーブルが存在すること（`to_regclass`）。
-2. `count_intersection`: ソースの語と target の `vocab.word` が **実際に 1 件以上
-   一致すること**。0 件なら「別プロジェクト / 別環境を指している」「`word` の
-   正規化がずれて JOIN が空になっている」のどちらかが濃厚なので、`missing == 0`
-   を「完了」と誤解する前にここで非ゼロ終了する。
+2. `count_intersection` / `required_intersection_count`: ソースの語と target の
+   `vocab.word` の交差が **`MIN_INTERSECTION_RATIO`（既定 50%）以上**あること。
+   「1 語でも一致すれば OK」（Round 2）だと、たまたま 1 語だけ同名の語を含む
+   全く無関係な DB を見逃してしまうため、割合のしきい値にした（Round 3 レビュー指摘）。
+   下回るなら「別プロジェクト / 別環境を指している」「`word` の正規化がずれて
+   いる」のどちらかが濃厚なので、`missing == 0` を「完了」と誤解する前に
+   ここで非ゼロ終了する。
 
 **行数のしきい値比較はしない**（Round 1 では `total < len(rows)` を見ていたが、
 本番の行数と `len(rows)` がほぼ同じ値になる想定のため、ローカルの語彙が少し増えるだけで
@@ -35,10 +38,24 @@ Neon Free は 512MB 中 318MB 使用済みで、102,520 行の一括 UPDATE は�
 渡されたソースの語リストを `word = ANY(...)` で直接読むだけにしてある
 （上記 2 段のチェックも dry-run 経路で同じように効く）。
 
+**`--batch-size` は 1 以上を argparse で強制する。** `0` を許すと 1 行も
+更新しないまま「完了」と誤報告して exit 0 になる穴があった（Round 3 レビュー指摘）。
+バッチループを抜けた後にも「1 行も更新していないのに未処理が残っている」状態を
+検知したら非ゼロ終了する防御線を置いている。
+
+**`VACUUM vocab` が無言でスキップされたら警告する。** target のロールが `vocab`
+の所有者でないと、`VACUUM` はエラーにならず `WARNING: permission denied to vacuum
+"vocab", skipping it` という NOTICE を出すだけで何もしない。psycopg の notice
+ハンドラで検知し、バッチごと・完了時にまとめて警告を出す（Round 3 レビュー指摘。
+`--max-bytes` のバックストップがあるので容量的には完走できるため、処理は止めない）。
+
 **pooled 接続（ホスト名に `-pooler` を含む）は既定で拒否する。** 一時テーブルは
 セッションに紐づくため、コネクションプーラ越しだと接続の使い回しで意図せず
 消える恐れがある。本番で一度しか打たない操作なので機械的に弾く
-（どうしても使うなら `--allow-pooled`）。
+（どうしても使うなら `--allow-pooled`）。**接続文字列から host が特定できない
+場合（`urlparse` が拾えない libpq keyword=value 形式など）も同じフラグで
+安全側に倒して拒否する**（Round 3 レビュー指摘: 旧実装は `urlparse().hostname`
+が `None` になる形式を無条件に素通りしていた）。
 
 一時テーブル経由でまとめて読み込み、バッチの切り出しは DB 側の
 `WHERE pos3 IS NULL LIMIT --batch-size` に任せる（1 行ずつの UPDATE は遅すぎる。
@@ -55,6 +72,8 @@ Neon Free は 512MB 中 318MB 使用済みで、102,520 行の一括 UPDATE は�
 from __future__ import annotations
 
 import argparse
+import math
+import re
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
@@ -70,6 +89,37 @@ DEFAULT_MAX_BYTES = 480 * 1024 * 1024
 # ソース（ローカル DB の pos3）を丸ごと読み込む一時テーブル名。
 SOURCE_LOAD_TABLE = "pos3_backfill_source"
 
+# ソースの語のうち、target で実際に見つかった語の割合がこの値未満なら、
+# target が別プロジェクト / 別環境である疑いとして中断する（Round 3 レビュー指摘）。
+# 本番の vocab はソースと同じ語彙セットを共有している前提なので、正当な target なら
+# 交差はほぼ 100%（実測: 102,520/102,520）になるはずである。「1 語でも一致すれば OK」
+# （Round 2 実装）だと、たまたま 1 語だけ同名の語を含む全く無関係な DB を見逃してしまう。
+# 0.5（50%）は「ローカルの語彙が多少ズレていても正当な実行は通す」ために十分低く、
+# かつ「別プロジェクトなど根本的に無関係な DB（一致率は 0 に近い）」を確実に弾ける
+# 値として選んだ（実測の一致率 99% 超に対して十分な安全マージンがある）。
+MIN_INTERSECTION_RATIO = 0.5
+
+
+#  `host='...'` / `host="..."` / `host=...`（空白まで）のいずれにもマッチする。
+_LIBPQ_HOST_RE = re.compile(r"(?:^|\s)host=(?:'([^']*)'|\"([^\"]*)\"|(\S+))", re.IGNORECASE)
+
+
+def resolve_host(url: str) -> str | None:
+    """接続文字列からホスト名を取り出す。特定できなければ `None`。
+
+    `postgres://` / `postgresql://` の URI 形式は `urlparse().hostname` に任せる。
+    **libpq の keyword=value 形式**（`host=... dbname=... user=...`）は
+    `urlparse` がホストを拾えず（`.hostname` が `None` になる）、pooled ガードを
+    無条件に素通りしてしまっていた（Round 3 レビュー指摘）。ここで両方に対応する。
+    """
+    parsed = urlparse(url)
+    if parsed.hostname:
+        return parsed.hostname
+    match = _LIBPQ_HOST_RE.search(url)
+    if match:
+        return next((g for g in match.groups() if g is not None), None)
+    return None
+
 
 def is_pooled_host(url: str) -> bool:
     """Neon の pooled 接続（ホスト名に `-pooler` を含む）かどうか。
@@ -80,8 +130,14 @@ def is_pooled_host(url: str) -> bool:
 
     **ホスト名だけを見る**（URL 文字列全体の部分一致にすると、パスワードや DB 名に
     たまたま `-pooler` が含まれる正当な unpooled URL まで誤検知するため。Round 2 レビュー指摘）。
+
+    ホストが特定できない場合は `False` を返す（＝ pooled とは判定しない）。
+    その代わり、呼び出し側（`main()`）が `resolve_host` の結果そのものを見て、
+    「ホスト不明」を pooled とは別の理由として安全側に倒して拒否する。
     """
-    host = urlparse(url).hostname or ""
+    host = resolve_host(url)
+    if host is None:
+        return False
     return "-pooler" in host.lower()
 
 
@@ -120,8 +176,7 @@ def count_intersection(conn: psycopg.Connection, words: list[str]) -> int:
     `vocab` の行数さえ足りていれば `word` が 1 件も一致しなくても素通りしてしまい、
     続く `missing == 0` 判定が「完了」と誤解してしまう穴があった（Round 2 レビュー指摘：
     実際に行数は十分だが word が 1 件も一致しない使い捨て DB で exit 0 を再現された）。
-    ここで交差が 0 でないことを先に確認する。0 なら「別プロジェクト / 別環境を
-    指している」か「word の正規化がソースとずれている」のどちらかが濃厚。
+    ここで交差の件数を見る。閾値の判定は `required_intersection_count` を参照。
     """
     row = conn.execute(
         "SELECT count(*) FROM vocab WHERE word = ANY(%s)",
@@ -129,6 +184,17 @@ def count_intersection(conn: psycopg.Connection, words: list[str]) -> int:
     ).fetchone()
     assert row is not None
     return int(row[0])
+
+
+def required_intersection_count(source_word_count: int) -> int:
+    """`MIN_INTERSECTION_RATIO` を満たすために必要な最小交差件数（切り上げ）。
+
+    「1 語でも一致すれば OK」（Round 2 実装）だと、1 語だけ同名の語を含む
+    全く無関係な DB を見逃してしまう（Round 3 レビュー指摘）。割合のしきい値に
+    することで、本番のように高い一致率（実測 99% 超）を要求しつつ、
+    ローカルの語彙が多少ズレていても正当な実行は通す。
+    """
+    return math.ceil(source_word_count * MIN_INTERSECTION_RATIO)
 
 
 def count_missing_readonly(conn: psycopg.Connection, words: list[str]) -> int:
@@ -175,6 +241,36 @@ def db_size_bytes(conn: psycopg.Connection) -> int:
     return int(row[0])
 
 
+def positive_int(value: str) -> int:
+    """`--batch-size` の型検証。1 以上でなければ argparse の段階で拒否する。
+
+    `--batch-size 0` を渡すと 1 行も更新しないまま `apply_batch` が毎回 0 件を
+    返し（`LIMIT 0` は常に空集合）、ループがすぐ終わって「完了」と exit 0 で
+    報告してしまう穴があった（Round 3 レビュー指摘）。argparse の段階で弾く。
+    """
+    n = int(value)
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"1 以上の整数を指定してください（{value!r} は不可）")
+    return n
+
+
+def install_vacuum_watchdog(conn: psycopg.Connection) -> list[str]:
+    """`VACUUM` がロール権限不足などで無言スキップされたことを検知する。
+
+    ロールが `vocab` の所有者でないと `VACUUM` はエラーにならず、
+    `WARNING: permission denied to vacuum "vocab", skipping it` という
+    NOTICE を出すだけで何もしない（実測で確認済み）。psycopg はこれを
+    既定では黙って読み捨てるため、容量が壊れるまで気づけない
+    （Round 3 レビュー指摘: 実際に `last_vacuum=(never)` のまま完走するケースを
+    レビュアーが観測）。ここで NOTICE を集めるハンドラを登録し、
+    呼び出し側が `VACUUM` のたびに中身を検査できるようにする。
+    戻り値のリストは呼び出し側が都度 `clear()` して使うこと。
+    """
+    messages: list[str] = []
+    conn.add_notice_handler(lambda diag: messages.append(diag.message_primary or str(diag)))
+    return messages
+
+
 def apply_batch(conn: psycopg.Connection, batch_size: int) -> int:
     """`pos3 IS NULL` な語を最大 batch_size 件選び、ソースの値で UPDATE する。
 
@@ -219,9 +315,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     ap.add_argument(
         "--batch-size",
-        type=int,
+        type=positive_int,
         default=DEFAULT_BATCH_SIZE,
-        help=f"1 バッチあたりの更新行数（既定 {DEFAULT_BATCH_SIZE}）",
+        help=f"1 バッチあたりの更新行数（既定 {DEFAULT_BATCH_SIZE}、1 以上必須）",
     )
     ap.add_argument(
         "--max-bytes",
@@ -237,10 +333,22 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument(
         "--allow-pooled",
         action="store_true",
-        help="pooled 接続（ホスト名に -pooler を含む）でも実行する（既定では拒否）",
+        help=(
+            "pooled 接続（ホスト名に -pooler を含む）、または接続文字列から"
+            "ホストを特定できない場合でも実行する（既定ではどちらも拒否）"
+        ),
     )
     args = ap.parse_args(argv)
 
+    host = resolve_host(args.target)
+    if host is None and not args.allow_pooled:
+        raise SystemExit(
+            "--target からホスト名を特定できませんでした"
+            "（URI 形式（postgres://...）でも libpq の keyword=value 形式（host=...）"
+            "でもホストが見つかりません）。pooled 接続かどうか判定できないため、"
+            " 安全側に倒して既定では拒否します。host= を含む接続文字列にするか、"
+            " pooled でないと分かっているなら --allow-pooled を付けて再実行してください。"
+        )
     if is_pooled_host(args.target) and not args.allow_pooled:
         raise SystemExit(
             "--target が pooled 接続（ホスト名に -pooler を含む）です。"
@@ -260,12 +368,16 @@ def main(argv: list[str] | None = None) -> None:
         ensure_target_sane(conn)
 
         intersection = count_intersection(conn, words)
-        if intersection == 0:
+        required = required_intersection_count(len(words))
+        if intersection < required:
             raise SystemExit(
-                "target の vocab にソースの語が 1 件も一致しませんでした。"
-                " --target が別プロジェクト / 別環境を指している、または word の"
-                " 正規化がソースとずれている可能性があります。"
-                " このまま進めると「対象 0 件 = 完了」と誤報告してしまうため中断します。"
+                f"target の vocab とソースの語の一致が {intersection}/{len(words)} 語"
+                f"（{intersection / len(words):.0%}）しかありません。"
+                f" 必要な最低割合（MIN_INTERSECTION_RATIO = {MIN_INTERSECTION_RATIO:.0%}、"
+                f" {required} 語以上）を下回っているため、target が別プロジェクト /"
+                " 別環境を指している、または word の正規化がソースとずれている"
+                " 可能性があります。このまま進めると誤った完了報告につながるため"
+                " 中断します。"
             )
 
         if args.dry_run:
@@ -286,6 +398,9 @@ def main(argv: list[str] | None = None) -> None:
                 print("対象がありません。すでに完了しています。", file=sys.stderr)
                 return
 
+            vacuum_notices = install_vacuum_watchdog(conn)
+            vacuum_skipped_batches = 0
+
             processed = 0
             batch_no = 0
             while True:
@@ -294,7 +409,17 @@ def main(argv: list[str] | None = None) -> None:
                 if updated == 0:
                     break
                 processed += updated
+                vacuum_notices.clear()
                 conn.execute("VACUUM vocab")
+                if vacuum_notices:
+                    # 正常なら VACUUM は何の NOTICE も出さない。何か出た時点で
+                    # 「効いていない」疑いが濃いので、止めずに警告だけ出す
+                    # （--max-bytes のバックストップがあるので容量的には完走できる。
+                    # Round 3 レビュー指摘: ロールが所有者でないと権限エラーが
+                    # WARNING として握り潰され、VACUUM が無言でスキップされる）。
+                    vacuum_skipped_batches += 1
+                    for msg in vacuum_notices:
+                        print(f"⚠ VACUUM vocab が効いていない可能性: {msg}", file=sys.stderr)
                 size = db_size_bytes(conn)
                 print(
                     f"バッチ {batch_no}: {updated} 行更新（累計 {processed}）"
@@ -310,13 +435,36 @@ def main(argv: list[str] | None = None) -> None:
                         " WHERE pos3 IS NULL で絞っているので、あとで再実行すれば続きから進みます。",
                         file=sys.stderr,
                     )
+                    if vacuum_skipped_batches:
+                        print(
+                            f"⚠ さらに、VACUUM vocab が {vacuum_skipped_batches}/{batch_no}"
+                            " バッチでスキップされていました。ロールが vocab の所有者で"
+                            " ないと権限不足で無言スキップされます。所有権を確認してください。",
+                            file=sys.stderr,
+                        )
                     sys.exit(1)
 
             remaining = count_missing(conn)
+            if processed == 0 and remaining > 0:
+                # --batch-size は argparse で 1 以上に強制しているので通常は起きない
+                # はずだが、万一 apply_batch がバグって 1 行も進まないまま
+                # ループを抜けた場合の防御線（Round 3 レビュー指摘）。
+                raise SystemExit(
+                    f"1 行も更新していないのに、まだ {remaining} 件の未処理が残っています。"
+                    " --batch-size の設定かコードにバグがある可能性があるため中断します。"
+                )
             print(
                 f"\n完了: {processed} 行更新しました。pos3 IS NULL の残り: {remaining} 件。",
                 file=sys.stderr,
             )
+            if vacuum_skipped_batches:
+                print(
+                    f"⚠ 完了しましたが、VACUUM vocab は {vacuum_skipped_batches}/{batch_no}"
+                    " バッチでスキップされていました（ロールが vocab の所有者ではない"
+                    " 可能性があります）。容量には収まりましたが、デッドタプルが解放"
+                    " されていないかもしれません。所有権を確認してください。",
+                    file=sys.stderr,
+                )
         finally:
             conn.execute(f"DROP TABLE IF EXISTS pg_temp.{SOURCE_LOAD_TABLE}")
 
