@@ -201,36 +201,108 @@ git commit -m "refactor(mobile): 余白とタイポグラフィを iOS のメト
 
 ---
 
-### Task 4: ロゴを入れる枠を用意する
+### Task 4: ロゴを入れる
 
-オリジナルのロゴ画像を使う（後日 "Next" 付きに差し替え予定）。
-**アセットが未入手**なので、差し替え 1 手で済む形にしておく。
+**アセットは入手済み。** `apps/mobile/assets/images/` に 2 種類ある:
+
+| ファイル | 中身 | 使う場面 |
+| --- | --- | --- |
+| `logo-black.png` | 黒のワードマーク（2714×1060、透過） | **ライトモード**の明るい地の上 |
+| `logo-white.png` | 白のワードマーク（同寸、透過） | **ダークモード**と、図鑑のような暗い地の上 |
+
+意匠は「蓋の開いた鍋＋キラキラ」＋「コトコトバ」の文字。**横長（縦横比およそ 2.56:1）**なので、
+正方形の枠に入れると余白だらけになる。高さを指定して幅を追従させること。
+
+将来 "Next" を足したロゴに差し替わる予定。**同じファイル名で上書きすれば差し替わる**構造にする。
 
 **Files:**
 - Create: `apps/mobile/src/components/Logo.tsx`
-- Create: `apps/mobile/assets/images/logo.README.md`
+- Modify: `apps/mobile/src/components/index.ts`
+- Modify: `apps/mobile/src/app/(tabs)/play/index.tsx`（ロビーに置く）
+- Test: `apps/mobile/tests/logo.test.ts`
 
 **Interfaces:**
-- Consumes: なし
-- Produces: `Logo({ height }): JSX.Element`
+- Consumes: `useTheme()`（Task 5）、`expo-image`
+- Produces:
+  - `Logo({ height, variant }): JSX.Element`
+    — `height` は必須。`variant` は `'auto' | 'light' | 'dark'`（既定 `'auto'`）
+  - `LOGO_ASPECT_RATIO: number`（`components/constants.ts`）
 
-- [ ] **Step 1: `Logo` を実装する**
+- [ ] **Step 1: 実寸を確認して定数にする**
 
-- `apps/mobile/assets/images/logo.png` があればそれを `expo-image` で描く
-- **無い場合はワードマーク（テキスト）で代替する**。落ちないこと
-- 置き場所と要求仕様（余白なし透過 PNG、@2x / @3x、または SVG）を
-  `logo.README.md` に書く
+Run: `cd apps/mobile && node -e "const b=require('fs').readFileSync('assets/images/logo-black.png');console.log(b.readUInt32BE(16), b.readUInt32BE(20))"`
+Expected: 幅と高さが出る。その比を `LOGO_ASPECT_RATIO` として
+`apps/mobile/src/components/constants.ts` に置く（マジックナンバー禁止）。
 
-- [ ] **Step 2: ロビーの最上部に置く**
+- [ ] **Step 2: Write the failing test**
 
-`play/index.tsx` のヘッダに `Logo` を置く。Large Title と competing しないよう、
-**ロゴを出すならタイトル文字は出さない**。
+```ts
+import { describe, expect, it } from 'vitest'
+import { LOGO_ASPECT_RATIO } from '../src/components/constants'
 
-- [ ] **Step 3: Commit**
+describe('ロゴ', () => {
+  // 正方形の枠に入れると余白だらけになる。横長であることを固定しておく。
+  it('横長の比率である', () => {
+    expect(LOGO_ASPECT_RATIO).toBeGreaterThan(2)
+  })
+
+  it('実ファイルの比率と一致する', () => {
+    const { readFileSync } = require('node:fs')
+    const buf = readFileSync(`${__dirname}/../assets/images/logo-black.png`)
+    // PNG の IHDR は 16 バイト目から幅、20 バイト目から高さ
+    const width = buf.readUInt32BE(16)
+    const height = buf.readUInt32BE(20)
+    expect(LOGO_ASPECT_RATIO).toBeCloseTo(width / height, 2)
+  })
+
+  it('白と黒の 2 種類が同じ寸法である', () => {
+    const { readFileSync } = require('node:fs')
+    const dims = (name: string) => {
+      const buf = readFileSync(`${__dirname}/../assets/images/${name}`)
+      return [buf.readUInt32BE(16), buf.readUInt32BE(20)]
+    }
+    expect(dims('logo-black.png')).toEqual(dims('logo-white.png'))
+  })
+})
+```
+
+- [ ] **Step 3: Run test to verify it fails**
+
+Run: `pnpm --filter @coto2ba/mobile test logo`
+Expected: FAIL（`LOGO_ASPECT_RATIO` が無い）
+
+- [ ] **Step 4: `Logo` を実装する**
+
+- `expo-image` で描く。`height` から `LOGO_ASPECT_RATIO` で幅を出す
+- `variant === 'auto'` のときは `useTheme().scheme` を見て、
+  **ライトなら `logo-black.png`、ダークなら `logo-white.png`** を選ぶ
+- 図鑑のように地が常に暗い場所では `variant="dark"` を明示して白ロゴを強制できるようにする
+- `accessibilityLabel` に「コトコトバ」を入れる（読み上げでファイル名が読まれないように）
+
+`require()` は Metro が静的に解決するので、**変数でパスを組み立てないこと**。
+2 つの `require` を定数として持ち、スキームで選ぶ。
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Run: `pnpm --filter @coto2ba/mobile test logo && pnpm typecheck`
+Expected: PASS
+
+- [ ] **Step 6: ロビーに置く**
+
+`play/index.tsx` のヘッダに `Logo` を置く。
+**ロゴを出すならタイトル文字（「コトコトバ」）は出さない**（同じ情報を二重に出さない）。
+
+- [ ] **Step 7: 両スキームで確認する**
+
+Run: `pnpm --filter @coto2ba/mobile exec expo start --web`
+開発者ツールで `prefers-color-scheme` を切り替える。
+Expected: ライトで黒ロゴ、ダークで白ロゴが出て、**どちらでも地に埋もれない**こと
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add apps/mobile/src/components/Logo.tsx apps/mobile/assets/images/logo.README.md apps/mobile/src/app
-git commit -m "feat(mobile): ロゴの差し替え口を用意してロビーに置く"
+git add apps/mobile/src apps/mobile/tests
+git commit -m "feat(mobile): コトコトバのロゴをスキームに追従して表示する"
 ```
 
 ---
