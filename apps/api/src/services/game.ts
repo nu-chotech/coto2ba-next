@@ -509,7 +509,8 @@ export async function leaderboard(
     .from(games)
     .innerJoin(user, eq(user.id, games.userId))
     .where(and(eq(games.dailyDate, date), eq(games.status, 'cleared')))
-    .orderBy(asc(games.moveCount), asc(games.hintCount), asc(games.clearedAt))
+    // ヒント数が最優先（SPEC §5.8）。rules.ts の compareLeaderboard と同じ規則にすること。
+    .orderBy(asc(games.hintCount), asc(games.moveCount), asc(games.clearedAt))
     .limit(1000)
 
   const entries = rows.map((r, i) => ({

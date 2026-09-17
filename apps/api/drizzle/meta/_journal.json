@@ -36,6 +36,13 @@
       "when": 1789657973158,
       "tag": "0004_hint_cache_jsonb",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789659795250,
+      "tag": "0005_leaderboard_hint_first",
+      "breakpoints": true
     }
   ]
 }

@@ -106,8 +106,9 @@ export const games = pgTable(
   (t) => [
     // デイリーは 1 ユーザー 1 日 1 回
     uniqueIndex('games_user_daily_uq').on(t.userId, t.dailyDate),
+    // 並び順（SPEC §5.8: ヒント数 → 手数 → クリア時刻）に合わせる。
     index('games_daily_leaderboard')
-      .on(t.dailyDate, t.moveCount, t.hintCount, t.clearedAt)
+      .on(t.dailyDate, t.hintCount, t.moveCount, t.clearedAt)
       .where(sql`${t.status} = 'cleared'`),
     index('games_user_created').on(t.userId, t.createdAt),
   ],

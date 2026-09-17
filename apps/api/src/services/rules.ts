@@ -86,13 +86,23 @@ export function movesLeft(moveCount: number): number {
   return Math.max(0, MAX_MOVES - moveCount)
 }
 
-/** ランキングの並び順（SPEC §5.8）。同値なら 0。 */
+/**
+ * ランキングの並び順（SPEC §5.8）。**ヒント数 → 手数 → クリア時刻。** 同値なら 0。
+ *
+ * ヒント数が一番外側にあるので、**ヒントを 1 回でも使った人はノーヒントの全員より下**になる。
+ * ヒントを外挿にしたらゴールの目前まで運べる強さになったため、ヒントを人工的に弱めるのではなく
+ * ランキングで課金する形にした（docs/QUESTIONS.md）。
+ *
+ * **ここを変えたら `game.ts` の leaderboard の ORDER BY も変えること。**
+ * 実際の順位は SQL 側が決めており、この関数はその JS 版（両者は tests/leaderboard.test.ts で
+ * 一致を検証している）。
+ */
 export function compareLeaderboard(
   a: { moveCount: number; hintCount: number; clearedAt: string },
   b: { moveCount: number; hintCount: number; clearedAt: string },
 ): number {
-  if (a.moveCount !== b.moveCount) return a.moveCount - b.moveCount
   if (a.hintCount !== b.hintCount) return a.hintCount - b.hintCount
+  if (a.moveCount !== b.moveCount) return a.moveCount - b.moveCount
   return a.clearedAt < b.clearedAt ? -1 : a.clearedAt > b.clearedAt ? 1 : 0
 }
 

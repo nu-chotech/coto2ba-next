@@ -201,27 +201,43 @@ describe('温度（対数変換）', () => {
 })
 
 describe('ランキングの並び順（SPEC §5.8）', () => {
-  const a = { moveCount: 5, hintCount: 0, clearedAt: '2026-09-17T01:00:00Z' }
+  const base = { moveCount: 5, hintCount: 0, clearedAt: '2026-09-17T01:00:00Z' }
 
-  it('手数が少ないほうが上', () => {
-    expect(compareLeaderboard(a, { ...a, moveCount: 6 })).toBeLessThan(0)
+  /**
+   * 順序の一番外側は**ヒント数**。
+   * ヒントを外挿にしたらゴールの目前まで運べる強さになったので（docs/QUESTIONS.md）、
+   * ヒントを人工的に弱める代わりに、使ったことをランキングで課金する形にした。
+   * 「ヒントを 1 回でも使ったら、ノーヒントでクリアした全員より下」が守りたい性質。
+   */
+  it('ヒントを使った人は、手数がどれだけ少なくてもノーヒントの下', () => {
+    const noHintLongGame = { moveCount: 15, hintCount: 0, clearedAt: '2026-09-17T09:00:00Z' }
+    const hintedShortGame = { moveCount: 3, hintCount: 1, clearedAt: '2026-09-17T01:00:00Z' }
+    expect(compareLeaderboard(noHintLongGame, hintedShortGame)).toBeLessThan(0)
+    expect(compareLeaderboard(hintedShortGame, noHintLongGame)).toBeGreaterThan(0)
   })
-  it('手数が同じならヒントが少ないほうが上', () => {
-    expect(compareLeaderboard(a, { ...a, hintCount: 1 })).toBeLessThan(0)
+
+  it('ヒント数が同じなら手数が少ないほうが上', () => {
+    expect(compareLeaderboard(base, { ...base, moveCount: 6 })).toBeLessThan(0)
   })
-  it('手数もヒントも同じならクリアが早いほうが上', () => {
-    expect(compareLeaderboard(a, { ...a, clearedAt: '2026-09-17T02:00:00Z' })).toBeLessThan(0)
+
+  it('ヒント数も手数も同じならクリアが早いほうが上', () => {
+    expect(compareLeaderboard(base, { ...base, clearedAt: '2026-09-17T02:00:00Z' })).toBeLessThan(0)
   })
+
   it('完全に同値なら 0', () => {
-    expect(compareLeaderboard(a, { ...a })).toBe(0)
+    expect(compareLeaderboard(base, { ...base })).toBe(0)
   })
-  it('並べ替えると仕様通りの順になる', () => {
+
+  it('並べ替えると ヒント数 → 手数 → クリア時刻 の順になる', () => {
     const rows = [
+      // ヒント 1 回。手数が最少でも下に沈む。
+      { moveCount: 3, hintCount: 1, clearedAt: '2026-09-17T01:00:00Z', id: 'd' },
+      // ノーヒント同士は手数で、手数が同じならクリアの早さで決まる。
       { moveCount: 6, hintCount: 0, clearedAt: '2026-09-17T01:00:00Z', id: 'c' },
-      { moveCount: 5, hintCount: 1, clearedAt: '2026-09-17T01:00:00Z', id: 'b' },
-      { moveCount: 5, hintCount: 0, clearedAt: '2026-09-17T03:00:00Z', id: 'a' },
+      { moveCount: 5, hintCount: 0, clearedAt: '2026-09-17T03:00:00Z', id: 'b' },
+      { moveCount: 5, hintCount: 0, clearedAt: '2026-09-17T01:00:00Z', id: 'a' },
     ]
-    expect(rows.sort(compareLeaderboard).map((r) => r.id)).toEqual(['a', 'b', 'c'])
+    expect(rows.sort(compareLeaderboard).map((r) => r.id)).toEqual(['a', 'b', 'c', 'd'])
   })
 })
 
