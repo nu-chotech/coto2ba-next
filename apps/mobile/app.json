@@ -9,7 +9,6 @@
     "scheme": "coto2ba",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
       "bundleIdentifier": "dev.chotech.coto2ba",
       "supportsTablet": true,
       "infoPlist": {
@@ -19,7 +18,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0B0B10",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -48,10 +47,10 @@
         {
           "backgroundColor": "#F5F4F1",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 96,
+          "imageWidth": 180,
           "dark": {
             "backgroundColor": "#0B0B10",
-            "image": "./assets/images/splash-icon.png"
+            "image": "./assets/images/splash-icon-dark.png"
           }
         }
       ],
