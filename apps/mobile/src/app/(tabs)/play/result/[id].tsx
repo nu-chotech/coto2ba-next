@@ -3,8 +3,8 @@
  *
  * goal / start / 手数 / ヒント数 / tier のマスで表した経路 / 完全錬成の特別表示 /
  * 解除した実績。ボタンはシェア（`features/share` の画像シェア。captureRef →
- * Skia → テキストの 3 段で落ちる）、図鑑で見る（未実装なので無効）、
- * ブースモード時は「次の人へ」。
+ * Skia → テキストの 3 段で落ちる）、この軌跡を見る（図鑑タブをこのゲームの
+ * 経路にフォーカスして開く）、ブースモード時は「次の人へ」。
  *
  * シェアの撮影対象 `ShareCardHost` は **この画面の中にマウントしておくこと**
  * （`position:absolute` で画面の外に追いやるのでレイアウトには出ない。
@@ -51,6 +51,7 @@ import {
   currentTier,
   LOBBY_HREF,
   parseAchievementIds,
+  spaceHref,
   useGameQuery,
 } from '../../../../features/game'
 import { ShareCardHost, useShareResult } from '../../../../features/share'
@@ -246,12 +247,13 @@ export default function ResultScreen() {
               シェアできませんでした（{shareError}）
             </Text>
           ) : null}
+          {/* タブをまたぐので push で行く（プレイタブのスタックは残る）。 */}
           <GlassButton
-            title="図鑑で見る（準備中）"
-            onPress={() => undefined}
+            title="この軌跡を見る"
+            icon="sparkles"
+            onPress={() => router.push(spaceHref(gameId))}
             tier={tier}
             variant="ghost"
-            disabled
           />
           {boothMode ? (
             <GlassButton

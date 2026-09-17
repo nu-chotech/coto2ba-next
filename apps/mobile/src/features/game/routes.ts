@@ -18,3 +18,12 @@ export function resultHref(gameId: string, unlockedIds: readonly string[] = []):
     params: { id: gameId, unlocked: unlockedIds.join(',') },
   } as Href
 }
+
+/**
+ * 図鑑をそのゲームの軌跡にフォーカスして開く。
+ * `?game=` は**一度きりの指示**として扱う（図鑑側が読んだら消す）ので、
+ * 結果画面から何度飛んでも毎回その軌跡に寄る。
+ */
+export function spaceHref(gameId: string): Href {
+  return { pathname: '/space', params: { game: gameId } } as Href
+}

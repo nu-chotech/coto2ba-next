@@ -1,5 +1,5 @@
 import { normalizeWord, SPACE_GHOST_COUNT, tierForRank } from '@coto2ba/contracts'
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { db } from '../db/client'
 import { games, moves, vocab, wordDescriptions, wordEncounters } from '../db/schema'
@@ -123,12 +123,16 @@ wordsRoutes.get('/collection', async (c) => {
     LIMIT 2000
   `)
 
-  const clearedGames = await db
+  // **新しいほうから 100 本**取ってから古い順に戻す。
+  // 古い順に切ると、101 回目以降にクリアした人はいちばん新しい軌跡が
+  // 図鑑に届かない（画面が既定で開くのはその軌跡）。
+  const clearedGamesDesc = await db
     .select({ id: games.id, dailyDate: games.dailyDate, start: games.start, goal: games.goal })
     .from(games)
     .where(and(eq(games.userId, me.id), eq(games.status, 'cleared')))
-    .orderBy(asc(games.createdAt))
+    .orderBy(desc(games.createdAt))
     .limit(100)
+  const clearedGames = [...clearedGamesDesc].reverse()
 
   const paths: { game_id: string; daily_date: string | null; words: string[] }[] = []
   for (const g of clearedGames) {

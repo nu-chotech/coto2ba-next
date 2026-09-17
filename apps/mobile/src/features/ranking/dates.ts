@@ -81,6 +81,14 @@ export function formatJstDateLabel(dateString: string): string {
   return `${date.getUTCMonth() + 1}月${date.getUTCDate()}日（${weekday}）`
 }
 
+/** 「9/17」の形。チップのような狭いところで使う。 */
+export function formatJstShortDate(dateString: string): string {
+  const time = toUtcMidnight(dateString)
+  if (Number.isNaN(time)) return dateString
+  const date = new Date(time)
+  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`
+}
+
 /** 今日／昨日なら相対表現、それ以外は null。 */
 export function relativeDateLabel(dateString: string, today: string = jstToday()): string | null {
   if (dateString === today) return '今日'

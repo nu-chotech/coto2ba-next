@@ -1,38 +1,51 @@
 /**
- * 図鑑（SPEC §9）。
+ * 図鑑（SPEC §9 / §7 の再設計）。
  *
- * 全画面の Skia Canvas に、出会った語（初遭遇の tier 色）・未取得のゴースト点・
- * 今日のゴール（金の輪）・クリア済みの経路を 2.5D で並べる。
- * パンで回し、ピンチで寄り、タップで語の詳細、上の検索欄で語まで飛ぶ。
+ * **主役は「自分が歩いた軌跡」。** 全画面の Skia Canvas に、選択中の経路を
+ * 光る折れ線で描き、出会った語・未取得のゴースト点・今日のゴールを背景に置く。
+ * 開いた瞬間にその経路が画面に収まるようカメラを置く（アニメーションで寄せない。
+ * 寄せると「まず放り出されて、それから連れて行かれる」ことになる）。
+ *
+ * 上は検索ではなく**経路の切り替え**。検索は右上のアイコンからシートで開く。
+ * 結果画面の「この軌跡を見る」からは `?game=<id>` で入ってくる。これは
+ * **一度きりの指示**として扱い、読んだら消す（何度でも同じ軌跡に寄れる）。
+ * パンで回し、ピンチで寄り、二本指タップで経路に戻り、タップで語の詳細。
  *
  * **サーバーが空でも落ちない。** `GET /api/collection` が失敗しても
  * ゴースト点だけの宇宙が出て、「まだ語に出会っていません」と案内する。
  */
 
 import { SPACE_GHOST_COUNT } from '@coto2ba/contracts'
-import { useCallback, useMemo, useRef, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { GlassCard, SkiaGate, toMessageJa } from '../../../components'
+import { GlassCard, SkiaGate, SymbolIcon, toMessageJa } from '../../../components'
 import {
   buildSpaceScene,
   collectionSummary,
+  defaultPathIndex,
+  findPathByGameId,
   type GoalMarker,
   hasRealGhosts,
-  SPACE_SEARCH_HEIGHT,
-  SPACE_SEARCH_LIMIT,
+  overviewPoints,
+  pathOptions,
+  pathPoints,
+  SearchSheet,
+  SPACE_SEARCH_BUTTON_SIZE,
   SpaceCanvas,
   SpaceLabels,
-  searchScene,
   useCollectionQuery,
   useSpaceCamera,
   useWordDetailQuery,
   WordSheet,
 } from '../../../features/collection'
 import { useDailyQuery } from '../../../features/game'
+import { jstToday } from '../../../features/ranking'
 import { feedback } from '../../../lib/feedback'
 import {
   borderWidth,
+  iconSize,
   layout,
   palette,
   paletteForTier,
@@ -53,6 +66,8 @@ const colors = paletteForTier(SPACE_TIER)
 
 export default function SpaceScreen() {
   const insets = useSafeAreaInsets()
+  const router = useRouter()
+  const { game } = useLocalSearchParams<{ game?: string }>()
 
   const collection = useCollectionQuery()
   const daily = useDailyQuery()
@@ -73,7 +88,7 @@ export default function SpaceScreen() {
   /** 点の数が変わったら Canvas ごと作り直す（共有値の長さを合わせるため）。 */
   const sceneKey = `${collection.dataUpdatedAt}:${goalMarker?.word ?? ''}`
 
-  const { camera, gesture, reset, focusOn } = useSpaceCamera()
+  const { camera, gesture, reset, focusOn, frameTo, onRecenterRef } = useSpaceCamera()
 
   const [size, setSize] = useState({ width: 0, height: 0 })
   const onResize = useCallback((width: number, height: number) => {
@@ -82,10 +97,72 @@ export default function SpaceScreen() {
     )
   }, [])
 
+  // ── どの軌跡を見るか ──────────────────────────────────────
+  // 既定はいちばん新しいクリア。選ぶのは game_id（経路の並びが変わっても迷子にならない）。
+  const [pickedGameId, setPickedGameId] = useState<string | null>(null)
+  /** フレーミングをやり直させるための合図（同じ経路をもう一度指されたとき）。 */
+  const [frameRequest, setFrameRequest] = useState(0)
+  const activePathIndex = useMemo(
+    () => findPathByGameId(scene.paths, pickedGameId) ?? defaultPathIndex(scene.paths),
+    [scene.paths, pickedGameId],
+  )
+  const activePath = activePathIndex === null ? null : (scene.paths[activePathIndex] ?? null)
+  const options = useMemo(() => pathOptions(scene.paths, jstToday()), [scene.paths])
+  /**
+   * カメラを合わせる先。経路があればその節、無ければ**宇宙そのもの**。
+   * クリアが 1 本も無い人（＝ブースで最初に図鑑を開いた来場者）を、
+   * 「中央やや左の小さな染み」の前に放り出さない。
+   */
+  const framingPoints = useMemo(() => {
+    const points = pathPoints(scene, activePathIndex)
+    return points.length > 0 ? points : overviewPoints(scene)
+  }, [scene, activePathIndex])
+
+  /**
+   * 選択中の経路にカメラを合わせる。
+   * **最初の 1 回は待たせずにその位置から始める**（開いた瞬間に軌跡が見えること）。
+   */
+  const framedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (framingPoints.length === 0) return
+    // 合図（frameRequest）を鍵に混ぜる。同じ軌跡をもう一度指されても寄せ直すため。
+    const key = `${frameRequest}:${
+      activePathIndex === null ? 'overview' : (scene.paths[activePathIndex]?.gameId ?? '')
+    }`
+    if (framedRef.current === key) return
+    const first = framedRef.current === null
+    framedRef.current = key
+    frameTo(framingPoints, first)
+  }, [scene, activePathIndex, framingPoints, frameTo, frameRequest])
+
+  /**
+   * 結果画面の「この軌跡を見る」から `?game=<id>` で入ってきたとき。
+   * **読んだらパラメータを消す。** 残しておくと、そのあとチップで別の軌跡を
+   * 選んでも、タブに戻るたびに指示が生き返ってしまう。
+   */
+  useEffect(() => {
+    if (typeof game !== 'string' || game.length === 0) return
+    setPickedGameId(game)
+    // 待たせずにその位置から始める（結果画面から続いている一連の動きなので）。
+    framedRef.current = null
+    setFrameRequest((current) => current + 1)
+    router.setParams({ game: undefined })
+  }, [game, router])
+
+  /** 迷子からの復帰。二本指タップと画面下のボタンの両方から呼ぶ。 */
+  const recenter = useCallback(() => {
+    setSelectedIndex(-1)
+    setSheetIndex(-1)
+    if (framingPoints.length === 0) reset()
+    else frameTo(framingPoints, false)
+  }, [framingPoints, frameTo, reset])
+  useEffect(() => {
+    onRecenterRef.current = recenter
+  }, [recenter, onRecenterRef])
+
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [sheetIndex, setSheetIndex] = useState(-1)
-  const [query, setQuery] = useState('')
-  const searchRef = useRef<TextInput | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   const focusIndex = useCallback(
     (index: number) => {
@@ -116,20 +193,9 @@ export default function SpaceScreen() {
     [scene, focusIndex],
   )
 
-  const suggestions = useMemo(() => searchScene(scene, query, SPACE_SEARCH_LIMIT), [scene, query])
-
-  const onSubmitSearch = useCallback(() => {
-    const first = suggestions[0]
-    const exact = scene.indexByWord.has(query) ? query : first
-    if (exact === undefined) return
-    const index = scene.indexByWord.get(exact)
-    if (index === undefined) return
-    focusIndex(index)
-    searchRef.current?.blur()
-  }, [suggestions, scene, query, focusIndex])
-
   const sheetNode = sheetIndex >= 0 ? (scene.nodes[sheetIndex] ?? null) : null
   const summary = collectionSummary(collection.data)
+  const activeGameId = activePathIndex === null ? null : scene.paths[activePathIndex]?.gameId
 
   return (
     <View style={styles.root}>
@@ -143,6 +209,7 @@ export default function SpaceScreen() {
           gesture={gesture}
           onHit={onHit}
           selectedIndex={selectedIndex}
+          activePathIndex={activePathIndex}
           onResize={onResize}
         />
       </SkiaGate>
@@ -152,59 +219,80 @@ export default function SpaceScreen() {
         width={size.width}
         height={size.height}
         color={colors.text}
+        subColor={colors.sub}
+        activePath={activePath}
       />
 
-      {/* ── 上：検索 ── */}
+      {/* ── 上：どの軌跡を見るか（検索ではない）── */}
       {/* 浮いている操作なので中身は絶対配置だが、上端の余白は他の画面と揃える。 */}
       <View
         style={[styles.top, { paddingTop: insets.top + SCREEN_TOP_PADDING }]}
         pointerEvents="box-none"
       >
-        <TextInput
-          ref={searchRef}
-          defaultValue=""
-          onChangeText={setQuery}
-          onSubmitEditing={onSubmitSearch}
-          submitBehavior="blurAndSubmit"
-          placeholder="語を探す"
-          placeholderTextColor={colors.sub}
-          autoCorrect={false}
-          autoCapitalize="none"
-          returnKeyType="search"
-          style={[
-            typography.body,
-            styles.search,
-            { color: colors.text, backgroundColor: colors.surface, borderColor: colors.sub },
-          ]}
-        />
-        {suggestions.length > 0 ? (
-          <ScrollView
-            horizontal
-            keyboardShouldPersistTaps="handled"
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chips}
+        <View style={styles.topRow} pointerEvents="box-none">
+          {options.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chips}
+              style={styles.chipsScroll}
+            >
+              {options.map((option) => {
+                const selected = option.gameId === activeGameId
+                return (
+                  <Pressable
+                    key={option.gameId}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    onPress={() => setPickedGameId(option.gameId)}
+                    style={({ pressed }) => [
+                      styles.chip,
+                      {
+                        borderColor: selected ? colors.accent : colors.sub,
+                        backgroundColor: selected
+                          ? colors.accent
+                          : pressed
+                            ? palette.pressed
+                            : colors.surface,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        typography.label,
+                        { color: selected ? colors.onAccent : colors.text },
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    <Text
+                      style={[typography.label, { color: selected ? colors.onAccent : colors.sub }]}
+                    >
+                      {option.detail}
+                    </Text>
+                  </Pressable>
+                )
+              })}
+            </ScrollView>
+          ) : (
+            <View style={styles.chipsScroll} pointerEvents="none" />
+          )}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="語を探す"
+            onPress={() => setSearchOpen(true)}
+            style={({ pressed }) => [
+              styles.searchButton,
+              {
+                borderColor: colors.sub,
+                backgroundColor: pressed ? palette.pressed : colors.surface,
+              },
+            ]}
           >
-            {suggestions.map((word) => (
-              <Pressable
-                key={word}
-                onPress={() => {
-                  const index = scene.indexByWord.get(word)
-                  if (index !== undefined) focusIndex(index)
-                  searchRef.current?.blur()
-                }}
-                style={({ pressed }) => [
-                  styles.chip,
-                  {
-                    borderColor: colors.sub,
-                    backgroundColor: pressed ? palette.pressed : colors.surface,
-                  },
-                ]}
-              >
-                <Text style={[typography.label, { color: colors.text }]}>{word}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        ) : null}
+            <SymbolIcon name="magnifyingglass" size={iconSize.md} color={colors.text} />
+          </Pressable>
+        </View>
       </View>
 
       {/* ── 下：状態と操作 ── */}
@@ -233,17 +321,14 @@ export default function SpaceScreen() {
         ) : (
           <View style={styles.statusRow} pointerEvents="box-none">
             <Text style={[typography.label, styles.status, { color: colors.sub }]}>
-              {summary ?? ''}
+              {options.length === 0 ? 'クリアすると、歩いた軌跡がここに残ります' : (summary ?? '')}
             </Text>
           </View>
         )}
 
         <Pressable
           accessibilityRole="button"
-          onPress={() => {
-            setSelectedIndex(-1)
-            reset()
-          }}
+          onPress={recenter}
           style={({ pressed }) => [
             styles.resetButton,
             {
@@ -252,10 +337,18 @@ export default function SpaceScreen() {
             },
           ]}
         >
-          <Text style={[typography.label, { color: colors.text }]}>視点をもどす</Text>
+          <Text style={[typography.label, { color: colors.text }]}>
+            {activePathIndex === null ? '視点をもどす' : '軌跡にもどす'}
+          </Text>
         </Pressable>
       </View>
 
+      <SearchSheet
+        visible={searchOpen}
+        scene={scene}
+        onClose={() => setSearchOpen(false)}
+        onPick={onPickWord}
+      />
       <WordSheet node={sheetNode} onClose={() => setSheetIndex(-1)} onPickWord={onPickWord} />
     </View>
   )
@@ -271,16 +364,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.screenPaddingHorizontal,
     gap: spacing.sm,
   },
-  search: {
-    height: SPACE_SEARCH_HEIGHT,
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  chipsScroll: { flex: 1 },
+  chips: { gap: spacing.sm, paddingVertical: spacing.xs, alignItems: 'center' },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.pill,
     borderWidth: borderWidth.hairline,
-    paddingHorizontal: spacing.lg,
   },
-  chips: { gap: spacing.sm, paddingVertical: spacing.xs },
-  chip: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md,
+  searchButton: {
+    width: SPACE_SEARCH_BUTTON_SIZE,
+    height: SPACE_SEARCH_BUTTON_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: radius.pill,
     borderWidth: borderWidth.hairline,
   },
