@@ -36,16 +36,13 @@ def main() -> None:
     ap.add_argument(
         "--dry-run", action="store_true", help="ファイルに書かず、生成される音の一覧だけ出す"
     )
-    ap.add_argument(
-        "--sample-rate", type=int, default=SAMPLE_RATE, help="サンプリングレート（既定 44100Hz）"
-    )
     args = ap.parse_args()
 
     t0 = time.time()
     total_bytes = 0
     for sound_id in SOUND_IDS:
-        samples = render(sound_id, args.sample_rate)
-        duration_ms = len(samples) / args.sample_rate * 1000
+        samples = render(sound_id, SAMPLE_RATE)
+        duration_ms = len(samples) / SAMPLE_RATE * 1000
         size_bytes = len(samples) * 2  # 16bit = 2 bytes/sample
         total_bytes += size_bytes
 
@@ -57,7 +54,7 @@ def main() -> None:
             continue
 
         path = MOBILE_SOUNDS_DIR / f"{sound_id}.wav"
-        write_wav(path, samples, args.sample_rate)
+        write_wav(path, samples, SAMPLE_RATE)
         print(f"{path}: {duration_ms:.0f}ms / {size_bytes / 1e3:.1f}KB を書き込みました", file=sys.stderr)
 
     label = "(--dry-run なので書き込みません)" if args.dry_run else ""
