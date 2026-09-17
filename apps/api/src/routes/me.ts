@@ -23,6 +23,7 @@ import { requireAuth } from '../middleware/auth'
 import { rateLimit } from '../middleware/rateLimit'
 import { userStats } from '../services/game'
 import { generateDisplayName, isAcceptableDisplayName } from '../services/names'
+import { parseBestFreeMoves } from '../services/rules'
 
 export const meRoutes = new Hono<{ Variables: AuthVariables }>()
 
@@ -98,7 +99,7 @@ meRoutes.patch('/me', async (c) => {
     id: row.id,
     display_name: row.displayName ?? '',
     booth: row.booth,
-    best_free_moves: (row.bestFreeMoves ?? {}) as Record<string, number>,
+    best_free_moves: parseBestFreeMoves(row.bestFreeMoves),
     stats: await userStats(db, me.id),
   })
 })

@@ -12,6 +12,7 @@
 import {
   type CreateGameRequest,
   type Difficulty,
+  type FreeBest,
   type Game,
   type GameDetail,
   MIX_ANIMATION_MIN_MS,
@@ -201,11 +202,19 @@ export function currentTier(game: GameDetail) {
   return tierForRank(game.current_rank)
 }
 
-/** 自己ベスト（フリーモード）の表示文。無ければ null。 */
+/**
+ * 自己ベスト（フリーモード）の表示文。無ければ null。
+ *
+ * ヒント数も出す。記録の良さは **(ヒント数, 手数) の辞書順**で決まるので
+ * （ノーヒント 15 手 > ヒント 1 回 3 手）、手数だけ見せると
+ * 「なぜ更新されないのか」が分からなくなる。
+ */
 export function bestFreeMovesLabel(
-  best: Partial<Record<Difficulty, number>> | undefined,
+  best: Partial<Record<Difficulty, FreeBest>> | undefined,
   difficulty: Difficulty,
 ): string | null {
   const value = best?.[difficulty]
-  return value === undefined ? null : `自己ベスト ${value} 手`
+  if (value === undefined) return null
+  const hints = value.hints === 0 ? 'ヒントなし' : `ヒント ${value.hints} 回`
+  return `自己ベスト ${value.moves} 手（${hints}）`
 }

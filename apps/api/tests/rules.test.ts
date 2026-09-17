@@ -12,6 +12,7 @@ import {
   applyMove,
   compareLeaderboard,
   movesLeft,
+  parseBestFreeMoves,
   updateBestFreeMoves,
   validateMove,
 } from '../src/services/rules'
@@ -242,15 +243,70 @@ describe('ランキングの並び順（SPEC §5.8）', () => {
 })
 
 describe('フリーモードの自己ベスト（SPEC §5.7）', () => {
+  /**
+   * 良さの基準はランキングと同じ **(ヒント数, 手数) の辞書順**。
+   * 手数だけで比べていたころは、ヒント 1 回で出した「1 手」が永久に残り、
+   * 以後どれだけ真面目に遊んでも自己ベストを更新できなくなっていた。
+   */
   it('初回は記録される', () => {
-    expect(updateBestFreeMoves({}, 'normal', 8)).toEqual({ normal: 8 })
+    expect(updateBestFreeMoves({}, 'normal', { moves: 8, hints: 0 })).toEqual({
+      normal: { moves: 8, hints: 0 },
+    })
   })
-  it('更新されるのは縮んだときだけ', () => {
-    expect(updateBestFreeMoves({ normal: 8 }, 'normal', 6)).toEqual({ normal: 6 })
-    expect(updateBestFreeMoves({ normal: 6 }, 'normal', 9)).toEqual({ normal: 6 })
+
+  it('ノーヒント 15 手は、ヒント 1 回 3 手を上書きする', () => {
+    expect(
+      updateBestFreeMoves({ normal: { moves: 3, hints: 1 } }, 'normal', { moves: 15, hints: 0 }),
+    ).toEqual({ normal: { moves: 15, hints: 0 } })
   })
+
+  it('ヒント 1 回 3 手は、ノーヒント 15 手を上書きしない', () => {
+    expect(
+      updateBestFreeMoves({ normal: { moves: 15, hints: 0 } }, 'normal', { moves: 3, hints: 1 }),
+    ).toEqual({ normal: { moves: 15, hints: 0 } })
+  })
+
+  it('ヒント数が同じなら手数が少ないほうが残る', () => {
+    expect(
+      updateBestFreeMoves({ normal: { moves: 8, hints: 2 } }, 'normal', { moves: 6, hints: 2 }),
+    ).toEqual({ normal: { moves: 6, hints: 2 } })
+    expect(
+      updateBestFreeMoves({ normal: { moves: 6, hints: 2 } }, 'normal', { moves: 9, hints: 2 }),
+    ).toEqual({ normal: { moves: 6, hints: 2 } })
+  })
+
   it('難易度ごとに独立', () => {
-    expect(updateBestFreeMoves({ normal: 6 }, 'hard', 12)).toEqual({ normal: 6, hard: 12 })
+    expect(
+      updateBestFreeMoves({ normal: { moves: 6, hints: 0 } }, 'hard', { moves: 12, hints: 1 }),
+    ).toEqual({ normal: { moves: 6, hints: 0 }, hard: { moves: 12, hints: 1 } })
+  })
+})
+
+describe('自己ベストの読み取り（旧形式の扱い）', () => {
+  it('新形式はそのまま通る', () => {
+    expect(parseBestFreeMoves({ normal: { moves: 6, hints: 0 } })).toEqual({
+      normal: { moves: 6, hints: 0 },
+    })
+  })
+
+  /**
+   * 旧形式は手数だけの数値（`{ normal: 8 }`）で、ヒントを何回使ったか分からない。
+   * 「ヒント 0 回」と見なすとヒント込みの記録が最良として居座り続け、
+   * 適当な回数をでっち上げるのは嘘になる。**記録なしとして捨てる**のがいちばん正直。
+   * フリーモードはランキング対象外で、次にクリアすれば新形式で記録し直される。
+   */
+  it('旧形式（手数だけの数値）は記録なしとして捨てる', () => {
+    expect(parseBestFreeMoves({ normal: 8, hard: { moves: 12, hints: 1 } })).toEqual({
+      hard: { moves: 12, hints: 1 },
+    })
+  })
+
+  it('壊れた値・知らない難易度は無視する', () => {
+    expect(parseBestFreeMoves(null)).toEqual({})
+    expect(parseBestFreeMoves('なにか')).toEqual({})
+    expect(parseBestFreeMoves({ lunatic: { moves: 1, hints: 0 } })).toEqual({})
+    expect(parseBestFreeMoves({ normal: { moves: 0, hints: 0 } })).toEqual({})
+    expect(parseBestFreeMoves({ normal: { moves: 5, hints: -1 } })).toEqual({})
   })
 })
 

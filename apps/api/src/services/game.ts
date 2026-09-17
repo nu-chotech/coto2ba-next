@@ -34,7 +34,7 @@ import { appError } from '../lib/errors'
 import { jstDate } from '../lib/jst'
 import { pickRandom } from '../lib/random'
 import { evaluateAchievements, recordEncounters } from './achievements'
-import { applyMove, updateBestFreeMoves, validateMove } from './rules'
+import { applyMove, parseBestFreeMoves, updateBestFreeMoves, validateMove } from './rules'
 import {
   goalNeighborhood,
   hintCandidates,
@@ -391,14 +391,15 @@ export async function playMove(
   if (outcome.status === 'cleared' && next.mode === 'free') {
     const current = (
       await db.select({ best: user.bestFreeMoves }).from(user).where(eq(user.id, userId)).limit(1)
-    )[0]?.best as Record<string, number> | undefined
+    )[0]?.best
     await db
       .update(user)
       .set({
+        // ヒント数込みで記録する。手数だけだと「ヒント 1 回で 1 手」が永久に残る（SPEC §5.7）。
         bestFreeMoves: updateBestFreeMoves(
-          current ?? {},
+          parseBestFreeMoves(current),
           next.difficulty as Difficulty,
-          outcome.moveCount,
+          { moves: outcome.moveCount, hints: next.hintCount },
         ),
       })
       .where(eq(user.id, userId))
