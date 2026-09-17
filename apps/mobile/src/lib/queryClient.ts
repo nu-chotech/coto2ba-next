@@ -48,5 +48,7 @@ export const queryKeys = {
   wordDescription: (word: string) => ['word', word, 'description'] as const,
   wordDetail: (word: string) => ['word', word, 'detail'] as const,
   collection: () => ['collection'] as const,
+  /** 対戦ルームの状態（ポーリング先）。 */
+  room: (code: string | null) => ['room', code] as const,
   achievements: () => ['achievements'] as const,
 } as const

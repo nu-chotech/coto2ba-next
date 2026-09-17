@@ -132,8 +132,16 @@ export const DIFFICULTY_LABELS_JA = {
 } as const satisfies Record<Difficulty, string>
 
 // ── ゲームのモード・状態 ────────────────────────────────────
-export const GAME_MODES = ['daily', 'free'] as const
+/**
+ * ゲームの種類。`room` は対戦ルームの 1 戦（SPEC §9）。
+ * **`room` はクライアントから直接作れない**（部屋の開始時にサーバーが作る）ので、
+ * 作成リクエストの列挙は `CREATABLE_GAME_MODES` のほう。
+ */
+export const GAME_MODES = ['daily', 'free', 'room'] as const
 export type GameMode = (typeof GAME_MODES)[number]
+/** `POST /api/games` で指定できるモード。 */
+export const CREATABLE_GAME_MODES = ['daily', 'free'] as const
+export type CreatableGameMode = (typeof CREATABLE_GAME_MODES)[number]
 export const GAME_STATUSES = ['playing', 'cleared', 'gave_up'] as const
 export type GameStatus = (typeof GAME_STATUSES)[number]
 export const ENCOUNTER_SOURCES = ['start', 'result', 'input'] as const
@@ -151,9 +159,102 @@ export const DEVICE_TOKEN_LENGTH = 48
 // ── ランキング ──────────────────────────────────────────────
 export const LEADERBOARD_LIMIT = 50
 
+// ── 対戦ルーム（マルチプレイ・SPEC §9）──────────────────────
+/**
+ * 部屋の状態。`waiting` は参加者待ち、`playing` はレース中、`finished` は決着。
+ * **`playing` になったら途中参加は許さない**（後から入ると短い時間で勝ててしまう）。
+ */
+export const ROOM_STATUSES = ['waiting', 'playing', 'finished'] as const
+export type RoomStatus = (typeof ROOM_STATUSES)[number]
+/** 1 部屋の最大人数。ブースの回転を考えるとこれ以上は待ち時間が長い。 */
+export const ROOM_MAX_PLAYERS = 8
+/** 開始に必要な最小人数。 */
+export const ROOM_MIN_PLAYERS = 2
+/** 参加コードの長さ。読み上げと手入力ができる長さにする。 */
+export const ROOM_CODE_LENGTH = 4
+/**
+ * ロビー（参加者を待っている間）のポーリング間隔（ms）。
+ * 人の出入りは秒単位で見えれば十分なので、レース中より緩める。
+ */
+export const ROOM_POLL_INTERVAL_LOBBY_MS = 2_500
+/**
+ * レース中のポーリング間隔（ms）。他人の順位の動きを追う。
+ *
+ * **ここを上げると invocations が線形に減る。** 8 人 × 1 req/s を 8 時間動かすと
+ * 1 日 230,000 invocations で、3 日なら約 69 万。Hobby の月 100 万枠に対して
+ * タイトなので、実測して余裕が無ければ 1,500 にする
+ * （体験への影響は「順位バーの追従が 0.5 秒遅くなる」だけ）。
+ */
+export const ROOM_POLL_INTERVAL_RACE_MS = 1_000
+/** 部屋の寿命（分）。放置された部屋を掃除する基準。 */
+export const ROOM_TTL_MINUTES = 60
+/**
+ * **参加者待ちのまま**放置された部屋を畳むまで（分）。
+ *
+ * ブースではホストの端末が落ちる・アプリを閉じるのが普通に起きる。
+ * `ROOM_TTL_MINUTES`（60 分）まで待つと、その間コードが生きたまま残り、
+ * 一覧にも残る。開始されない部屋は数分で死んでいると見なしてよい。
+ */
+export const ROOM_WAITING_TTL_MINUTES = 10
+/**
+ * 決着したあと、**次の部屋（「もう一度」）のコードを待つ**時間（ms）。
+ *
+ * ホストが「もう一度」を押すと、参加者は結果画面のポーリングでそのコードを受け取って
+ * 同じ部屋へ移る。ここを過ぎたらポーリングを止める
+ * （結果画面を開いたまま放置された端末が枠を食い続けないように）。
+ */
+export const ROOM_REMATCH_WATCH_MS = 3 * 60 * 1000
+/**
+ * 最初のクリアから部屋を畳むまでの猶予（秒）。
+ *
+ * 勝者は最初にゴールへ着いた人で決まるが、そこで全員の画面を止めると
+ * 「あと 1 手だったのに」が残る。逆に長すぎるとブースの行列が進まない。
+ * 全員が終わればこの猶予を待たずに畳む。
+ */
+export const ROOM_FINISH_GRACE_SECONDS = 30
+
 // ── レート制限（SPEC §7.8）──────────────────────────────────
+/**
+ * 汎用の**持続**レート（ユーザーごと・毎秒）。長く叩き続けたときの上限。
+ * **バースト（一度にどれだけ許すか）は別の定数**（`RATE_LIMIT_BURST_PER_USER`）。
+ */
 export const RATE_LIMIT_PER_USER_PER_SECOND = 5
+/**
+ * 汎用の**バースト**許容量（ユーザーごと）。トークンバケツの容量。
+ *
+ * **持続レートと分けているのは、アプリを開いた瞬間だけ本数が跳ねるから。**
+ * 起動時はタブ 4 枚ぶんのクエリ（`/me`・`/daily`・`/collection`・
+ * `/leaderboard/daily`・`/words/:w/detail`）が一斉に走り、対戦の参加リンクから
+ * 開くと参加とポーリングも同じ瞬間に重なる。
+ *
+ * **実測（2026-09-18、Web / 対戦の参加リンクから起動）: 開いてから 1 秒以内に 7 本。**
+ * 内訳は 62ms 以内に 6 本（参加・`/me`・`/collection`・`/daily`・
+ * `/leaderboard/daily`・`/words/:w/detail`）＋ 429 を踏んだ参加の投げ直し 1 本。
+ * 容量を持続レートと同じ 5 にしていたため、**アプリを開くたびに 429 が出ていた。**
+ *
+ * 実測 7 本の約 3 倍を取る。復帰した端末のデータが増えて本数が伸びても、
+ * 数回のタップが同じ秒に重なっても吸収できる。
+ * **持続レートは 5 req/s のままなので、叩き続ける相手には従来どおり効く**
+ * （使い切ったあとは 1 秒に 5 本ずつしか戻らない）。
+ */
+export const RATE_LIMIT_BURST_PER_USER = 20
 export const RATE_LIMIT_GAMES_PER_MINUTE = 10
+/** 部屋の状態取得の**持続**レート（ユーザーごと・毎秒）。ポーリング 1/s に余裕を持たせる。 */
+export const RATE_LIMIT_ROOM_POLL_PER_SECOND = 4
+/**
+ * 部屋の状態取得の**バースト**許容量（ユーザーごと）。
+ *
+ * 定常状態は 1 秒に 1 本だが、**画面が切り替わる瞬間だけ重なる**。
+ * 部屋の画面に着地した直後の初回取得、Web の hydrate でルート木が 1 度
+ * 作り直されるぶん（`app/_layout.tsx` の `useWebHydrationKey`）、
+ * 入口から持ち越したキャッシュの取り直しが同じ秒に入る。
+ * 容量 4 のままだと**ここで詰まって、部屋の画面が一瞬白くなる**（実際に 429 が出た）。
+ *
+ * 観測した重なりは 1 秒以内に最大 4 本。その約 3 倍を取る。
+ * 12 本 ＝ 1 秒ポーリング 12 秒ぶんなので、通常の連打では届かない。
+ * **持続レートは 4 req/s のまま。**
+ */
+export const RATE_LIMIT_ROOM_POLL_BURST = 12
 
 // ── 演出タイミング ──────────────────────────────────────────
 /** API 応答が速くても混合演出は最低これだけ見せる（体感の一貫性）。 */

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ACHIEVEMENT_IDS } from './achievements'
 import {
+  CREATABLE_GAME_MODES,
   DIFFICULTIES,
   DISPLAY_NAME_MAX_LENGTH,
   DISPLAY_NAME_MIN_LENGTH,
@@ -9,6 +10,7 @@ import {
   GAME_STATUSES,
   normalizeRatio,
   RATIOS,
+  ROOM_STATUSES,
   TIER_IDS,
 } from './constants'
 import { ERROR_CODES } from './errors'
@@ -18,6 +20,8 @@ export const wordSchema = z.string().min(1).max(64)
 export const dateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
 export const difficultySchema = z.enum(DIFFICULTIES)
 export const gameModeSchema = z.enum(GAME_MODES)
+export const creatableGameModeSchema = z.enum(CREATABLE_GAME_MODES)
+export const roomStatusSchema = z.enum(ROOM_STATUSES)
 export const gameStatusSchema = z.enum(GAME_STATUSES)
 export const tierSchema = z.enum(TIER_IDS)
 export const encounterSourceSchema = z.enum(ENCOUNTER_SOURCES)
@@ -78,6 +82,62 @@ export const patchMeRequestSchema = z
     message: 'at least one field required',
   })
 
+// ── 対戦ルーム（SPEC §9）────────────────────────────────────
+/**
+ * レース中に見せる 1 人ぶん。
+ *
+ * **他人が打った語（current / input）は絶対に含めない。**
+ * 見せると真似で解かれて競技にならない（§9.2）。出すのは順位と手数だけ。
+ */
+export const roomPlayerSchema = z.object({
+  user_id: z.string(),
+  display_name: z.string(),
+  move_count: z.number().int().nonnegative(),
+  /** そのプレイヤーが到達した最良の（小さい）ランク。 */
+  best_rank: z.number().int().nonnegative(),
+  finished_at: z.string().nullable(),
+  is_me: z.boolean(),
+})
+
+export const roomResponseSchema = z.object({
+  code: z.string(),
+  status: roomStatusSchema,
+  host_user_id: z.string(),
+  difficulty: difficultySchema,
+  /** waiting のあいだは伏せる（先に考え始められないように）。 */
+  goal: wordSchema.nullable(),
+  start: wordSchema.nullable(),
+  /** サーバーが順位順に並べたもの。**端末で並べ替えない。** */
+  players: z.array(roomPlayerSchema),
+  my_game_id: z.string().nullable(),
+  /**
+   * **自分の**ゲームの状態。自分のものなので返してよい。
+   * これが無いと、クリアした人を部屋の画面がもう一度ゲームへ送り返してしまう
+   * （待機 → ゲーム → 待機 の往復になる。実際に起きた）。
+   */
+  my_game_status: gameStatusSchema.nullable(),
+  /**
+   * 「もう一度」で作られた次の部屋のコード。**ホストだけが作る。**
+   * 参加者は結果画面のポーリングでこれを受け取り、同じ部屋へ移る
+   * （各自が新しい部屋を作ると、全員が別々の部屋で待つことになる）。
+   */
+  next_code: z.string().nullable(),
+  /** 参加用のディープリンク（QR に入れる）。 */
+  join_url: z.string(),
+})
+
+export const createRoomRequestSchema = z.object({
+  difficulty: difficultySchema.optional(),
+})
+
+/** 参加コード。大文字英数。手入力の小文字・空白は受け側で正規化する。 */
+export const roomCodeSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(16)
+  .transform((v) => v.toUpperCase())
+
 // ── 手（move）────────────────────────────────────────────────
 export const moveSchema = z.object({
   seq: z.number().int().positive(),
@@ -111,6 +171,15 @@ export const moveResponseSchema = z.object({
   status: gameStatusSchema,
   perfect: z.boolean(),
   unlocked_achievements: z.array(unlockedAchievementSchema),
+  /**
+   * ルーム戦のときだけ入る、**その手を打った時点の順位**（SPEC §9）。
+   *
+   * これがあると、自分の手はポーリングを待たずに順位へ反映される。
+   * ポーリングは「他人の変化の検知」だけを担えばよくなるので、間隔を緩めても
+   * 体感が落ちない（invocations が減る）。
+   * **他人が打った語は含まれない** ── サーバーがそもそも返さない。
+   */
+  room_standings: z.array(roomPlayerSchema).nullable().optional(),
 })
 
 // ── ゲーム ──────────────────────────────────────────────────
@@ -137,7 +206,8 @@ export const gameDetailSchema = gameSchema.extend({
 })
 
 export const createGameRequestSchema = z.object({
-  mode: gameModeSchema,
+  // **`room` は受け付けない。** ルーム戦のゲームは部屋の開始時にサーバーが作る。
+  mode: creatableGameModeSchema,
   difficulty: difficultySchema.optional(),
 })
 
@@ -289,3 +359,6 @@ export type TransferCreateResponse = z.infer<typeof transferCreateResponseSchema
 export type TransferClaimRequest = z.infer<typeof transferClaimRequestSchema>
 export type TransferClaimResponse = z.infer<typeof transferClaimResponseSchema>
 export type DeviceRegisterResponse = z.infer<typeof deviceRegisterResponseSchema>
+export type RoomPlayer = z.infer<typeof roomPlayerSchema>
+export type RoomResponse = z.infer<typeof roomResponseSchema>
+export type CreateRoomRequest = z.infer<typeof createRoomRequestSchema>

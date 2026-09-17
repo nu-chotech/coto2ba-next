@@ -66,6 +66,12 @@ import {
   useMoveMutation,
   useWordDescriptionQuery,
 } from '../../../../features/game'
+import {
+  normalizeRoomCode,
+  RoomRace,
+  roomHref,
+  useApplyRoomStandings,
+} from '../../../../features/rooms'
 import { feedback, feedbackForRankChange } from '../../../../lib/feedback'
 import { isKnownWord, isVocabReady } from '../../../../lib/vocab'
 import { useUiStore } from '../../../../store/ui'
@@ -101,8 +107,14 @@ function mixIntensity(response: MoveResponse | null): number {
 }
 
 export default function GameScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>()
+  const { id, room } = useLocalSearchParams<{ id: string; room?: string }>()
   const gameId = typeof id === 'string' ? id : ''
+  /**
+   * 対戦ルームから開かれたときの参加コード（SPEC §9）。
+   * **付いているときだけ**順位のオーバーレイが載り、終局の行き先が部屋の結果になる。
+   * 付いていなければ普段どおりの 1 人用ゲーム画面で、何も変わらない。
+   */
+  const roomCode = typeof room === 'string' && room.length > 0 ? normalizeRoomCode(room) : null
   const router = useRouter()
   const insets = useSafeAreaInsets()
 
@@ -119,6 +131,9 @@ export default function GameScreen() {
   const setActiveTier = useUiStore((s) => s.setActiveTier)
   const resetGameUi = useUiStore((s) => s.resetGameUi)
   const setResumeGameId = useUiStore((s) => s.setResumeGameId)
+
+  /** ルーム戦のときだけ効く（`roomCode` が null なら何もしない）。 */
+  const applyRoomStandings = useApplyRoomStandings(roomCode)
 
   const inputRef = useRef<WordInputHandle | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
@@ -177,7 +192,12 @@ export default function GameScreen() {
     move.mutate(
       { input_word: word, ratio },
       {
-        onSuccess: ({ response }) => setRevealed(response),
+        onSuccess: ({ response }) => {
+          setRevealed(response)
+          // ルーム戦なら、この手の順位がレスポンスに入っている。
+          // ポーリングを待たずに上の順位バーへ反映する。
+          applyRoomStandings(response.room_standings)
+        },
         onError: (error) => {
           setPending(null)
           setMixing(false)
@@ -186,7 +206,7 @@ export default function GameScreen() {
         },
       },
     )
-  }, [detail, move, ratio, setHintOpen, setMixing])
+  }, [detail, move, ratio, setHintOpen, setMixing, applyRoomStandings])
 
   /** 演出が終わった瞬間。ここでフィードバックを鳴らし、終局なら結果画面へ。 */
   const finishMix = useCallback(() => {
@@ -204,14 +224,14 @@ export default function GameScreen() {
     if (response.unlocked_achievements.length > 0) feedback('achievement')
 
     if (response.status !== 'playing') {
+      // ルーム戦の行き先は部屋の結果（勝敗はそこで決まる）。
+      // 自分ひとりの結果は、部屋の結果から「自分の結果を見る」で開ける。
+      const unlocked = response.unlocked_achievements.map((achievement) => achievement.id)
       router.replace(
-        resultHref(
-          gameId,
-          response.unlocked_achievements.map((achievement) => achievement.id),
-        ),
+        roomCode !== null ? roomHref(roomCode, unlocked) : resultHref(gameId, unlocked),
       )
     }
-  }, [revealed, setMixing, router, gameId])
+  }, [revealed, setMixing, router, gameId, roomCode])
 
   const openHints = useCallback(() => {
     feedback('hint_open')
@@ -356,6 +376,10 @@ export default function GameScreen() {
           </Pressable>
         </View>
 
+        {/* 0. 対戦ルームの順位（ルームから来たときだけ。SPEC §9.2）。
+         **他人が打った語は出さない** ── サーバーも返してこない。 */}
+        {roomCode !== null ? <RoomRace code={roomCode} tier={tier} /> : null}
+
         {/* 1. ゴールカード */}
         <GlassCard tint={colors.glassTint} style={styles.card}>
           <Text style={[typography.label, { color: colors.sub }]}>ゴール</Text>
@@ -394,7 +418,9 @@ export default function GameScreen() {
         {finished ? (
           <GlassButton
             title="結果を見る"
-            onPress={() => router.replace(resultHref(gameId))}
+            onPress={() =>
+              router.replace(roomCode !== null ? roomHref(roomCode) : resultHref(gameId))
+            }
             tier={tier}
           />
         ) : (

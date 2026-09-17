@@ -1,11 +1,6 @@
 import {
   ACHIEVEMENTS,
   DEVICE_TOKEN_LENGTH,
-  EXPO_PROJECT_ID,
-  EXPO_RUNTIME_VERSION,
-  EXPO_UPDATE_CHANNEL,
-  EXPO_UPDATE_ORIGIN,
-  LANDING_URL,
   patchMeRequestSchema,
   TRANSFER_TOKEN_LENGTH,
   TRANSFER_TOKEN_TTL_MINUTES,
@@ -16,6 +11,7 @@ import { Hono } from 'hono'
 import { auth } from '../auth'
 import { db } from '../db/client'
 import { deviceTokens, session, transferTokens, user, userAchievements } from '../db/schema'
+import { expoDeepLink } from '../lib/deeplink'
 import { appError } from '../lib/errors'
 import { opaqueToken, readableToken } from '../lib/random'
 import type { AuthVariables } from '../middleware/auth'
@@ -52,10 +48,15 @@ meRoutes.post('/devices', async (c) => {
   return c.json({ token, user_id: id, display_name: displayName })
 })
 
-meRoutes.use('/me', requireAuth, rateLimit)
+/**
+ * **`/x` と `/x/*` を両方書かないこと。** Hono では `/x/*` が `/x` 自身にも一致するので、
+ * 両方登録すると 1 リクエストで `rateLimit` が 2 回走り、**トークンを 2 つ食う**。
+ * 実際に `/api/me` と `POST /api/transfer` が枠を倍に使っていて、
+ * アプリの起動時（必ず `/api/me` を呼ぶ）に 429 が出やすくなっていた。
+ * `/x/*` だけ書けば `/x` も子パスも覆える。
+ */
 meRoutes.use('/me/*', requireAuth, rateLimit)
 meRoutes.use('/achievements', requireAuth, rateLimit)
-meRoutes.use('/transfer', requireAuth, rateLimit)
 meRoutes.use('/transfer/*', requireAuth, rateLimit)
 
 meRoutes.get('/me', async (c) => {
@@ -126,47 +127,13 @@ meRoutes.get('/achievements', async (c) => {
 })
 
 /**
- * 環境変数の値。**未設定なら既定値、明示的に空にしたら空文字**を返す
- * （空 = その設定を無効化したい、という意思表示として扱う）。
- */
-function envOr(name: string, fallback: string): string {
-  const raw = process.env[name]
-  return raw === undefined ? fallback : raw.trim()
-}
-
-/** 末尾のスラッシュを落としたランディングのオリジン。 */
-function landingOrigin(): string {
-  const origin = envOr('LANDING_ORIGIN', LANDING_URL)
-  return (origin.length === 0 ? LANDING_URL : origin).replace(/\/+$/, '')
-}
-
-/**
  * 引き継ぎ QR / リンクに埋める URL（SPEC §7.4）。
- *
- * **https のランディングを符号化してはいけない。** iPhone のカメラで読むと Safari が
- * 開くだけでアプリに戻らない。Expo Go で直接開ける EAS Update のディープリンク
- * `exp://u.expo.dev/<projectId>?channel-name=…&runtime-version=…&transfer=<token>`
- * を返す（ランディングの「コトコトバを開く」と同じ形 + `transfer`）。
- *
- * 既定値は contracts（`EXPO_PROJECT_ID` / `EXPO_UPDATE_CHANNEL` / `EXPO_RUNTIME_VERSION`）。
- * デプロイ側で `EXPO_PROJECT_ID` / `EXPO_CHANNEL` / `EXPO_RUNTIME_VERSION` を上書きできる。
- * どれかを**空に潰した**ときだけ、ランディングの `?transfer=` にフォールバックする
- * （ランディングが受け取って `exp://` のボタンを出す）。`token` は URL とは別に必ず返すので、
+ * 形の理由と環境変数の扱いは `lib/deeplink.ts` に集約してある
+ * （対戦ルームの参加 URL と同じ組み立てを使う）。`token` は URL とは別に必ず返すので、
  * URL がどちらの形でも手入力で引き継げる。
  */
 function transferUrl(token: string): string {
-  const projectId = envOr('EXPO_PROJECT_ID', EXPO_PROJECT_ID)
-  const channel = envOr('EXPO_CHANNEL', EXPO_UPDATE_CHANNEL)
-  const runtimeVersion = envOr('EXPO_RUNTIME_VERSION', EXPO_RUNTIME_VERSION)
-  if (projectId.length === 0 || channel.length === 0 || runtimeVersion.length === 0) {
-    return `${landingOrigin()}/?transfer=${token}`
-  }
-  const query = new URLSearchParams({
-    'channel-name': channel,
-    'runtime-version': runtimeVersion,
-    transfer: token,
-  })
-  return `${EXPO_UPDATE_ORIGIN}/${projectId}?${query.toString()}`
+  return expoDeepLink({ transfer: token })
 }
 
 /** 引き継ぎコードの発行（SPEC §7.4）。 */

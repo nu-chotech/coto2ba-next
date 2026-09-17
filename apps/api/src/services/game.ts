@@ -5,9 +5,11 @@
  */
 import {
   CLEAR_RANK,
+  type CreatableGameMode,
   type Difficulty,
   type GameDetail,
   type Game as GameDto,
+  type GameMode,
   GOAL_NEIGHBOR_BAN,
   HINT_COUNT,
   type HintResponse,
@@ -34,6 +36,9 @@ import { appError } from '../lib/errors'
 import { jstDate } from '../lib/jst'
 import { pickRandom } from '../lib/random'
 import { evaluateAchievements, recordEncounters } from './achievements'
+// 対戦ルーム（SPEC §9）。`rooms.ts` も `game.ts` を使うので相互参照になるが、
+// **どちらも相手を関数の中でしか呼ばない**（モジュール評価時に触らない）ので安全。
+import { roomStandingsForGame } from './rooms'
 import { applyMove, parseBestFreeMoves, updateBestFreeMoves, validateMove } from './rules'
 import {
   goalNeighborhood,
@@ -113,41 +118,100 @@ async function chooseGoal(db: Db, difficulty: Difficulty): Promise<string> {
   return word
 }
 
+/**
+ * お題（goal / start）とそれに付随する値。
+ *
+ * 対戦ルームは **部屋で 1 度だけ抽選して全員に配る**ので、抽選結果をこの形で持ち回る。
+ * 抽選そのものは `chooseGoal` / `chooseStart` で、**ルーム側に複製しない**。
+ */
+export interface Challenge {
+  goal: string
+  start: string
+  startRank: number
+  forbiddenInputs: string[]
+}
+
+/** ゴール・スタート・禁止語をまとめて 1 回だけ引く。 */
+export async function pickChallenge(db: Db, difficulty: Difficulty): Promise<Challenge> {
+  const goal = await chooseGoal(db, difficulty)
+  const start = await chooseStart(db, goal)
+  const [startRank, forbiddenInputs] = await Promise.all([
+    rankOf(db, goal, start),
+    goalNeighborhood(db, goal, GOAL_NEIGHBOR_BAN),
+  ])
+  return { goal, start, startRank: startRank ?? START_RANK_RANGE[1], forbiddenInputs }
+}
+
 async function insertGame(
   db: Db,
   input: {
     userId: string
-    mode: 'daily' | 'free'
+    mode: GameMode
     dailyDate: string | null
     difficulty: Difficulty
     goal: string
     start: string
+    roomId?: string | null
+    /** 既に引いてある場合（対戦ルーム）。渡さなければここで引く。 */
+    challenge?: Pick<Challenge, 'startRank' | 'forbiddenInputs'>
   },
 ): Promise<GameRow> {
-  const [startRank, forbiddenInputs] = await Promise.all([
-    rankOf(db, input.goal, input.start),
-    goalNeighborhood(db, input.goal, GOAL_NEIGHBOR_BAN),
-  ])
+  let resolved: Pick<Challenge, 'startRank' | 'forbiddenInputs'>
+  if (input.challenge === undefined) {
+    const [startRank, forbiddenInputs] = await Promise.all([
+      rankOf(db, input.goal, input.start),
+      goalNeighborhood(db, input.goal, GOAL_NEIGHBOR_BAN),
+    ])
+    resolved = { startRank: startRank ?? START_RANK_RANGE[1], forbiddenInputs }
+  } else {
+    resolved = input.challenge
+  }
   const rows = await db
     .insert(games)
     .values({
       userId: input.userId,
       mode: input.mode,
       dailyDate: input.dailyDate,
+      roomId: input.roomId ?? null,
       difficulty: input.difficulty,
       goal: input.goal,
       start: input.start,
       current: input.start,
-      currentRank: startRank ?? START_RANK_RANGE[1],
-      forbiddenInputs,
+      currentRank: resolved.startRank,
+      forbiddenInputs: resolved.forbiddenInputs,
     })
     .returning()
   const row = rows[0]
   if (!row) throw appError('INTERNAL', 'ゲームを作成できませんでした')
   await recordEncounters(db, input.userId, row.id, [
-    { word: input.start, source: 'start', rank: startRank ?? START_RANK_RANGE[1] },
+    { word: input.start, source: 'start', rank: resolved.startRank },
   ])
   return row
+}
+
+/**
+ * 対戦ルームの 1 戦ぶんのゲームを作る（`services/rooms.ts` から呼ぶ）。
+ * **お題は部屋が決めたものをそのまま配る**（全員が同じ盤面を解く）。
+ */
+export async function createRoomGame(
+  db: Db,
+  input: {
+    userId: string
+    roomId: string
+    difficulty: Difficulty
+    challenge: Challenge
+  },
+): Promise<GameRow> {
+  return insertGame(db, {
+    userId: input.userId,
+    mode: 'room',
+    dailyDate: null,
+    roomId: input.roomId,
+    difficulty: input.difficulty,
+    goal: input.challenge.goal,
+    start: input.challenge.start,
+    challenge: input.challenge,
+  })
 }
 
 /** 今日のデイリー課題。無ければ null。 */
@@ -184,7 +248,7 @@ export async function findDailyGame(db: Db, userId: string, date: string): Promi
 export async function createGame(
   db: Db,
   userId: string,
-  mode: 'daily' | 'free',
+  mode: CreatableGameMode,
   difficulty?: Difficulty,
 ): Promise<GameDto> {
   if (mode === 'daily') {
@@ -206,17 +270,17 @@ export async function createGame(
   }
 
   const diff: Difficulty = difficulty ?? 'normal'
-  const goal = await chooseGoal(db, diff)
-  const start = await chooseStart(db, goal)
+  const challenge = await pickChallenge(db, diff)
   const row = await insertGame(db, {
     userId,
     mode: 'free',
     dailyDate: null,
     difficulty: diff,
-    goal,
-    start,
+    goal: challenge.goal,
+    start: challenge.start,
+    challenge,
   })
-  return toDto(row, await goalDescriptionOf(db, goal))
+  return toDto(row, await goalDescriptionOf(db, challenge.goal))
 }
 
 async function loadGame(db: Db, userId: string, gameId: string): Promise<GameRow> {
@@ -408,7 +472,7 @@ export async function playMove(
   const unlocked = await evaluateAchievements(db, {
     userId,
     gameId,
-    mode: next.mode as 'daily' | 'free',
+    mode: next.mode as GameMode,
     dailyDate: next.dailyDate,
     status: outcome.status,
     rank,
@@ -416,6 +480,17 @@ export async function playMove(
     moveCount: outcome.moveCount,
     hintCount: next.hintCount,
   })
+
+  /**
+   * ルーム戦なら、**その時点の順位をこの手のレスポンスに同梱する**（SPEC §9）。
+   *
+   * 自分の手が即座に順位へ反映されるので、ポーリングは「他人の変化の検知」だけを
+   * 担えばよくなる。間隔を緩めても体感が落ちない ＝ invocations が減る。
+   *
+   * ルーム戦でなければ 1 クエリも撃たない（`roomId` が null ならそこで返る）。
+   * **`services/rooms.ts` を消しても、この 1 か所を外すだけで戻せる。**
+   */
+  const roomStandings = await roomStandingsForGame(db, userId, next.roomId)
 
   return {
     result,
@@ -428,6 +503,7 @@ export async function playMove(
     status: outcome.status,
     perfect: next.perfect,
     unlocked_achievements: unlocked,
+    room_standings: roomStandings,
   }
 }
 
