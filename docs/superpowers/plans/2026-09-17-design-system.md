@@ -488,3 +488,143 @@ Expected: どちらでも文字が読め、ガラスが破綻しないこと
 git add apps/mobile/src/theme apps/mobile/app.json apps/mobile/src/app/_layout.tsx apps/mobile/tests
 git commit -m "feat(mobile): ライトモードとダークモードの両対応"
 ```
+
+---
+
+### Task 6: ブランドアセット（スプラッシュ / アイコン / ランディング）
+
+展示で**最初に目に入る場所**が Expo テンプレートのまま残っている。
+
+| 場所 | 現状 | 問題 |
+| --- | --- | --- |
+| `assets/images/splash-icon.png` | 228×213 のほぼ空白 | **QR を読んで開いた瞬間に出る画面**がテンプレート |
+| `assets/images/icon.png` | Expo テンプレートの 1024×1024 | 持ち帰った人のホーム画面に残る |
+| `assets/images/favicon.png` | 48×48 テンプレート | Web 版のタブ |
+| `apps/landing/index.html` の OG 画像 / favicon | 生成した仮の意匠（点 2 つと線） | 共有時に本物のロゴが出ない |
+
+**Files:**
+- Create: `tools/pipeline/scripts/13_brand_assets.py`
+- Modify: `package.json`（`pipeline:brand`）
+- Create/Replace: `apps/mobile/assets/images/{splash-icon,icon,favicon}.png`
+- Create: `apps/mobile/assets/images/logo-mark-{black,white}.png`（鍋のマークだけを切り出したもの）
+- Modify: `apps/mobile/app.json`
+- Modify: `apps/landing/index.html`
+- Test: `tools/pipeline/tests/test_brand_assets.py`
+
+**Interfaces:**
+- Consumes: `apps/mobile/assets/images/logo-{black,white}.png`（2714×1060）
+- Produces: 上記の画像一式
+
+- [ ] **Step 1: マークの切り出し範囲を決める**
+
+ロゴの左側が「蓋の開いた鍋＋キラキラ」のマーク、右側が「コトコトバ」の文字。
+**マークだけを切り出す**と正方形に近いアイコンが作れる。
+
+Run: `cd apps/mobile/assets/images && python3 -c "
+from PIL import Image
+im = Image.open('logo-black.png')
+print(im.size, im.mode)
+"`
+
+透過 PNG なのでアルファチャンネルを見て、**文字が始まる直前の縦の空白列**を自動検出する。
+座標を目で決め打ちしないこと（ロゴが差し替わったときに壊れるため）。
+検出した境界の左側をマークとして切り出し、**正方形の余白を足して**アイコンにする。
+
+- [ ] **Step 2: Write the failing test**
+
+`tools/pipeline/tests/test_brand_assets.py`:
+
+```python
+from PIL import Image
+
+from scripts import brand_assets
+
+
+def test_finds_gap_between_mark_and_text(tmp_path):
+    """マークと文字の間の空白列を見つけられること。決め打ち座標にしない。"""
+    im = Image.open(brand_assets.LOGO_BLACK)
+    split = brand_assets.find_mark_boundary(im)
+    # マークは左側の一部。画像の半分より左で切れるはず。
+    assert 0 < split < im.width // 2
+
+
+def test_mark_is_square_with_padding(tmp_path):
+    out = tmp_path / "mark.png"
+    brand_assets.write_mark(brand_assets.LOGO_BLACK, out, size=1024)
+    with Image.open(out) as im:
+        assert im.size == (1024, 1024)
+        assert im.mode == "RGBA"
+
+
+def test_mark_is_not_blank(tmp_path):
+    """切り出しに失敗して空白画像が出ると、気づかないまま展示に出る。"""
+    out = tmp_path / "mark.png"
+    brand_assets.write_mark(brand_assets.LOGO_BLACK, out, size=256)
+    with Image.open(out) as im:
+        alpha = im.getchannel("A")
+        # 不透明なピクセルが全体の 5% 以上ある
+        opaque = sum(1 for v in alpha.getdata() if v > 0)
+        assert opaque > 256 * 256 * 0.05
+
+
+def test_icon_has_opaque_background(tmp_path):
+    """iOS のアイコンは透過を許さない。地を敷くこと。"""
+    out = tmp_path / "icon.png"
+    brand_assets.write_app_icon(out, size=1024)
+    with Image.open(out) as im:
+        assert im.size == (1024, 1024)
+        alpha = im.getchannel("A")
+        assert min(alpha.getdata()) == 255
+```
+
+`Pillow` を `tools/pipeline` の依存に追加する（`uv add pillow`）。
+
+- [ ] **Step 3: Run test to verify it fails**
+
+Run: `cd tools/pipeline && uv run pytest tests/test_brand_assets.py`
+Expected: FAIL
+
+- [ ] **Step 4: 実装する**
+
+- `find_mark_boundary`: アルファチャンネルを列ごとに合計し、
+  **最初の連続した空白列の帯**を見つけてその中央を返す
+- `write_mark`: 境界より左を切り出し、余白をトリムしてから正方形の中央に配置する
+- `write_app_icon`: マーク（白）を**テーマの地の色**（`#0B0B10`）の上に置いて 1024×1024 で書く。
+  **アルファを残さない**（iOS のアイコンは透過を許さない）
+- `write_splash`: マークを透過のまま書き出す（スプラッシュの地は `app.json` が指定する）
+- `write_favicon`: 48×48 と、Web 用に 180×180 も出す
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Run: `cd tools/pipeline && uv run pytest tests/test_brand_assets.py && uv run ruff check .`
+Expected: PASS
+
+- [ ] **Step 6: 生成して `app.json` を直す**
+
+Run: `pnpm pipeline:brand`
+
+`app.json` の `expo-splash-screen` の `imageWidth` は現在 **96**（マークには小さすぎる）。
+マークが視認できる大きさに上げる。`backgroundColor` はライト/ダークの両方を指定する
+（Task 5 でスキーム対応を入れているので、スプラッシュだけダーク固定にしない）。
+
+- [ ] **Step 7: ランディングの OG 画像とファビコンを本物にする**
+
+`apps/landing/index.html` の OG 画像は SVG を base64 で埋め込んでいる。
+テキストで「コトコトバ」と描いている部分を、**本物のロゴを埋め込んだ形**に差し替える。
+
+ランディングは**外部 CDN に依存しない**方針なので、画像は base64 で埋め込むか
+同ディレクトリに置く。ファイルサイズに注意する（OG 画像は 1MB を超えない）。
+
+favicon も生成したマークに差し替える。
+
+- [ ] **Step 8: 実機で確認する**
+
+Expo Go で開き、**スプラッシュにマークが出ること**を確認する。
+ランディングを開き、ファビコンと、OG 画像（Slack か X に貼って確認）を見る。
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add tools/pipeline apps/mobile/assets/images apps/mobile/app.json apps/landing/index.html package.json
+git commit -m "feat: スプラッシュ・アイコン・OG 画像を本物のロゴから生成する"
+```
