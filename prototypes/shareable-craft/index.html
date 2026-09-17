@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ことば錬成・候補選択プロトタイプ</title>
+    <style>
+      :root { font-family: system-ui, sans-serif; color: #f4f1ff; background: #171325; }
+      body { max-width: 760px; margin: auto; padding: 24px; }
+      h1 { font-size: 1.5rem; } p { line-height: 1.6; }
+      .panel, .candidate { background: #29233d; border: 1px solid #63537c; border-radius: 14px; padding: 16px; margin: 12px 0; }
+      .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+      label { display: grid; gap: 6px; flex: 1; min-width: 150px; }
+      select, button { font: inherit; padding: 10px; border-radius: 8px; }
+      button { cursor: pointer; background: #b798ee; border: 0; color: #171325; font-weight: 700; }
+      button:disabled { opacity: .5; cursor: default; }
+      input[type=range] { width: 100%; }
+      .candidate { display: flex; justify-content: space-between; align-items: center; }
+      .muted { color: #c3b7d4; font-size: .9rem; }
+      ol { padding-left: 1.5rem; } li { margin: 5px 0; }
+    </style>
+  </head>
+  <body>
+    <h1>ことば錬成：候補選択の試作</h1>
+    <p class="muted">固定の小さな模擬語彙で動く画面です。既存のゲーム API やランキングには接続しません。</p>
+    <section class="panel">
+      <p>目標 <strong id="goal">宇宙</strong> ／ 現在語 <strong id="current">りんご</strong> ／ 確定手数 <strong id="turn">0</strong> ／ コンボ <strong id="combo">0</strong></p>
+      <div class="row">
+        <label>素材 A<select id="material-a"></select></label>
+        <label>素材 B<select id="material-b"></select></label>
+      </div>
+      <label>素材 A の割合 <output id="alpha-value">50%</output><input id="alpha" type="range" min="0" max="100" step="10" value="50" /></label>
+      <button id="generate">候補を見る</button>
+      <button id="reset">最初から</button>
+    </section>
+    <section aria-live="polite"><h2>候補</h2><div id="candidates" class="muted">素材を選んで候補を表示してください。</div></section>
+    <section class="panel"><h2>確定した語の履歴</h2><ol id="history"></ol></section>
+    <script type="module" src="./prototype.js"></script>
+  </body>
+</html>
