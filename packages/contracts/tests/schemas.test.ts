@@ -124,9 +124,7 @@ describe('meResponseSchema の best_free_moves', () => {
   })
 
   it('一部の難易度だけでも受け付ける', () => {
-    expect(
-      meResponseSchema.safeParse({ ...base, best_free_moves: { easy: 3 } }).success,
-    ).toBe(true)
+    expect(meResponseSchema.safeParse({ ...base, best_free_moves: { easy: 3 } }).success).toBe(true)
   })
 
   it('全難易度が揃っていても受け付ける', () => {
@@ -139,14 +137,14 @@ describe('meResponseSchema の best_free_moves', () => {
   })
 
   it('知らない難易度キーは弾く', () => {
-    expect(
-      meResponseSchema.safeParse({ ...base, best_free_moves: { lunatic: 3 } }).success,
-    ).toBe(false)
+    expect(meResponseSchema.safeParse({ ...base, best_free_moves: { lunatic: 3 } }).success).toBe(
+      false,
+    )
   })
 
   it('手数が 0 以下なら弾く', () => {
-    expect(
-      meResponseSchema.safeParse({ ...base, best_free_moves: { easy: 0 } }).success,
-    ).toBe(false)
+    expect(meResponseSchema.safeParse({ ...base, best_free_moves: { easy: 0 } }).success).toBe(
+      false,
+    )
   })
 })
