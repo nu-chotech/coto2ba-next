@@ -7,6 +7,7 @@ import { DISPLAY_NAME_MAX_LENGTH, DISPLAY_NAME_MIN_LENGTH, RATIOS } from '../src
 import {
   createGameRequestSchema,
   dateStringSchema,
+  meResponseSchema,
   moveRequestSchema,
   patchMeRequestSchema,
   ratioSchema,
@@ -100,5 +101,50 @@ describe('dateStringSchema', () => {
     expect(dateStringSchema.safeParse('2026-9-17').success).toBe(false)
     expect(dateStringSchema.safeParse('2026/09/17').success).toBe(false)
     expect(dateStringSchema.safeParse('').success).toBe(false)
+  })
+})
+
+describe('meResponseSchema の best_free_moves', () => {
+  const base = {
+    id: 'u1',
+    display_name: '静かな蚕',
+    booth: false,
+    stats: {
+      games_played: 0,
+      games_cleared: 0,
+      daily_streak: 0,
+      words_met: 0,
+      perfect_count: 0,
+    },
+  }
+
+  // 新規ユーザーは必ずこの形。ここが落ちると設定画面が全部エラーになる。
+  it('空オブジェクトを受け付ける', () => {
+    expect(meResponseSchema.safeParse({ ...base, best_free_moves: {} }).success).toBe(true)
+  })
+
+  it('一部の難易度だけでも受け付ける', () => {
+    expect(meResponseSchema.safeParse({ ...base, best_free_moves: { easy: 3 } }).success).toBe(true)
+  })
+
+  it('全難易度が揃っていても受け付ける', () => {
+    expect(
+      meResponseSchema.safeParse({
+        ...base,
+        best_free_moves: { easy: 3, normal: 5, hard: 9 },
+      }).success,
+    ).toBe(true)
+  })
+
+  it('知らない難易度キーは弾く', () => {
+    expect(meResponseSchema.safeParse({ ...base, best_free_moves: { lunatic: 3 } }).success).toBe(
+      false,
+    )
+  })
+
+  it('手数が 0 以下なら弾く', () => {
+    expect(meResponseSchema.safeParse({ ...base, best_free_moves: { easy: 0 } }).success).toBe(
+      false,
+    )
   })
 })

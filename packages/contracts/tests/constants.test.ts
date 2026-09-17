@@ -3,8 +3,10 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  API_BASE_URL,
   CLEAR_RANK,
   indexToRatio,
+  LANDING_URL,
   MAX_MOVES,
   N_OUTPUT,
   normalizeRatio,
@@ -129,5 +131,18 @@ describe('ゲーム定数の整合', () => {
   it('クリア判定のランクは手数より小さい常識的な値', () => {
     expect(CLEAR_RANK).toBeGreaterThan(0)
     expect(MAX_MOVES).toBeGreaterThan(0)
+  })
+})
+
+describe('公開 URL', () => {
+  // 展示で配る QR とシェア文面に載る。vercel.app のままだと恰好がつかない。
+  it('独自ドメインを指している', () => {
+    expect(API_BASE_URL).toBe('https://coto2ba-next-api.chotech.dev')
+    expect(LANDING_URL).toBe('https://coto2ba-next.chotech.dev')
+  })
+
+  it('末尾にスラッシュを付けない', () => {
+    expect(API_BASE_URL.endsWith('/')).toBe(false)
+    expect(LANDING_URL.endsWith('/')).toBe(false)
   })
 })

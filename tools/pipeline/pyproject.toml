@@ -29,6 +29,9 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.uv]
 package = false
 

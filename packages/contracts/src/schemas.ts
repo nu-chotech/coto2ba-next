@@ -50,7 +50,10 @@ export const meResponseSchema = z.object({
   id: z.string(),
   display_name: z.string(),
   booth: z.boolean(),
-  best_free_moves: z.record(difficultySchema, z.number().int().positive()),
+  // Zod 4 の z.record(enum, …) は **列挙キーの網羅を要求する**。
+  // best_free_moves は新規ユーザーだと {} なので、partialRecord でないと
+  // /api/me のレスポンスが常に検証に落ちる（実際に起きた）。
+  best_free_moves: z.partialRecord(difficultySchema, z.number().int().positive()),
   stats: userStatsSchema,
 })
 
