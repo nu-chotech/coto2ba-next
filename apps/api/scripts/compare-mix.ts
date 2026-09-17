@@ -31,7 +31,8 @@ function validCase(value: unknown): Case {
     !item.current ||
     typeof item.input_word !== 'string' ||
     !item.input_word ||
-    typeof item.ratio !== 'number' || normalizeRatio(item.ratio) === null
+    typeof item.ratio !== 'number' ||
+    normalizeRatio(item.ratio) === null
   )
     throw new InputError('case requires goal, current, input_word and a valid ratio')
   return item as Case
