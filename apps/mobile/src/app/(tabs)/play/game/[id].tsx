@@ -1,7 +1,7 @@
 /**
  * ゲーム画面（SPEC §8.3 の 9 要素）。
  *
- * 1 ゴールカード / 2 現在の語 / 3 ランク + 温度バー / 4 入力欄 / 5 ratio スライダー /
+ * 1 ゴールカード / 2 現在の語 / 3 ランク + 温度バー / 4 入力欄 / 5 ratio の回転ホイール /
  * 6 混合ボタン / 7 ヒント / 8 履歴 / 9 ギブアップ（「…」メニュー + 確認）
  *
  * **API 往復は必ず混合演出で覆う。** 最低表示時間（`MIX_ANIMATION_MIN_MS`）は
@@ -35,7 +35,7 @@ import {
   INPUT_SANITY_MAX_LENGTH,
   MIN_TAP_SIZE,
   MixOverlay,
-  MixSlider,
+  MixWheel,
   RankMeter,
   SkeletonCard,
   SymbolIcon,
@@ -303,8 +303,8 @@ export default function GameScreen() {
               disabled={pending !== null}
             />
 
-            {/* 5. ratio スライダー */}
-            <MixSlider value={ratio} onChange={setRatio} tier={tier} disabled={pending !== null} />
+            {/* 5. ratio の回転ホイール */}
+            <MixWheel value={ratio} onChange={setRatio} tier={tier} disabled={pending !== null} />
 
             {/* 6. 混合ボタン */}
             <GlassButton title="混ぜる" onPress={startMix} tier={tier} loading={pending !== null} />

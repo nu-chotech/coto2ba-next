@@ -33,15 +33,43 @@ export const WORD_FADE_SCALE = 0.92
 /** 主役の語の行の高さ（フォントサイズに対する比）。 */
 export const HERO_LINE_HEIGHT_RATIO = 1.18
 
-// ── ratio スライダー ────────────────────────────────────────
-/** トラックの左右の余白（サムがはみ出さないように）。 */
-export const SLIDER_EDGE_PADDING = 18
-/** ディテントの目盛りの直径。 */
-export const SLIDER_TICK_SIZE = 4
-/** サムを押し込んだときの拡大率。 */
-export const SLIDER_THUMB_ACTIVE_SCALE = 1.18
-/** タップ判定を広げるための当たり判定の高さ。 */
-export const SLIDER_HIT_HEIGHT = 44
+// ── ratio の回転ホイール（MixWheel）────────────────────────
+/**
+ * ホイールの外径。
+ *
+ * ゲーム画面には主役の語・ランク・入力欄も載るので、**画面の主役を奪わない大きさ**にする。
+ * 一方で指 1 本で回すものなので、半径が小さいと同じ指の移動量に対して角度が急になり、
+ * 段を飛ばす。この 2 つの折り合いがこの値。
+ */
+export const WHEEL_SIZE = 216
+/** ホイールが使う扇の角度（270°）。下の 90° は空けて、そこに両端の意味を書く。 */
+export const WHEEL_SWEEP = Math.PI * 1.5
+/** 外周の輪の太さ。 */
+export const WHEEL_RING_WIDTH = 10
+/** 外周の輪を外枠からどれだけ内側に置くか。**つまみがはみ出して切れないための余白**。 */
+export const WHEEL_RING_INSET = 12
+/** 中央の盤（比率を読む窓）の直径。 */
+export const WHEEL_HUB_SIZE = 116
+/** 目盛りの長さと太さ。 */
+export const WHEEL_TICK_LENGTH = 10
+export const WHEEL_TICK_WIDTH = 2
+/** 今の段の目盛りだけ、長く太くする。 */
+export const WHEEL_TICK_ACTIVE_LENGTH = 16
+export const WHEEL_TICK_ACTIVE_WIDTH = 3
+/** 目盛りの外端を外枠からどれだけ内側に置くか（輪の内側に並ぶ）。 */
+export const WHEEL_TICK_INSET = WHEEL_RING_INSET + WHEEL_RING_WIDTH + 6
+/** つまみの直径。最小タップ領域は輪全体で稼ぐので、見た目はこの大きさでよい。 */
+export const WHEEL_KNOB_SIZE = 24
+/** 回している間のつまみの拡大率。 */
+export const WHEEL_KNOB_ACTIVE_SCALE = 1.16
+/**
+ * 指を離したあと、払った勢いをどれだけ先まで送るか（秒）。
+ *
+ * **段は 8 つしか無いので、ここを大きくすると端まで飛んでしまう。**
+ * ゆっくり回したぶんには行き過ぎず、勢いよく払ったときだけ隣の段まで行く量
+ * （Web で実測: 250°/秒 で 1 段ぶん、100°/秒 では行き過ぎない）。
+ */
+export const WHEEL_INERTIA_SEC = 0.08
 
 // ── 温度バー（RankMeter）────────────────────────────────────
 export const RANK_METER_HEIGHT = 8
