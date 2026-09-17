@@ -27,6 +27,12 @@ export type ActionSheetItem = {
   onPress: () => void
   /** 取り返しのつかない操作。赤で出る。 */
   destructive?: boolean
+  /**
+   * 送信中など、いま押せない行。薄く出して押せなくする。
+   * **行を消さないこと** ── 消すと下の行が上がってきて、
+   * 待っているあいだに別の操作を押してしまう。
+   */
+  disabled?: boolean
 }
 
 export type ActionSheetProps = {
@@ -101,7 +107,9 @@ export function ActionSheet({
             <Pressable
               key={item.label}
               onPress={item.onPress}
+              disabled={item.disabled === true}
               accessibilityRole="button"
+              accessibilityState={{ disabled: item.disabled === true }}
               style={({ pressed }) => [
                 styles.row,
                 {
@@ -114,7 +122,14 @@ export function ActionSheet({
               <Text
                 style={[
                   typography.body,
-                  { color: item.destructive === true ? palette.negative : colors.text },
+                  {
+                    color:
+                      item.disabled === true
+                        ? colors.sub
+                        : item.destructive === true
+                          ? palette.negative
+                          : colors.text,
+                  },
                 ]}
               >
                 {item.label}

@@ -261,11 +261,20 @@ export default function GameScreen() {
    * ギブアップ。**行き先は終局の他の経路と同じ**（`finishMix` / 「結果を見る」）。
    * ルーム戦で結果画面へ飛ばすと、その端末だけ部屋から外れてしまい、
    * ホストの「もう一度」が届かなくなる。
+   *
+   * **シートは通ってから閉じる。** 先に閉じると、会場の Wi-Fi が瞬断したときに
+   * 押しても画面が 1 ミリも動かない。係員が「次の人へ」へ辿り着く唯一の経路の
+   * 1 段目なので、ここで沈黙するとブースが詰まる（ヒントと同じ形にしてある）。
    */
   const giveUp = useCallback(() => {
-    setSheet(null)
+    // 二度押しでゲームを 2 回終わらせに行かない（2 回目は必ず 422 になる）。
+    if (surrender.isPending) return
     surrender.mutate(undefined, {
-      onSuccess: () => router.replace(roomCode !== null ? roomHref(roomCode) : resultHref(gameId)),
+      onSuccess: () => {
+        setSheet(null)
+        router.replace(roomCode !== null ? roomHref(roomCode) : resultHref(gameId))
+      },
+      onError: () => feedback('error_oov'),
     })
   }, [gameId, router, surrender, roomCode])
 
@@ -283,8 +292,18 @@ export default function GameScreen() {
     if (sheet === 'giveUp') {
       return {
         title: 'ギブアップしますか？',
-        message: 'この挑戦は終了します。やり直しはできません。',
-        items: [{ label: 'ギブアップする', onPress: giveUp, destructive: true }],
+        // 失敗の理由は同じ場所に出す（トーストにしない。見逃すと押し直せない）。
+        message: surrender.isError
+          ? `${toMessageJa(surrender.error)}\nもう一度押してください。`
+          : 'この挑戦は終了します。やり直しはできません。',
+        items: [
+          {
+            label: surrender.isPending ? 'ギブアップしています…' : 'ギブアップする',
+            onPress: giveUp,
+            destructive: true,
+            disabled: surrender.isPending,
+          },
+        ],
         cancelLabel: 'やめる',
         messageAlign: 'center',
       }
@@ -304,7 +323,16 @@ export default function GameScreen() {
     ]
     // 終わった挑戦にギブアップは出さない（サーバーが 422 を返すだけの操作）。
     if (detail !== null && detail.status === 'playing') {
-      items.push({ label: 'ギブアップ', onPress: () => setSheet('giveUp'), destructive: true })
+      items.push({
+        label: 'ギブアップ',
+        // 前回の失敗を持ち越さない（開き直したのに赤いエラーが残っていると、
+        // いま失敗したのかと思って押し直せない）。
+        onPress: () => {
+          surrender.reset()
+          setSheet('giveUp')
+        },
+        destructive: true,
+      })
     }
     return { title: null, message: null, items, cancelLabel: 'キャンセル', messageAlign: 'center' }
   })()
