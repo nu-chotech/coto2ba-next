@@ -10,6 +10,35 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-17-exhibition-ux-overhaul-design.md` §9
 
+## 調査で確定した前提（2026-09-18）
+
+**Vercel は 2026-06-22 から本物のサーバー側 WebSocket に対応している**（Public Beta、公式ドキュメントに
+Hono の実装例あり、Fluid Compute は Hobby でも利用可）。しかし本プロジェクトでは採用しない。
+理由は 3 つで、いずれも調査で一次情報から確認した:
+
+1. **部屋 → インスタンスのアフィニティが存在しない。** Vercel が保証するのは「接続 → インスタンス」の
+   pin だけ。公式に「同じチャットルームの 2 クライアントが別インスタンスに着地しうる」と明記。
+   解決には外部 Redis が必須で、その時点で「現構成のまま」ではなくなる。
+   **さらに悪いことに、この故障はローカル（単一プロセス）でも少人数テストでも 100% 再現しない。**
+   壊れるのは会場で 8 人が一斉入室してスケールアウトした瞬間だけ、それも部分故障として出る
+2. **Hobby の枠超過は API 全体の 30 日停止。** 従量課金のフォールバックが無く、公式に
+   「30 日経つまで待つしかない」とある。WS は接続中ずっとメモリ課金が回り、
+   8 接続が何インスタンスに散るかはスケジューラ次第で見積もりが 8 倍振れる。
+   止まるのは `/api/rooms` だけでなく `/moves`・認証・ランキング・図鑑を含む全部
+3. **現在の prebuilt デプロイで upgrade を受ける公式手段が存在しない。**
+   WS の実体はランタイムが `globalThis[Symbol.for('@vercel/request-context')]` に注入する
+   非公開の `ctx.upgradeWebSocket` に依存しており、`.vc-config.json` にそれを要求する
+   フィールドが無い（当該ドキュメントの最終更新は WS 対応より前の 2025-03-04）
+
+**決め手は非対称性。** ポーリングが外れたら定数 1 行で直せる。WS が外れたら展示が消える。
+
+加えて、**このゲームは進行中に順位と手数しか配らない**（§9.2。他人の打った語を見せると
+真似で解かれて競技にならない）。WS が運ぶものは「順位バーが少し動く」だけで、
+ポーリングとの差 400ms は連続量のアニメーションに乗るため知覚されない。
+
+WebSocket は展示後の課題として `docs/QUESTIONS.md` に記録する。
+**本番の `main.ts` / `build-vercel-output.mjs` / CI には一切触らないこと。**
+
 ## Global Constraints
 
 - Expo Go で動くこと。新しいネイティブモジュールを追加しない
@@ -559,3 +588,115 @@ Expected: エラー 0、p95 が実用域。429 が出ないこと
 git add apps/api apps/mobile
 git commit -m "feat: 対戦ルームをブース運用に耐える形にする"
 ```
+
+---
+
+### Task 6: ポーリングを賢くする（調査から出た緩和策）
+
+WebSocket を見送る代わりに、**追加依存ゼロ・合計 30 分**で体験と枠消費を改善する。
+これを入れると invocations と Active CPU の実効消費がおよそ 1/3 になる。
+
+**なぜ必要か**: 8 人 × 1 req/s を 8 時間動かすと 1 日 230,000 invocations。
+3 日で約 69 万となり、Hobby の月 100 万枠に対して**タイトすぎる**。
+
+**Files:**
+- Modify: `apps/mobile/src/features/rooms/queries.ts`
+- Modify: `apps/api/src/routes/games.ts`（`POST /moves` のレスポンス）
+- Modify: `packages/contracts/src/{constants,schemas}.ts`
+- Test: `apps/api/tests/rooms.test.ts`
+
+**Interfaces:**
+- Consumes: Task 3 の `roomResponseSchema`、Task 4 の `useRoomQuery`
+- Produces: `moveResponseSchema` に `room_standings`（省略可）が増える
+
+- [ ] **Step 1: 状態ごとにポーリング間隔を変える**
+
+`constants.ts` に追加する。
+
+```ts
+/** ロビー（参加者を待っている間）の間隔。人の出入りは秒単位で見えれば十分。 */
+export const ROOM_POLL_INTERVAL_LOBBY_MS = 2_500
+/** レース中の間隔。他人の順位の動きを追う。 */
+export const ROOM_POLL_INTERVAL_RACE_MS = 1_000
+```
+
+既存の `ROOM_POLL_INTERVAL_MS` は削除し、参照箇所をすべて置き換える。
+
+```ts
+refetchInterval: (query) => {
+  const status = query.state.data?.status
+  if (status === 'finished') return false        // 終わったら止める
+  if (status === 'playing') return ROOM_POLL_INTERVAL_RACE_MS
+  return ROOM_POLL_INTERVAL_LOBBY_MS
+},
+```
+
+- [ ] **Step 2: Write the failing test（順位を手のレスポンスに同梱する）**
+
+自分が打った直後は必ず最新の順位が返るようにする。そうするとポーリングは
+「**他人の変化の検知**」だけを担えばよくなり、自分の手は即座に反映される。
+
+```ts
+it('ルーム戦の手のレスポンスに、その時点の順位が入る', async () => {
+  const { room, hostGameId } = await startedRoom(db)
+  const res = await applyMove(db, hostGameId, /* … */)
+  expect(res.room_standings).not.toBeNull()
+  expect(res.room_standings?.length).toBeGreaterThan(0)
+  // 他人の語は絶対に含めない（§9.2）
+  expect(JSON.stringify(res.room_standings)).not.toContain(await otherPlayerCurrent(db, room))
+})
+
+it('ルーム戦でない手には順位が入らない', async () => {
+  const res = await applyMove(db, soloGameId, /* … */)
+  expect(res.room_standings ?? null).toBeNull()
+})
+```
+
+- [ ] **Step 3: Run test to verify it fails**
+
+Run: `pnpm --filter @coto2ba/api test rooms`
+Expected: FAIL
+
+- [ ] **Step 4: 実装する**
+
+`moveResponseSchema` に `room_standings: z.array(roomPlayerSchema).nullable().optional()` を足す。
+`games.roomId` が null でないときだけ埋める。**他人の現在語は絶対に含めない。**
+
+- [ ] **Step 5: バックグラウンドで止まることを確認する**
+
+`refetchIntervalInBackground: false`（Task 4 で既に入れている）が効いていることを確認する。
+端末をポケットに入れた瞬間に止まるので、**一晩放置して枠を食い潰す事故**が起きない。
+
+- [ ] **Step 6: Run test to verify it passes**
+
+Run: `pnpm --filter @coto2ba/api test && pnpm typecheck`
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add apps packages
+git commit -m "feat: ルームのポーリングを状態で切り替え、手のレスポンスに順位を同梱する"
+```
+
+---
+
+### Task 7: 展示前に実使用量を測る
+
+Hobby の枠は**超えると API 全体が 30 日止まる**。ポーリングは短命リクエストなので
+使用量が線形に見えるが、それは**見ていれば**の話である。
+
+- [ ] **Step 1: 展示前日に Vercel の Usage を確認する**
+
+Run: `vercel --cwd apps/api` の Usage ダッシュボード、または
+`mcp__plugin_vercel_vercel__get_web_analytics` で invocations と Active CPU を見る。
+
+- [ ] **Step 2: 実測値を記録する**
+
+1 レースあたりの invocations を実測し、`docs/PROGRESS.md` に書く。
+**「8 時間の展示で何回になるか」を掛け算で出し、月枠に対する余裕を明記する。**
+
+- [ ] **Step 3: 余裕が無ければ間隔を上げる**
+
+`ROOM_POLL_INTERVAL_RACE_MS` を 1,000 → 1,500 にするだけで 1/3 減る。
+体験への影響は「順位バーの追従が 0.5 秒遅くなる」だけ。
