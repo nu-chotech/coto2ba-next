@@ -46,24 +46,22 @@ import {
   borderWidth,
   iconSize,
   layout,
-  palette,
-  paletteForTier,
   radius,
   SCREEN_TOP_PADDING,
+  SPACE_TIER,
   spacing,
   typography,
+  useTheme,
 } from '../../../theme'
 
-/**
- * 図鑑は宇宙。tier は固定。
- *
- * **意図的な例外：ライトモードでも地は暗いまま**（SPEC §4.3）。
- * `useTheme()` ではなくダーク固定の互換シムを読む。宇宙が白いと figure が壊れる。
- */
-const SPACE_TIER = 'cosmos'
-const colors = paletteForTier(SPACE_TIER)
-
 export default function SpaceScreen() {
+  /**
+   * **ここは必ずダークのパレットになる。** 図鑑は宇宙なので、端末がライトでも
+   * 地は暗いまま（意図的な例外）。固定しているのは `_layout.tsx` の
+   * `<ThemeProvider scheme={SPACE_SCHEME}>` で、この画面はただフックを読むだけでよい。
+   */
+  const { palette, paletteForTier } = useTheme()
+  const colors = paletteForTier(SPACE_TIER)
   const insets = useSafeAreaInsets()
   const router = useRouter()
   const { game } = useLocalSearchParams<{ game?: string }>()
@@ -214,7 +212,7 @@ export default function SpaceScreen() {
   const activeGameId = activePathIndex === null ? null : scene.paths[activePathIndex]?.gameId
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
       {/* Skia が使えないときに図鑑タブごとアプリを落とさないためのゲート。
           Web では CanvasKit の WASM を読み終わるまで待つ。 */}
       <SkiaGate label="図鑑">
@@ -380,7 +378,8 @@ export default function SpaceScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: palette.tiers.cosmos.bg },
+  // 地の色は描画時に入れる（図鑑のパレットは Provider が決める）。
+  root: { flex: 1 },
   top: {
     position: 'absolute',
     top: 0,

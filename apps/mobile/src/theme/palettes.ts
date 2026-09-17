@@ -127,3 +127,14 @@ export function paletteFor(scheme: Scheme): Palette {
 export function normalizeScheme(scheme: string | null | undefined): Scheme {
   return scheme === 'light' ? 'light' : 'dark'
 }
+
+/**
+ * サブツリーに固定されたスキームがあればそれを、無ければ端末のものを使う。
+ *
+ * `ThemeProvider` の中身そのもの。**react-native を要らない形でここに置く**ので、
+ * 「端末がライトでも図鑑はダーク」をテストから同じ関数で確かめられる
+ * （画面と違う経路で測ると、通っているのに現地で読めない、という嘘のテストになる）。
+ */
+export function resolveScheme(fixed: Scheme | undefined, system: Scheme): Scheme {
+  return fixed ?? system
+}

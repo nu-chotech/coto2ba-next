@@ -4,11 +4,12 @@
  * **検索は副次的な操作**なので、常時出しておかず上のアイコンから開く
  * （上の一等地は「どの軌跡を見るか」に譲る）。作りは `WordSheet` に合わせてある。
  *
- * **意図的な例外：ライトモードでも暗いまま。** 図鑑は宇宙なので、`useTheme()` ではなく
- * ダーク固定の互換シム（`palette` / `paletteForTier`）を読む（SPEC §4.3）。
+ * **意図的な例外：ライトモードでも暗いまま。** 図鑑は宇宙なので、端末がライトでも
+ * ここは暗い。固定しているのは `app/(tabs)/space/_layout.tsx` の
+ * `<ThemeProvider scheme={SPACE_SCHEME}>` だけなので、**ここは `useTheme()` を素直に読む**
+ * （部品ごとにダーク固定のシムを読むと、シムと追従する部品が混ざって文字が消える）。
  */
 
-import type { TierId } from '@coto2ba/contracts'
 import { useEffect, useRef, useState } from 'react'
 import {
   Modal,
@@ -21,11 +22,9 @@ import {
   View,
 } from 'react-native'
 import { GlassCard, ListRow } from '../../components'
-import { borderWidth, palette, paletteForTier, radius, spacing, typography } from '../../theme'
+import { borderWidth, radius, SPACE_TIER, spacing, typography, useTheme } from '../../theme'
 import { SPACE_SEARCH_HEIGHT, SPACE_SEARCH_LIMIT, SPACE_SHEET_MAX_HEIGHT_RATIO } from './constants'
 import { type SpaceScene, searchScene } from './scene'
-
-const SHEET_TIER: TierId = 'cosmos'
 
 export type SearchSheetProps = {
   visible: boolean
@@ -36,7 +35,8 @@ export type SearchSheetProps = {
 }
 
 export function SearchSheet({ visible, scene, onClose, onPick }: SearchSheetProps) {
-  const colors = paletteForTier(SHEET_TIER)
+  const { palette, paletteForTier } = useTheme()
+  const colors = paletteForTier(SPACE_TIER)
   const { height } = useWindowDimensions()
   const [query, setQuery] = useState('')
   const inputRef = useRef<TextInput | null>(null)
@@ -56,7 +56,11 @@ export function SearchSheet({ visible, scene, onClose, onPick }: SearchSheetProp
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="閉じる" />
+      <Pressable
+        style={[styles.scrim, { backgroundColor: palette.scrim }]}
+        onPress={onClose}
+        accessibilityLabel="閉じる"
+      />
       <View style={styles.dock} pointerEvents="box-none">
         <GlassCard
           variant="sheet"
@@ -119,7 +123,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: palette.scrim,
   },
   dock: { flex: 1, justifyContent: 'flex-end', padding: spacing.lg },
   sheet: { gap: spacing.md },

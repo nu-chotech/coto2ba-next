@@ -8,19 +8,20 @@
  *   束縛されるので、後から `LoadSkiaWeb()` しても import 済みのモジュールからは見えない
  *   （`WithSkiaWeb` による遅延 import が要る）。**Web は対象外**なので代替表示にする。
  *
- * **使うのは図鑑タブだけ。図鑑は宇宙なのでライトモードでも暗いまま**（SPEC §4.3）。
- * ここをスキームに追従させると、暗い図鑑の上に紙色の板が出て文字が消える。
- * だから `useTheme()` を使わず、ダーク固定の互換シムから `cosmos` を読む
- * （覆い隠す画面と同じ地の色になる）。
+ * **使うのは図鑑タブだけ。図鑑は宇宙なのでライトモードでも暗いまま。**
+ * 代替表示は図鑑を覆い隠すので、**地は覆い隠す画面と同じ色でなければならない**
+ * （紙色の板が出ると、その上の文字が消える）。
+ *
+ * それを `useTheme()` を避けて達成するのはやめた。図鑑のサブツリーは
+ * `app/(tabs)/space/_layout.tsx` がダークに固定しているので、**ここは素直に
+ * フックを読めば図鑑と同じ暗い地になる**（値はダーク固定のシムと同一。
+ * `tests/space-theme.test.ts` で固定してある）。
  */
 
 import { rect } from '@shopify/react-native-skia'
 import type { ReactNode } from 'react'
 import { Platform, StyleSheet, Text, View } from 'react-native'
-import { paletteForTier, spacing, typography } from '../theme'
-
-/** 図鑑の地。スキームに追従させない（図鑑はライトでも暗い）。 */
-const SPACE_COLORS = paletteForTier('cosmos')
+import { SPACE_TIER, spacing, typography, useTheme } from '../theme'
 
 /**
  * Skia が実際に使えるか。**存在チェックではなく 1 回呼んで確かめる。**
@@ -40,12 +41,16 @@ export function isSkiaAvailable(): boolean {
 }
 
 export function SkiaGate({ children, label }: { children: ReactNode; label: string }) {
+  // フックは早期リターンより前で呼ぶ（Skia が使えるかどうかで呼び方を変えない）。
+  const { paletteForTier } = useTheme()
+  const colors = paletteForTier(SPACE_TIER)
+
   if (isSkiaAvailable()) return <>{children}</>
 
   return (
-    <View style={styles.fallback}>
-      <Text style={styles.title}>{label}</Text>
-      <Text style={styles.body}>
+    <View style={[styles.fallback, { backgroundColor: colors.bg }]}>
+      <Text style={[styles.title, { color: colors.text }]}>{label}</Text>
+      <Text style={[styles.body, { color: colors.sub }]}>
         {Platform.OS === 'web'
           ? 'ブラウザでは 3D 表示に対応していません。Expo Go で開くと見られます。'
           : 'この端末では描画エンジンを使えませんでした。'}
@@ -65,8 +70,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm,
     padding: spacing.xl,
-    backgroundColor: SPACE_COLORS.bg,
   },
-  title: { ...typography.title, color: SPACE_COLORS.text, textAlign: 'center' },
-  body: { ...typography.body, color: SPACE_COLORS.sub, textAlign: 'center' },
+  title: { ...typography.title, textAlign: 'center' },
+  body: { ...typography.body, textAlign: 'center' },
 })
