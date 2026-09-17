@@ -8,8 +8,8 @@
 
 | | URL / コマンド |
 | --- | --- |
-| **API（本番）** | https://coto2ba-next-api.vercel.app/api/health |
-| **ランディング** | https://coto2ba-next.vercel.app |
+| **API（本番）** | https://coto2ba-next-api.chotech.dev/api/health |
+| **ランディング** | https://coto2ba-next.chotech.dev |
 | **DB** | Neon `coto2ba-next-db`（aws-ap-southeast-1 / sin1）。Vercel Marketplace 経由 |
 | **ローカル DB** | `docker start coto2ba-pg`（pgvector/pgvector:pg17、port 55432、shm 2GB） |
 | **API ローカル起動** | `pnpm --filter @coto2ba/api dev` → http://localhost:8787 |

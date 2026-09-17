@@ -73,8 +73,8 @@
       "eas": {
         "projectId": "73c7cda9-727c-4b83-ba2e-674c38b951ae"
       },
-      "apiUrl": "https://coto2ba-next-api.vercel.app",
-      "landingUrl": "https://coto2ba-next.vercel.app"
+      "apiUrl": "https://coto2ba-next-api.chotech.dev",
+      "landingUrl": "https://coto2ba-next.chotech.dev"
     }
   }
 }

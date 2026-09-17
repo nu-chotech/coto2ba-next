@@ -64,13 +64,15 @@ SPEC §5.3-4 はゴール語そのものしか禁止していないが、それ�
 **0 にすれば無効化できる**（`packages/contracts/src/constants.ts`）。
 通常のプレイには影響しないが、仕様と違うことは認識しておくこと。
 
-### 5. 独自ドメインが未設定
-`coto2ba-next.chotech.dev` / `coto2ba-next-api.chotech.dev` の DNS を触っていない。
-現在は `*.vercel.app` で動いている。
+### 5. 独自ドメインの設定（解決済み）
+`coto2ba-next.chotech.dev` / `coto2ba-next-api.chotech.dev` の DNS 設定は完了し、
+両方とも稼働確認済み。`packages/contracts/src/constants.ts` の `API_BASE_URL` /
+`LANDING_URL`、`apps/mobile/app.json` の `extra.apiUrl` / `extra.landingUrl` も
+これらのドメインに揃えてある（2026-09-17 critical-fixes）。
 
 **注意**: SPEC §12.2 の通り、**ランディングのドメインはパスキー（Tier B）の rpID に
-永久に紐づく**ので、Tier B をやる可能性があるなら早めに `coto2ba-next.chotech.dev` を
-確定させたほうがよい。API 側のドメインは後から変えてよい。
+永久に紐づく**ので、`coto2ba-next.chotech.dev` を rpID として確定させる前に
+Tier B の計画があれば再確認すること。
 
 ### 6. SE 音源が未調達
 `apps/mobile/assets/sounds/` は空。`src/lib/feedback.ts` にイベント名 → (haptic, sound) の

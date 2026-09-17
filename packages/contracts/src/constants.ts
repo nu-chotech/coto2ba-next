@@ -211,8 +211,8 @@ export const EXPO_UPDATE_ORIGIN = 'exp://u.expo.dev'
  * 本番 API のベース URL。独自ドメインを張ったらここと Vercel の環境変数、
  * apps/mobile/app.json の extra.apiUrl を同時に差し替えること。
  */
-export const API_BASE_URL = 'https://coto2ba-next-api.vercel.app'
-export const LANDING_URL = 'https://coto2ba-next.vercel.app'
+export const API_BASE_URL = 'https://coto2ba-next-api.chotech.dev'
+export const LANDING_URL = 'https://coto2ba-next.chotech.dev'
 export const TIER_EMOJI = {
   mono: '⬜',
   color: '🟩',
