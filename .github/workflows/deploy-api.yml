@@ -34,6 +34,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # secrets は job 単位の if: では参照できないので、最初の step で見て以降を切り替える。
+      # 未登録でもビルドと束ね検証は走らせる（デプロイ鍵が無いこととコードが壊れていることは別）。
+      - name: Check deploy secrets
+        id: guard
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_API }}
+          DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "${VERCEL_TOKEN}" ]        || missing+=("VERCEL_TOKEN")
+          [ -n "${VERCEL_ORG_ID}" ]       || missing+=("VERCEL_ORG_ID")
+          [ -n "${VERCEL_PROJECT_ID}" ]   || missing+=("VERCEL_PROJECT_ID_API")
+          [ -n "${DATABASE_URL_DIRECT}" ] || missing+=("DATABASE_URL_DIRECT")
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=デプロイを飛ばしました::未登録の secret: ${missing[*]}（ビルド検証は実行します）"
+            {
+              echo "### Deploy API — ビルド検証のみ実行"
+              echo
+              echo "以下の GitHub Secrets が未登録なので、migrate とデプロイは飛ばしました:"
+              for m in "${missing[@]}"; do echo "- \`${m}\`"; done
+              echo
+              echo "tsup のバンドルとワークスペース import の検証は実行済みです。"
+              echo "取得方法は \`docs/PROGRESS.md\` の「GitHub Secrets」を参照。"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
@@ -48,19 +80,19 @@ jobs:
 
       # PR からは絶対に migrate しない（production の Neon に PR のスキーマが流れると事故になる）。
       - name: Run database migrations (direct connection)
-        if: github.event_name != 'pull_request'
+        if: steps.guard.outputs.configured == 'true' && github.event_name != 'pull_request'
         run: pnpm --filter @coto2ba/api exec drizzle-kit migrate
         env:
           DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
 
       # ---- Vercel の環境取得（プロジェクト設定と環境変数のみ。.vercel/output には触らない）----
       - name: Vercel pull (production environment)
-        if: github.event_name != 'pull_request'
+        if: steps.guard.outputs.configured == 'true' && github.event_name != 'pull_request'
         working-directory: apps/api
         run: npx vercel@59 pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Vercel pull (preview environment)
-        if: github.event_name == 'pull_request'
+        if: steps.guard.outputs.configured == 'true' && github.event_name == 'pull_request'
         working-directory: apps/api
         run: npx vercel@59 pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
 
@@ -68,6 +100,9 @@ jobs:
       # zero-config ビルドで壊れる）。tsup で自己完結 ESM に束ね、Build Output API v3
       # （runtime nodejs22.x / maxDuration 30 / regions ["sin1"]）を自前で書き出して
       # --prebuilt で渡す。`vercel build` は .vercel/output を作り直してこの設定を捨てるので使わない。
+      #
+      # secrets が無くても実行する。ここが通るかどうかはコードの健全性の問題で、
+      # デプロイ鍵の有無とは無関係。
       - name: Build API (tsup + Vercel Build Output API v3)
         run: pnpm --filter @coto2ba/api build:vercel
 
@@ -78,14 +113,14 @@ jobs:
 
       # ---- production 経路（main への push / 手動実行）----
       - name: Vercel deploy (prebuilt, production)
-        if: github.event_name != 'pull_request'
+        if: steps.guard.outputs.configured == 'true' && github.event_name != 'pull_request'
         working-directory: apps/api
         run: npx vercel@59 deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
 
       # ---- preview 経路（PR）----
       - name: Vercel deploy (prebuilt, preview)
         id: deploy_preview
-        if: github.event_name == 'pull_request'
+        if: steps.guard.outputs.configured == 'true' && github.event_name == 'pull_request'
         working-directory: apps/api
         run: |
           set -euo pipefail
@@ -95,7 +130,7 @@ jobs:
           echo "url=${url}" >> "$GITHUB_OUTPUT"
 
       - name: Comment preview URL on the PR
-        if: github.event_name == 'pull_request'
+        if: steps.guard.outputs.configured == 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         env:
           PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
