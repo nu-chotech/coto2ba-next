@@ -15,15 +15,28 @@ Neon Free は 512MB 中 318MB 使用済みで、102,520 行の一括 UPDATE は�
 **`--target` に既定値は無い（本番を既定にしない）。** 本番に流すときは呼び出し側が
 明示的に本番の接続文字列（Neon の `DATABASE_URL_DIRECT`）を渡すこと。
 
+**このスクリプトは vocab を新規作成しない。** `--target` が空の DB / 別プロジェクトを
+誤って指していた場合に「対象 0 件 = 完了」と誤報告してサイレントに成功したように
+見えてしまう事故（レビュー指摘）を防ぐため、書き込み前に `vocab` の存在と行数を
+検証し、おかしければ非ゼロ終了でエラーを出す（`ensure_target_sane`）。
+
+**`--dry-run` は target に一切書き込まない。** 一時テーブルの作成・COPY も行わず、
+渡されたソースの語リストを `word = ANY(...)` で直接読むだけにしてある。
+
+**pooled 接続（ホスト名に `-pooler` を含む）は既定で拒否する。** 一時テーブルは
+セッションに紐づくため、コネクションプーラ越しだと接続の使い回しで意図せず
+消える恐れがある。本番で一度しか打たない操作なので機械的に弾く
+（どうしても使うなら `--allow-pooled`）。
+
 一時テーブル経由でまとめて読み込み、バッチの切り出しは DB 側の
 `WHERE pos3 IS NULL LIMIT --batch-size` に任せる（1 行ずつの UPDATE は遅すぎる。
 `06_umap_coords.py` と同様に一時テーブルは autocommit 前提で手動 DROP する）。
 
 使い方:
-    # 対象件数だけ確認する（書き込みなし）
+    # 対象件数だけ確認する（target には一切書き込まない）
     uv run python scripts/12_backfill_pos3.py --target postgresql://... --dry-run
 
-    # 本番に流す（呼び出し側が明示的に接続文字列を渡す）
+    # 本番に流す（呼び出し側が明示的に接続文字列を渡す。pooled は既定で拒否）
     uv run python scripts/12_backfill_pos3.py --target postgresql://...
 """
 
@@ -37,12 +50,22 @@ import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import database_url  # noqa: E402
-from _db import connect, ensure_vocab  # noqa: E402
+from _db import connect  # noqa: E402
 
 DEFAULT_BATCH_SIZE = 5_000
 DEFAULT_MAX_BYTES = 480 * 1024 * 1024
 # ソース（ローカル DB の pos3）を丸ごと読み込む一時テーブル名。
 SOURCE_LOAD_TABLE = "pos3_backfill_source"
+
+
+def is_pooled_host(url: str) -> bool:
+    """Neon の pooled 接続（ホスト名に `-pooler` を含む）かどうか。
+
+    pooled 接続はコネクションの使い回しがあるため、セッションに紐づく一時テーブルが
+    意図せず失われる恐れがある。本番で一度しか打たない操作なので機械的に弾く
+    （どうしても使うなら `--allow-pooled`）。
+    """
+    return "-pooler" in url.lower()
 
 
 def fetch_source_rows(source_url: str) -> list[tuple[str, list[float]]]:
@@ -52,8 +75,50 @@ def fetch_source_rows(source_url: str) -> list[tuple[str, list[float]]]:
     return [(word, list(pos3)) for word, pos3 in rows]
 
 
+def ensure_target_sane(conn: psycopg.Connection, min_rows: int) -> None:
+    """target の vocab が「それらしい」ことを、書き込み・一時テーブル作成の前に確認する。
+
+    以前の実装は `ensure_vocab()`（`CREATE EXTENSION` + `CREATE TABLE IF NOT EXISTS`）を
+    dry-run 含む全経路で無条件に呼んでいたため、`--target` の入力ミスで空の DB /
+    別プロジェクトを指した場合に **その場に空の vocab を新規作成した上で**
+    「対象 0 件 = 完了」と誤報告する事故があり得た（レビュー指摘）。
+    ここで vocab の存在と行数を先に検証し、おかしければ非ゼロ終了で止める。
+    """
+    exists = conn.execute("SELECT to_regclass('public.vocab')").fetchone()
+    assert exists is not None
+    if exists[0] is None:
+        raise SystemExit(
+            "target に vocab テーブルがありません。--target が正しいか確認してください"
+            "（誤って空の DB や別プロジェクトを指していないか）。"
+            " このスクリプトは vocab を新規作成しません。"
+        )
+    total_row = conn.execute("SELECT count(*) FROM vocab").fetchone()
+    assert total_row is not None
+    total = int(total_row[0])
+    if total < min_rows:
+        raise SystemExit(
+            f"target の vocab は {total} 行しかありません"
+            f"（ソース側の pos3 あり語数 {min_rows} より少ない）。"
+            " --target が間違っている可能性があります"
+            "（誤って空の DB や別プロジェクトを指していないか確認してください）。"
+        )
+
+
+def count_missing_readonly(conn: psycopg.Connection, words: list[str]) -> int:
+    """dry-run 用。target に一切書き込まず、渡した語のうち pos3 が NULL な数を数える。"""
+    row = conn.execute(
+        "SELECT count(*) FROM vocab WHERE pos3 IS NULL AND word = ANY(%s)",
+        (words,),
+    ).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
 def load_source_into_temp(conn: psycopg.Connection, rows: list[tuple[str, list[float]]]) -> None:
-    """ソースの (word, pos3) を対象 DB の一時テーブルにまとめて COPY する。"""
+    """ソースの (word, pos3) を対象 DB の一時テーブルにまとめて COPY する。
+
+    書き込み（実行）経路でのみ呼ぶこと。dry-run では呼ばない。
+    """
     conn.execute(f"DROP TABLE IF EXISTS {SOURCE_LOAD_TABLE}")
     conn.execute(f"CREATE TEMP TABLE {SOURCE_LOAD_TABLE} (word text PRIMARY KEY, pos3 real[])")
     with conn.cursor().copy(f"COPY {SOURCE_LOAD_TABLE} (word, pos3) FROM STDIN") as copy:
@@ -62,7 +127,7 @@ def load_source_into_temp(conn: psycopg.Connection, rows: list[tuple[str, list[f
 
 
 def count_missing(conn: psycopg.Connection) -> int:
-    """対象 DB で pos3 が NULL、かつソースに値がある語の数。"""
+    """対象 DB で pos3 が NULL、かつソースに値がある語の数（一時テーブル読み込み後専用）。"""
     row = conn.execute(
         f"""
         SELECT count(*)
@@ -111,7 +176,7 @@ def apply_batch(conn: psycopg.Connection, batch_size: int) -> int:
     return cur.rowcount
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
         description="ローカル DB で計算済みの vocab.pos3 を対象 DB にバッチでバックフィルする"
     )
@@ -138,27 +203,46 @@ def main() -> None:
     ap.add_argument(
         "--dry-run",
         action="store_true",
-        help="対象件数だけ出して終了する（書き込みなし）",
+        help="対象件数だけ出して終了する（target には一切書き込まない）",
     )
-    args = ap.parse_args()
+    ap.add_argument(
+        "--allow-pooled",
+        action="store_true",
+        help="pooled 接続（ホスト名に -pooler を含む）でも実行する（既定では拒否）",
+    )
+    args = ap.parse_args(argv)
+
+    if is_pooled_host(args.target) and not args.allow_pooled:
+        raise SystemExit(
+            "--target が pooled 接続（ホスト名に -pooler を含む）です。"
+            " 一時テーブルが接続の使い回しで失われる恐れがあるため既定では拒否します。"
+            " Neon の DATABASE_URL_DIRECT（unpooled）を使うか、"
+            " 分かった上で --allow-pooled を付けて再実行してください。"
+        )
 
     print("ソース: ローカル DB から pos3 を読み込み中…", file=sys.stderr)
     rows = fetch_source_rows(database_url())
     print(f"  ソース側 pos3 あり: {len(rows)} 語", file=sys.stderr)
     if not rows:
-        print("ソースに pos3 が 1 件もありません。中断します。", file=sys.stderr)
-        sys.exit(1)
+        raise SystemExit("ソースに pos3 が 1 件もありません。中断します。")
+    words = [word for word, _ in rows]
 
     with connect(args.target) as conn:
-        ensure_vocab(conn)
+        ensure_target_sane(conn, len(rows))
+
+        if args.dry_run:
+            missing = count_missing_readonly(conn, words)
+            print(f"対象（target の pos3 が NULL かつソースに値あり）: {missing} 語", file=sys.stderr)
+            print(
+                "dry-run のため書き込みは行いません（一時テーブルも作成していません）。",
+                file=sys.stderr,
+            )
+            return
+
         load_source_into_temp(conn, rows)
         try:
             missing = count_missing(conn)
             print(f"対象（target の pos3 が NULL かつソースに値あり）: {missing} 語", file=sys.stderr)
-
-            if args.dry_run:
-                print("dry-run のため書き込みは行いません。", file=sys.stderr)
-                return
 
             if missing == 0:
                 print("対象がありません。すでに完了しています。", file=sys.stderr)

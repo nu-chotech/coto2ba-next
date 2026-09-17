@@ -19,7 +19,7 @@ dependencies = [
 umap = ["umap-learn>=0.5.7", "scikit-learn>=1.5"]
 
 [dependency-groups]
-dev = ["ruff>=0.9"]
+dev = ["ruff>=0.9", "pytest>=8"]
 
 [tool.ruff]
 line-length = 100
@@ -28,6 +28,9 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.uv]
 package = false
