@@ -149,17 +149,17 @@ export function SpaceLabels({
         const node = scene.nodes[index]
         if (node === undefined || node.word.length === 0) continue
         const x = scratch.screen[index * 2] as number
+        const y = scratch.screen[index * 2 + 1] as number
+        // 画面の外に出た節のラベルは出さない（見えていない点の名前は邪魔なだけ）。
+        if (x < -SPACE_LABEL_MARGIN || x > width + SPACE_LABEL_MARGIN) continue
+        if (y < -SPACE_LABEL_MARGIN || y > height + SPACE_LABEL_MARGIN) continue
         placed.push({
           // 同じ語を 2 度通る経路があるので、順番も鍵に混ぜる。
           id: `${k}:${node.word}`,
           word: node.word,
           step: stepLabel(k, activePath.length),
           x,
-          y: stackLabelY(
-            placed,
-            x,
-            (scratch.screen[index * 2 + 1] as number) + SPACE_LABEL_OFFSET_Y,
-          ),
+          y: stackLabelY(placed, x, labelY(scene, scratch, index)),
           // 主役なので、奥に回っても読める下限を持たせる。
           opacity: Math.max(scratch.alphaMul[index] as number, SPACE_PATH_LABEL_MIN_OPACITY),
         })
