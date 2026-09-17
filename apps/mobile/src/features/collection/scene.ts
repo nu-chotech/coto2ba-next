@@ -26,7 +26,7 @@ import {
   SPACE_PATH_LIMIT,
 } from './constants'
 import { getGhostPoints } from './ghost'
-import { recentPaths } from './paths'
+import { pathNodes, recentPaths } from './paths'
 
 const BYTE_MAX = 255
 
@@ -52,6 +52,14 @@ export type SpacePath = {
   moveCount: number
   /** 点のインデックス列（2 点以上のときだけ作る）。 */
   indices: Int32Array
+  /**
+   * `indices` と同じ長さ。**元の経路での手数の添字**（0 = スタート）。
+   * 座標を持たない語は `indices` から落ちるので、詰めた添字で数えると
+   * 「2手目」が本当は 3 手目になる。落ちた語の前後は線も繋がない。
+   */
+  steps: Int32Array
+  /** 元の経路の節の数（`words.length`）。「到達」の判定に使う。 */
+  totalSteps: number
 }
 
 export type SpaceScene = {
@@ -123,11 +131,7 @@ function pathDrafts(
 ): SpacePath[] {
   const out: SpacePath[] = []
   for (const path of recentPaths(clearedPaths, SPACE_PATH_LIMIT)) {
-    const indices: number[] = []
-    for (const word of path.words) {
-      const index = indexByWord.get(word)
-      if (index !== undefined) indices.push(index)
-    }
+    const { indices, steps } = pathNodes(path.words, (word) => indexByWord.get(word))
     if (indices.length < 2) continue
     out.push({
       gameId: path.game_id,
@@ -135,6 +139,8 @@ function pathDrafts(
       // words は [start, 各手の結果] なので、手数は 1 引いた数。
       moveCount: Math.max(0, path.words.length - 1),
       indices: Int32Array.from(indices),
+      steps: Int32Array.from(steps),
+      totalSteps: path.words.length,
     })
   }
   return out

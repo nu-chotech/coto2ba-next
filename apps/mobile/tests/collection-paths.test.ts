@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   SPACE_GHOST_ALPHA,
+  SPACE_LABEL_MAX_WIDTH,
   SPACE_LABEL_STACK_MAX,
   SPACE_LABEL_STACK_STEP,
   SPACE_PATH_LIMIT,
@@ -17,9 +18,13 @@ import {
   buildEmphasis,
   defaultPathIndex,
   findPathByGameId,
+  labelWidth,
+  overviewPoints,
+  pathNodes,
   pathOptions,
   pathPoints,
   recentPaths,
+  sameCamera,
   stackLabelY,
   stepLabel,
 } from '../src/features/collection/paths'
@@ -77,6 +82,8 @@ function makePath(over: Partial<SpacePath> = {}): SpacePath {
     dailyDate: TODAY,
     moveCount: 2,
     indices: Int32Array.from([0, 1, 2]),
+    steps: Int32Array.from([0, 1, 2]),
+    totalSteps: 3,
     ...over,
   }
 }
@@ -237,25 +244,134 @@ describe('recentPaths', () => {
 })
 
 describe('stackLabelY', () => {
+  const box = (x: number, y: number, width = 60) => ({ x, y, width })
+
   it('誰とも重ならなければそのまま', () => {
-    expect(stackLabelY([{ x: 300, y: 100 }], 10, 100)).toBe(100)
+    expect(stackLabelY([box(300, 100)], box(10, 100))).toBe(100)
   })
 
   it('重なったら下へずらす（実データの「広角レンズ → レンズ」）', () => {
-    const first = { x: 100, y: 200 }
-    const y = stackLabelY([first], 102, 201)
+    const y = stackLabelY([box(100, 200)], box(102, 201))
     expect(y).toBeGreaterThan(201)
   })
 
+  it('十分離れていれば、幅が狭いラベルはずらさない（浮いたラベルを作らない）', () => {
+    // 「投影」(34) と「広角レンズ」(85) は 87pt 離れていれば重ならない。
+    const left = { x: 150, y: 400, width: labelWidth('投影', 'スタート') }
+    const right = { x: 237, y: 400, width: labelWidth('広角レンズ', '1手目') }
+    expect(stackLabelY([left], right)).toBe(400)
+  })
+
   it('何段も重なっても上限で止める（画面外まで落とさない）', () => {
-    const placed = [
-      { x: 100, y: 200 },
-      { x: 100, y: 234 },
-      { x: 100, y: 268 },
-      { x: 100, y: 302 },
-      { x: 100, y: 336 },
-    ]
-    const y = stackLabelY(placed, 100, 200)
+    const placed = [box(100, 200), box(100, 234), box(100, 268), box(100, 302), box(100, 336)]
+    const y = stackLabelY(placed, box(100, 200))
     expect(y).toBeLessThanOrEqual(200 + SPACE_LABEL_STACK_STEP * SPACE_LABEL_STACK_MAX)
+  })
+})
+
+describe('labelWidth', () => {
+  it('和文は字数ぶんの幅になる', () => {
+    expect(labelWidth('投影', null)).toBeLessThan(labelWidth('広角レンズ', null))
+  })
+
+  it('手数のほうが長ければそちらで見る', () => {
+    expect(labelWidth('窓', 'スタート')).toBeGreaterThan(labelWidth('窓', null))
+  })
+
+  it('ラベルの最大幅を超えない', () => {
+    expect(labelWidth('あ'.repeat(30), null)).toBeLessThanOrEqual(SPACE_LABEL_MAX_WIDTH)
+  })
+})
+
+describe('pathNodes（座標を持たない語が混ざる経路）', () => {
+  const index = new Map([
+    ['あさ', 0],
+    ['よる', 2],
+  ])
+  const words = ['あさ', 'ひる', 'よる']
+
+  it('座標の無い語は落とすが、**手数の添字は落とさない**', () => {
+    const { indices, steps } = pathNodes(words, (word) => index.get(word))
+    expect(indices).toEqual([0, 2])
+    // 「ひる」が 1手目。よるは 2手目のまま（詰めると 1手目になってしまう）。
+    expect(steps).toEqual([0, 2])
+  })
+
+  it('落ちた語をまたぐところは「歩いた」と見なせない（添字が飛ぶ）', () => {
+    const { steps } = pathNodes(words, (word) => index.get(word))
+    expect((steps[1] as number) - (steps[0] as number)).toBeGreaterThan(1)
+  })
+
+  it('全部そろっていれば添字は連番', () => {
+    const full = new Map([
+      ['あさ', 0],
+      ['ひる', 1],
+      ['よる', 2],
+    ])
+    expect(pathNodes(words, (w) => full.get(w)).steps).toEqual([0, 1, 2])
+  })
+})
+
+describe('stepLabel（落ちた語があっても手数がずれない）', () => {
+  it('元の添字と元の長さで数える', () => {
+    // 4 手の経路で 2 番目が落ちた場合。残った 3 番目は「2手目」のまま。
+    expect(stepLabel(2, 5)).toBe('2手目')
+    expect(stepLabel(4, 5)).toBe('到達')
+  })
+})
+
+describe('overviewPoints', () => {
+  it('経路が無いときに宇宙そのものを収めるための標本を返す', () => {
+    const scene = makeScene([])
+    const points = overviewPoints(scene, 3)
+    expect(points.length).toBeGreaterThan(0)
+    expect(points.length).toBeLessThanOrEqual(scene.count)
+    expect(points[0]).toEqual([0, 0, 0])
+  })
+
+  it('点が無ければ空（落ちないこと）', () => {
+    const empty = { ...makeScene([]), count: 0 }
+    expect(overviewPoints(empty, 8)).toEqual([])
+  })
+})
+
+describe('sameCamera', () => {
+  const base = { yaw: 1, pitch: 0.2, distance: 2, targetX: 0.1, targetY: 0.2, targetZ: 0.3 }
+
+  it('同じなら true（動いていないときに再レンダしないため）', () => {
+    expect(sameCamera(base, { ...base })).toBe(true)
+  })
+
+  it('注視点だけ動いても false（経路を切り替えた瞬間がこれ）', () => {
+    expect(sameCamera(base, { ...base, targetZ: 0.31 })).toBe(false)
+  })
+
+  it('どの成分が動いても気づく', () => {
+    for (const key of Object.keys(base) as (keyof typeof base)[]) {
+      expect(sameCamera(base, { ...base, [key]: base[key] + 1 })).toBe(false)
+    }
+  })
+})
+
+describe('pathOptions（同じ名前が並ぶとき）', () => {
+  it('フリーが続いたら新しいほうから番号を振る', () => {
+    const options = pathOptions(
+      [
+        makePath({ gameId: 'old', dailyDate: null, moveCount: 3 }),
+        makePath({ gameId: 'mid', dailyDate: null, moveCount: 3 }),
+        makePath({ gameId: 'new', dailyDate: null, moveCount: 3 }),
+      ],
+      TODAY,
+    )
+    expect(options.map((o) => o.label)).toEqual(['フリー', 'フリー 2', 'フリー 3'])
+    expect(options.map((o) => o.gameId)).toEqual(['new', 'mid', 'old'])
+  })
+
+  it('名前が違えば番号は付かない', () => {
+    const options = pathOptions(
+      [makePath({ dailyDate: '2026-09-16' }), makePath({ dailyDate: TODAY })],
+      TODAY,
+    )
+    expect(options.map((o) => o.label)).toEqual(['今日', '昨日'])
   })
 })

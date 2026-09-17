@@ -28,6 +28,7 @@ import {
   findPathByGameId,
   type GoalMarker,
   hasRealGhosts,
+  overviewPoints,
   pathOptions,
   pathPoints,
   SearchSheet,
@@ -105,10 +106,17 @@ export default function SpaceScreen() {
     () => findPathByGameId(scene.paths, pickedGameId) ?? defaultPathIndex(scene.paths),
     [scene.paths, pickedGameId],
   )
-  const activePath =
-    activePathIndex === null ? null : (scene.paths[activePathIndex]?.indices ?? null)
+  const activePath = activePathIndex === null ? null : (scene.paths[activePathIndex] ?? null)
   const options = useMemo(() => pathOptions(scene.paths, jstToday()), [scene.paths])
-  const activePoints = useMemo(() => pathPoints(scene, activePathIndex), [scene, activePathIndex])
+  /**
+   * カメラを合わせる先。経路があればその節、無ければ**宇宙そのもの**。
+   * クリアが 1 本も無い人（＝ブースで最初に図鑑を開いた来場者）を、
+   * 「中央やや左の小さな染み」の前に放り出さない。
+   */
+  const framingPoints = useMemo(() => {
+    const points = pathPoints(scene, activePathIndex)
+    return points.length > 0 ? points : overviewPoints(scene)
+  }, [scene, activePathIndex])
 
   /**
    * 選択中の経路にカメラを合わせる。
@@ -116,14 +124,16 @@ export default function SpaceScreen() {
    */
   const framedRef = useRef<string | null>(null)
   useEffect(() => {
-    if (activePathIndex === null || activePoints.length === 0) return
+    if (framingPoints.length === 0) return
     // 合図（frameRequest）を鍵に混ぜる。同じ軌跡をもう一度指されても寄せ直すため。
-    const key = `${frameRequest}:${scene.paths[activePathIndex]?.gameId ?? ''}`
+    const key = `${frameRequest}:${
+      activePathIndex === null ? 'overview' : (scene.paths[activePathIndex]?.gameId ?? '')
+    }`
     if (framedRef.current === key) return
     const first = framedRef.current === null
     framedRef.current = key
-    frameTo(activePoints, first)
-  }, [scene, activePathIndex, activePoints, frameTo, frameRequest])
+    frameTo(framingPoints, first)
+  }, [scene, activePathIndex, framingPoints, frameTo, frameRequest])
 
   /**
    * 結果画面の「この軌跡を見る」から `?game=<id>` で入ってきたとき。
@@ -142,9 +152,10 @@ export default function SpaceScreen() {
   /** 迷子からの復帰。二本指タップと画面下のボタンの両方から呼ぶ。 */
   const recenter = useCallback(() => {
     setSelectedIndex(-1)
-    if (activePoints.length === 0) reset()
-    else frameTo(activePoints, false)
-  }, [activePoints, frameTo, reset])
+    setSheetIndex(-1)
+    if (framingPoints.length === 0) reset()
+    else frameTo(framingPoints, false)
+  }, [framingPoints, frameTo, reset])
   useEffect(() => {
     onRecenterRef.current = recenter
   }, [recenter, onRecenterRef])
@@ -327,7 +338,7 @@ export default function SpaceScreen() {
           ]}
         >
           <Text style={[typography.label, { color: colors.text }]}>
-            {activePoints.length > 0 ? '軌跡にもどす' : '視点をもどす'}
+            {activePathIndex === null ? '視点をもどす' : '軌跡にもどす'}
           </Text>
         </Pressable>
       </View>

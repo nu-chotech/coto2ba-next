@@ -91,9 +91,18 @@ export const SPACE_FRAMING_DISTANCE_MIN = 0.45
 /**
  * 経路のいちばん手前の節と、カメラの間に必ず空ける距離。
  * 画角だけで決めると、半径の小さい経路では手前側の節が near plane
- * （`SPACE_NEAR_PLANE`）の向こうに入って**線が途切れる**。
+ * （`SPACE_NEAR_PLANE` = 0.25）の向こうに入って**線が途切れる**。
+ *
+ * 幾何的に要るのは near plane ぶんだけなので、そのすぐ外側に置く。
+ * ここを大きくすると、実データ（半径 0.15 ほど）では**この値だけで距離が決まり**、
+ * 画角も余白も効かなくなって軌跡が小さく写る。
  */
-export const SPACE_FRAMING_NEAR_GAP = 0.45
+export const SPACE_FRAMING_NEAR_GAP = 0.3
+/**
+ * 経路が 1 本も無いときに、宇宙そのものを画面に収めるために使う標本数。
+ * `yawPitchToFace` が総当たりで 2 点を選ぶので、全点は渡さない。
+ */
+export const SPACE_OVERVIEW_SAMPLE = 64
 /**
  * フレーミングでわずかに見下ろす角。
  * 0 にすると経路がぴったり画面と平行になり、奥行きのある宇宙に見えない。
@@ -185,11 +194,19 @@ export const SPACE_PATH_LABEL_MIN_OPACITY = 0.55
  * 節のラベルが重なったときに下へずらす段の高さと、段数の上限。
  * **実データで必要になった**：「広角レンズ → レンズ」のように 2 手が
  * ほとんど同じ場所に来ると、語と手数が完全に重なって読めなくなる。
+ *
+ * 高さは**ラベル 1 枚ぶん**（語 `typography.body` の行 23 + 余白 4 + 手数
+ * `typography.label` の行 18）。これより小さいと、ずらしたのにまだ重なる。
  */
-export const SPACE_LABEL_STACK_STEP = 34
+export const SPACE_LABEL_STACK_STEP = 45
 export const SPACE_LABEL_STACK_MAX = 3
-/** この横幅より近いラベル同士は重なっていると見なす。 */
-export const SPACE_LABEL_COLLIDE_WIDTH = 72
+/**
+ * ラベルの幅の見積もりに使う 1 文字ぶんの幅（和文は全角なのでほぼ字送り＝字幅）。
+ * 固定幅で衝突を見ると、**十分離れている短い語まで段下げ**されてしまう。
+ * `typography.body` / `typography.label` の fontSize に合わせること。
+ */
+export const SPACE_LABEL_WORD_CHAR_WIDTH = 17
+export const SPACE_LABEL_STEP_CHAR_WIDTH = 13
 
 // ── タップ ──────────────────────────────────────────────────
 /**

@@ -18,7 +18,7 @@ import {
   framingDistance,
   yawPitchToFace,
 } from '../src/features/collection/framing'
-import { projectAll } from '../src/features/collection/projection'
+import { projectAll, projectPoint } from '../src/features/collection/projection'
 
 type P = readonly [number, number, number]
 
@@ -271,5 +271,83 @@ describe('framePoints（経路が画面に収まること）', () => {
       expect(distance).toBeGreaterThanOrEqual(SPACE_DISTANCE_MIN)
       expect(distance).toBeLessThanOrEqual(SPACE_DISTANCE_MAX)
     }
+  })
+})
+
+// ── projectPoint と projectAll が一致すること（実装が二重にあるため）──
+// 経路の折れ線・節の輪は `projectPoint`、点と当たり判定は `projectAll` が出す。
+// 片方だけ直すと「見えている点を押しても当たらない」「線が点からずれる」が黙って起きる。
+describe('projectPoint と projectAll', () => {
+  it('同じカメラ・同じ点なら同じ結果を返す', () => {
+    const points: P[] = [
+      [0.12, -0.44, 0.78],
+      [-0.9, 0.3, -0.2],
+      [0, 0, 0],
+      [0.5, 0.5, 0.5],
+    ]
+    const camera = { yaw: 0.7, pitch: -0.3, distance: 1.8, tx: -0.2, ty: 0.1, tz: 0.35 }
+    const width = 390
+    const height = 844
+    const worldScale = Math.min(width, height) * SPACE_WORLD_SCALE
+
+    const xyz = new Float32Array(points.length * 3)
+    points.forEach((p, i) => {
+      xyz[i * 3] = p[0]
+      xyz[i * 3 + 1] = p[1]
+      xyz[i * 3 + 2] = p[2]
+    })
+    const screen = new Float32Array(points.length * 2)
+    const sizeMul = new Float32Array(points.length)
+    const alphaMul = new Float32Array(points.length)
+    const depth = new Float32Array(points.length)
+    projectAll(
+      xyz,
+      points.length,
+      camera.yaw,
+      camera.pitch,
+      camera.distance,
+      camera.tx,
+      camera.ty,
+      camera.tz,
+      width / 2,
+      height / 2,
+      worldScale,
+      screen,
+      sizeMul,
+      alphaMul,
+      depth,
+    )
+
+    const out = new Float32Array(4)
+    for (let i = 0; i < points.length; i += 1) {
+      const p = points[i] as P
+      projectPoint(
+        p[0],
+        p[1],
+        p[2],
+        camera.yaw,
+        camera.pitch,
+        camera.distance,
+        camera.tx,
+        camera.ty,
+        camera.tz,
+        width / 2,
+        height / 2,
+        worldScale,
+        out,
+      )
+      // 小数第 3 位まで（Float32Array に落ちる分の丸めがある）。
+      // 式が食い違えば pt 単位でずれるので、この精度で十分に捕まえられる。
+      expect(out[0]).toBeCloseTo(screen[i * 2] as number, 3)
+      expect(out[1]).toBeCloseTo(screen[i * 2 + 1] as number, 3)
+      expect(out[2]).toBeCloseTo(sizeMul[i] as number, 3)
+      expect(out[3]).toBeCloseTo(depth[i] as number, 3)
+    }
+  })
+
+  it('near plane の向こうの点も同じ扱いになる（どちらも不可視）', () => {
+    const out = new Float32Array(4)
+    projectPoint(0, 0, 0, 0, 0, 0.1, 0, 0, 0, 100, 200, 240, out)
+    expect(out[2]).toBe(0)
   })
 })

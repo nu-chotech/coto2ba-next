@@ -105,24 +105,33 @@ export type SpaceCanvasProps = {
   onResize?: (width: number, height: number) => void
 }
 
-/** 経路を「インデックスの列 + 区切り位置」に平たくする（worklet に渡すため）。 */
-function flattenPaths(scene: SpaceScene): { indices: Float32Array; offsets: Float32Array } {
+/**
+ * 経路を「インデックスの列 + 区切り位置」に平たくする（worklet に渡すため）。
+ * `steps` は元の経路での手数の添字。**飛んでいたらそこで線を切る**ために要る。
+ */
+function flattenPaths(scene: SpaceScene): {
+  indices: Float32Array
+  steps: Float32Array
+  offsets: Float32Array
+} {
   let total = 0
   for (const path of scene.paths) total += path.indices.length
   const indices = new Float32Array(total)
+  const steps = new Float32Array(total)
   const offsets = new Float32Array(scene.paths.length + 1)
   let cursor = 0
   for (let p = 0; p < scene.paths.length; p += 1) {
     offsets[p] = cursor
-    const source = scene.paths[p]?.indices
-    if (source === undefined) continue
-    for (let k = 0; k < source.length; k += 1) {
-      indices[cursor] = source[k] as number
+    const path = scene.paths[p]
+    if (path === undefined) continue
+    for (let k = 0; k < path.indices.length; k += 1) {
+      indices[cursor] = path.indices[k] as number
+      steps[cursor] = path.steps[k] as number
       cursor += 1
     }
   }
   offsets[scene.paths.length] = cursor
-  return { indices, offsets }
+  return { indices, steps, offsets }
 }
 
 export function SpaceCanvas({
@@ -148,6 +157,7 @@ export function SpaceCanvas({
 
   const paths = useMemo(() => flattenPaths(scene), [scene])
   const pathIndices = useSharedValue(paths.indices)
+  const pathSteps = useSharedValue(paths.steps)
   const pathOffsets = useSharedValue(paths.offsets)
 
   const selected = useSharedValue(selectedIndex)
@@ -336,6 +346,7 @@ export function SpaceCanvas({
         path,
         xyz.value,
         pathIndices.value,
+        pathSteps.value,
         offsets[p] as number,
         offsets[p + 1] as number,
         camera.yaw.value,
@@ -363,6 +374,7 @@ export function SpaceCanvas({
       path,
       xyz.value,
       pathIndices.value,
+      pathSteps.value,
       activeFrom.value,
       activeTo.value,
       camera.yaw.value,
@@ -602,14 +614,18 @@ const styles = StyleSheet.create({
 /**
  * 折れ線を 1 本ぶん積む。
  *
- * **線が繋がることを見せる**のがこの画面の目的なので、線を切るのは
- * near plane の向こうに出た点だけ（飛ばして繋ぐと通っていない経路を描くことになる）。
+ * **線が繋がることを見せる**のがこの画面の目的だが、**通っていない線は引かない**。
+ * 線を切るのは 2 つの場合だけ：
+ * - near plane の向こうに出た点
+ * - 手数の添字が飛んでいるところ（座標を持たない語が落ちた区間）
+ *
  * `out` は長さ 4 の作業領域（毎フレーム確保しない）。
  */
 function appendRoute(
   path: SkPath,
   points: Float32Array,
   indices: Float32Array,
+  steps: Float32Array,
   from: number,
   to: number,
   yaw: number,
@@ -626,6 +642,8 @@ function appendRoute(
   'worklet'
   let started = false
   for (let k = from; k < to; k += 1) {
+    // 手数が 1 つぶんより開いていたら、その間は歩いていない（座標の無い語が落ちた）。
+    if (k > from && (steps[k] as number) - (steps[k - 1] as number) > 1) started = false
     const index = indices[k] as number
     projectPoint(
       points[index * 3] as number,

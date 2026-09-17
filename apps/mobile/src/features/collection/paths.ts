@@ -15,9 +15,12 @@ import {
   SPACE_EMPHASIS_GHOST_IDLE,
   SPACE_EMPHASIS_OFF_PATH_ALPHA,
   SPACE_EMPHASIS_PATH_SIZE,
-  SPACE_LABEL_COLLIDE_WIDTH,
+  SPACE_LABEL_MAX_WIDTH,
   SPACE_LABEL_STACK_MAX,
   SPACE_LABEL_STACK_STEP,
+  SPACE_LABEL_STEP_CHAR_WIDTH,
+  SPACE_LABEL_WORD_CHAR_WIDTH,
+  SPACE_OVERVIEW_SAMPLE,
 } from './constants'
 import type { Vec3 } from './framing'
 import type { SpacePath, SpaceScene } from './scene'
@@ -41,15 +44,24 @@ export function recentPaths<T>(paths: readonly T[], limit: number): readonly T[]
   return paths.length <= limit ? paths : paths.slice(paths.length - limit)
 }
 
-/** 経路を新しい順に並べたチップの選択肢。サーバーは古い順で返す。 */
+/**
+ * 経路を新しい順に並べたチップの選択肢。サーバーは古い順で返す。
+ *
+ * 同じ名前が並ぶとき（フリーを続けて遊ぶと全部「フリー」になる）は
+ * **新しいほうから 2, 3 … と番号を振る**。展示では実際に起こる。
+ */
 export function pathOptions(paths: readonly SpacePath[], today: string): PathOption[] {
   const out: PathOption[] = []
+  const seen = new Map<string, number>()
   for (let i = paths.length - 1; i >= 0; i -= 1) {
     const path = paths[i] as SpacePath
+    const name = pathLabel(path, today)
+    const count = (seen.get(name) ?? 0) + 1
+    seen.set(name, count)
     out.push({
       index: i,
       gameId: path.gameId,
-      label: pathLabel(path, today),
+      label: count === 1 ? name : `${name} ${count}`,
       detail: `${path.moveCount} 手`,
     })
   }
@@ -100,24 +112,69 @@ export function stepLabel(step: number, total: number): string {
   return `${step}手目`
 }
 
+/** ラベルの位置を出すのに要るカメラの値。UI スレッドから JS へ渡る唯一の形。 */
+export type CameraSnapshot = {
+  yaw: number
+  pitch: number
+  distance: number
+  targetX: number
+  targetY: number
+  targetZ: number
+}
+
+/**
+ * 同じカメラか。**厳密一致で見る**（描画は毎フレーム動くので、
+ * 「動いていないときだけ再レンダしない」ことだけができればよい）。
+ */
+export function sameCamera(a: CameraSnapshot, b: CameraSnapshot): boolean {
+  // UI スレッドのフレームループから呼ぶので worklet。
+  'worklet'
+  return (
+    a.yaw === b.yaw &&
+    a.pitch === b.pitch &&
+    a.distance === b.distance &&
+    a.targetX === b.targetX &&
+    a.targetY === b.targetY &&
+    a.targetZ === b.targetZ
+  )
+}
+
+/** ラベル 1 枚が画面で占める横幅の見積もり。和文は全角なので字数 × 字幅で足りる。 */
+export function labelWidth(word: string, step: string | null): number {
+  return Math.min(
+    SPACE_LABEL_MAX_WIDTH,
+    Math.max(
+      word.length * SPACE_LABEL_WORD_CHAR_WIDTH,
+      (step?.length ?? 0) * SPACE_LABEL_STEP_CHAR_WIDTH,
+    ),
+  )
+}
+
+export type PlacedBox = {
+  x: number
+  y: number
+  /** ラベルの横幅（衝突判定に使う）。 */
+  width: number
+}
+
 /**
  * 先に置いたラベルと重なるなら下へずらした y。
  *
  * **実データで必要になった**：「広角レンズ → レンズ」のように 2 手が
  * ほとんど同じ場所に来ると、語も手数も完全に重なって読めない。
  * **消さずにずらす**（自分が作った語が消えるのがいちばん困る）。
+ *
+ * 重なりは**それぞれのラベルの幅**で見る。固定幅で見ると、十分離れている
+ * 短い語まで段下げされて「節の無いところに浮いたラベル」になる。
+ * 段を下げたぶんは呼び出し側が引き出し線で節と繋ぐこと。
  */
-export function stackLabelY(
-  placed: readonly { x: number; y: number }[],
-  x: number,
-  y: number,
-): number {
-  let candidate = y
+export function stackLabelY(placed: readonly PlacedBox[], box: PlacedBox): number {
+  let candidate = box.y
   for (let guard = 0; guard < SPACE_LABEL_STACK_MAX; guard += 1) {
     let hit = false
     for (const label of placed) {
       if (
-        Math.abs(label.x - x) < SPACE_LABEL_COLLIDE_WIDTH &&
+        Math.abs(label.x - box.x) < (label.width + box.width) / 2 &&
         Math.abs(label.y - candidate) < SPACE_LABEL_STACK_STEP
       ) {
         hit = true
@@ -128,6 +185,47 @@ export function stackLabelY(
     candidate += SPACE_LABEL_STACK_STEP
   }
   return candidate
+}
+
+/**
+ * 経路のうち、座標を持つ節だけを拾う。
+ *
+ * **座標の無い語は落とすが、手数の添字は落とさない。** 入力語彙（208,707 語）は
+ * 出力語彙（102,520 語）より広く、`GET /api/collection` の出会った語も 2,000 件で
+ * 打ち切られるので、経路の語が座標を持たないことは実際に起こる。
+ * 添字を詰めると「2手目」が本当は 3 手目になり、**歩いていない直線**が引かれる。
+ */
+export function pathNodes(
+  words: readonly string[],
+  indexOfWord: (word: string) => number | undefined,
+): { indices: number[]; steps: number[] } {
+  const indices: number[] = []
+  const steps: number[] = []
+  for (let step = 0; step < words.length; step += 1) {
+    const index = indexOfWord(words[step] as string)
+    if (index === undefined) continue
+    indices.push(index)
+    steps.push(step)
+  }
+  return { indices, steps }
+}
+
+/**
+ * 経路が 1 本も無いときに「宇宙そのもの」を画面に収めるための標本。
+ * 全点を渡すと `yawPitchToFace` の総当たりが効かないので、等間隔で間引く。
+ */
+export function overviewPoints(scene: SpaceScene, sample = SPACE_OVERVIEW_SAMPLE): Vec3[] {
+  const out: Vec3[] = []
+  if (scene.count === 0) return out
+  const stride = Math.max(1, Math.ceil(scene.count / sample))
+  for (let i = 0; i < scene.count; i += stride) {
+    out.push([
+      scene.xyz[i * 3] as number,
+      scene.xyz[i * 3 + 1] as number,
+      scene.xyz[i * 3 + 2] as number,
+    ])
+  }
+  return out
 }
 
 export type SpaceEmphasis = {

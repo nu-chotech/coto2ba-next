@@ -16,10 +16,10 @@
  */
 
 import { SPACE_LABEL_LIMIT } from '@coto2ba/contracts'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
-import { runOnJS, useAnimatedReaction, useSharedValue } from 'react-native-reanimated'
-import { spacing, typography } from '../../theme'
+import { runOnJS, useFrameCallback, useSharedValue } from 'react-native-reanimated'
+import { borderWidth, spacing, typography } from '../../theme'
 import type { SpaceCamera } from './camera'
 import {
   SPACE_LABEL_MARGIN,
@@ -29,18 +29,9 @@ import {
   SPACE_PATH_LABEL_MIN_OPACITY,
   SPACE_WORLD_SCALE,
 } from './constants'
-import { stackLabelY, stepLabel } from './paths'
+import { type CameraSnapshot, labelWidth, sameCamera, stackLabelY, stepLabel } from './paths'
 import { projectAll } from './projection'
-import type { SpaceScene } from './scene'
-
-type CameraSnapshot = {
-  yaw: number
-  pitch: number
-  distance: number
-  targetX: number
-  targetY: number
-  targetZ: number
-}
+import type { SpacePath, SpaceScene } from './scene'
 
 /** JS 側の作業領域（毎回確保しない）。 */
 type Scratch = {
@@ -50,6 +41,16 @@ type Scratch = {
   depth: Float32Array
 }
 
+/** まだ何も届いていない状態。`distance === 0` の間はラベルを出さない。 */
+const STILL_CAMERA: CameraSnapshot = {
+  yaw: 0,
+  pitch: 0,
+  distance: 0,
+  targetX: 0,
+  targetY: 0,
+  targetZ: 0,
+}
+
 type PlacedLabel = {
   id: string
   word: string
@@ -57,6 +58,13 @@ type PlacedLabel = {
   step: string | null
   x: number
   y: number
+  /** 衝突判定に使う横幅。 */
+  width: number
+  /**
+   * 重なりを避けて下にずらしたとき、引き出し線を引き始める y。
+   * ずらしていなければ null（線は引かない）。
+   */
+  leaderTop: number | null
   opacity: number
 }
 
@@ -68,8 +76,8 @@ export type SpaceLabelsProps = {
   color: string
   /** 補助の文字色（手数の添え字）。 */
   subColor: string
-  /** 選択中の経路の点のインデックス列。無ければ null。 */
-  activePath: Int32Array | null
+  /** 選択中の経路。無ければ null。 */
+  activePath: SpacePath | null
 }
 
 export function SpaceLabels({
@@ -82,15 +90,7 @@ export function SpaceLabels({
   activePath,
 }: SpaceLabelsProps) {
   const limit = scene.interactiveCount
-  const [snapshot, setSnapshot] = useState<CameraSnapshot>({
-    yaw: 0,
-    pitch: 0,
-    distance: 0,
-    targetX: 0,
-    targetY: 0,
-    targetZ: 0,
-  })
-  const lastPushedAt = useSharedValue(0)
+  const [snapshot, setSnapshot] = useState<CameraSnapshot>(STILL_CAMERA)
 
   const scratch = useMemo<Scratch>(
     () => ({
@@ -102,22 +102,51 @@ export function SpaceLabels({
     [limit],
   )
 
-  useAnimatedReaction(
-    () => ({
-      yaw: camera.yaw.value,
-      pitch: camera.pitch.value,
-      distance: camera.distance.value,
-      targetX: camera.targetX.value,
-      targetY: camera.targetY.value,
-      targetZ: camera.targetZ.value,
-    }),
-    (current) => {
-      const now = Date.now()
-      if (now - lastPushedAt.value < SPACE_LABEL_UPDATE_MS) return
-      lastPushedAt.value = now
-      runOnJS(setSnapshot)(current)
-    },
-  )
+  /**
+   * カメラの購読。**UI スレッドのフレームループから間引いて送る。**
+   *
+   * 2 つ試してどちらも駄目だったので、この形に落ち着いた（実 Skia の Web で確認）:
+   * - `useAnimatedReaction`：**mapper が最初の 1 回しか走らない**。経路を切り替えても
+   *   指で回してもラベルが前の位置に固まる（この差分の前はこれで壊れていた）
+   * - JS スレッドから `camera.yaw.value` を定期的に読む：**JS 側から書いた値しか見えない**。
+   *   初回の `frameTo(immediate)`（JS からの代入）は反映されるが、`withTiming` や
+   *   ジェスチャ（UI スレッドの書き込み）は届かない
+   *
+   * `useFrameCallback` は UI 側の `requestAnimationFrame` ループなので、
+   * どちらの問題も踏まない。**間引きと trailing（最後の 1 回）を同時に満たす**のも大事で、
+   * 「間引いて捨てる」実装だと慣性が止まった最後の 110ms ぶんが永久に届かず、
+   * ラベルが恒常的に節からずれる。ここは毎フレーム見に行くので、
+   * 動きが止まった直後のフレームで必ず最新が送られる。
+   */
+  const { yaw, pitch, distance, targetX, targetY, targetZ } = camera
+  const lastPushedAt = useSharedValue(0)
+  const pushed = useSharedValue<CameraSnapshot>(STILL_CAMERA)
+
+  /**
+   * **`useCallback` で包むこと。** `useFrameCallback` は
+   * `useEffect(..., [callback])` で登録し直すので、包まないと**毎レンダで
+   * 登録し直し**になる。実 Skia の Web では、経路を切り替えた直後の
+   * 連続したレンダでフレームループが止まり、ラベルが更新されなくなった。
+   */
+  const pushCamera = useCallback(() => {
+    'worklet'
+    const now = Date.now()
+    if (now - lastPushedAt.value < SPACE_LABEL_UPDATE_MS) return
+    const next = {
+      yaw: yaw.value,
+      pitch: pitch.value,
+      distance: distance.value,
+      targetX: targetX.value,
+      targetY: targetY.value,
+      targetZ: targetZ.value,
+    }
+    if (sameCamera(pushed.value, next)) return
+    lastPushedAt.value = now
+    pushed.value = next
+    runOnJS(setSnapshot)(next)
+  }, [yaw, pitch, distance, targetX, targetY, targetZ, lastPushedAt, pushed])
+
+  useFrameCallback(pushCamera)
 
   const labels = useMemo<PlacedLabel[]>(() => {
     if (limit === 0 || width <= 0 || height <= 0 || snapshot.distance <= 0) return []
@@ -140,29 +169,51 @@ export function SpaceLabels({
     )
 
     // ── 経路を選んでいるとき：その節だけを、順番つきで出す ──
-    if (activePath !== null && activePath.length > 0) {
+    if (activePath !== null && activePath.indices.length > 0) {
       const placed: PlacedLabel[] = []
-      for (let k = 0; k < activePath.length; k += 1) {
-        const index = activePath[k] as number
-        if (index < 0 || index >= limit) continue
-        if (scratch.sizeMul[index] <= 0) continue
-        const node = scene.nodes[index]
-        if (node === undefined || node.word.length === 0) continue
+      const place = (index: number, id: string, word: string, step: string | null) => {
+        if (index < 0 || index >= limit) return
+        if (scratch.sizeMul[index] <= 0) return
         const x = scratch.screen[index * 2] as number
         const y = scratch.screen[index * 2 + 1] as number
         // 画面の外に出た節のラベルは出さない（見えていない点の名前は邪魔なだけ）。
-        if (x < -SPACE_LABEL_MARGIN || x > width + SPACE_LABEL_MARGIN) continue
-        if (y < -SPACE_LABEL_MARGIN || y > height + SPACE_LABEL_MARGIN) continue
+        if (x < -SPACE_LABEL_MARGIN || x > width + SPACE_LABEL_MARGIN) return
+        if (y < -SPACE_LABEL_MARGIN || y > height + SPACE_LABEL_MARGIN) return
+        const top = labelY(scene, scratch, index)
+        const box = { x, y: top, width: labelWidth(word, step) }
+        const stacked = stackLabelY(placed, box)
         placed.push({
-          // 同じ語を 2 度通る経路があるので、順番も鍵に混ぜる。
-          id: `${k}:${node.word}`,
-          word: node.word,
-          step: stepLabel(k, activePath.length),
+          id,
+          word,
+          step,
           x,
-          y: stackLabelY(placed, x, labelY(scene, scratch, index)),
+          y: stacked,
+          width: box.width,
+          // ずらしたぶんは引き出し線で節と繋ぐ（浮いたラベルにしない）。
+          leaderTop: stacked > top ? top : null,
           // 主役なので、奥に回っても読める下限を持たせる。
           opacity: Math.max(scratch.alphaMul[index] as number, SPACE_PATH_LABEL_MIN_OPACITY),
         })
+      }
+
+      for (let k = 0; k < activePath.indices.length; k += 1) {
+        const index = activePath.indices[k] as number
+        const node = scene.nodes[index]
+        if (node === undefined || node.word.length === 0) continue
+        // 手数は**元の経路での添字**で数える（座標の無い語が落ちてもずれない）。
+        const step = stepLabel(activePath.steps[k] as number, activePath.totalSteps)
+        place(index, `${k}:${node.word}`, node.word, step)
+      }
+
+      // 今日のゴールが経路の外にあるときだけ、金の輪が何なのかを添える。
+      const goalWord = scene.nodes[scene.goalIndex]?.word
+      if (
+        scene.goalIndex >= 0 &&
+        goalWord !== undefined &&
+        goalWord.length > 0 &&
+        !activePath.indices.includes(scene.goalIndex)
+      ) {
+        place(scene.goalIndex, `goal:${goalWord}`, goalWord, '今日のゴール')
       }
       return placed
     }
@@ -187,12 +238,32 @@ export function SpaceLabels({
       step: null,
       x: scratch.screen[index * 2] as number,
       y: labelY(scene, scratch, index),
+      width: labelWidth(scene.nodes[index]?.word ?? '', null),
+      leaderTop: null,
       opacity: scratch.alphaMul[index] as number,
     }))
   }, [scene, limit, snapshot, width, height, scratch, activePath])
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {/* ずらしたラベルと節を繋ぐ細い線。節と同じ色なので主役の線には混ざらない。 */}
+      {labels.map((label) =>
+        label.leaderTop === null ? null : (
+          <View
+            key={`leader:${label.id}`}
+            style={[
+              styles.leader,
+              {
+                left: label.x,
+                top: label.leaderTop,
+                height: label.y - label.leaderTop,
+                backgroundColor: subColor,
+                opacity: label.opacity,
+              },
+            ]}
+          />
+        ),
+      )}
       {labels.map((label) => (
         <View
           key={label.id}
@@ -239,4 +310,5 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   text: { textAlign: 'center' },
+  leader: { position: 'absolute', width: borderWidth.hairline },
 })
