@@ -25,6 +25,7 @@ import {
   type MoveResponse,
   normalizeWord,
   RATIO_STEP_COUNT,
+  rankToHeat,
 } from '@coto2ba/contracts'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -42,6 +43,7 @@ import {
   INPUT_OOV_MESSAGE,
   INPUT_SANITY_MAX_LENGTH,
   MIN_TAP_SIZE,
+  MIX_BURST_HEAT_GAIN,
   MixOverlay,
   MixWheel,
   RankMeter,
@@ -85,6 +87,18 @@ const HOW_TO_PLAY = [
   `1 回の挑戦で打てるのは ${MAX_MOVES} 手まで。ヒントは「語 + 混ぜ方」を教えます。`,
   'ロビーに戻っても挑戦は残ります。ロビーの「つづきから」で続きを遊べます。',
 ].join('\n\n')
+
+/**
+ * 混合の演出をどれだけ強くするか（0〜1）。
+ *
+ * **手数ではなく「どれだけゴールに近づいたか」**で決める。ものさしは `RankMeter` と
+ * 同じ対数の温度（`rankToHeat`）。遠ざかったときは 0（演出は静かなまま）。
+ */
+function mixIntensity(response: MoveResponse | null): number {
+  if (response === null) return 0
+  const gain = rankToHeat(response.rank) - rankToHeat(response.prev_rank)
+  return Math.min(Math.max(gain / MIX_BURST_HEAT_GAIN, 0), 1)
+}
 
 export default function GameScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -439,6 +453,9 @@ export default function GameScreen() {
         from={pending?.from ?? detail.current}
         input={pending?.input ?? ''}
         result={revealed?.result ?? null}
+        resultTier={revealed?.tier ?? null}
+        intensity={mixIntensity(revealed)}
+        tierUp={revealed !== null && isTierUp(revealed.prev_tier, revealed.tier)}
         onFinished={finishMix}
       />
     </TierBackground>

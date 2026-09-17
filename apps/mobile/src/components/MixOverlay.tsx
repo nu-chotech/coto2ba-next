@@ -8,13 +8,20 @@
  * （この演出は「結果が来たら開く」だけに徹する）。
  *
  * ガラスは使わない（`GlassView` の opacity 0 が描画されない問題を避ける）。
+ *
+ * **時間は伸ばさない。** 混合の体感が 1 秒を超えると展示で待たされている感じになる
+ * （SPEC の展示可能条件）。厚みは長さではなく「落差」で出す ──
+ * 待っている間は静かに脈打つだけ、結果が来た瞬間に
+ * **地の温度が変わり、光が弾ける**。どれだけ強く弾けるかは
+ * 「どれだけゴールに近づいたか」（`intensity`）で決める。
  */
 
 import type { TierId } from '@coto2ba/contracts'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Modal, StyleSheet, Text, View } from 'react-native'
 import Animated, {
   Easing,
+  interpolateColor,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -23,6 +30,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated'
 import {
+  borderWidth,
   heroFontSize,
   opacity as opacityToken,
   radius,
@@ -32,9 +40,12 @@ import {
 } from '../theme'
 import {
   HERO_LINE_HEIGHT_RATIO,
+  MIX_BURST_SCALE,
   MIX_CONVERGE_MS,
   MIX_CORE_PULSE,
   MIX_CORE_SIZE,
+  MIX_HALO_OPACITY,
+  MIX_HALO_SCALE,
   MIX_HOLD_MS,
   MIX_PULSE_MS,
   MIX_RESULT_FROM_SCALE,
@@ -53,25 +64,67 @@ export type MixOverlayProps = {
   input: string
   /** 結果の語。サーバーが返るまで null（その間は光が脈打つ）。 */
   result: string | null
+  /**
+   * 結果の演出帯。`tier` と違えば **地の温度が目の前で変わる**。
+   * サーバーが返るまで null（そのあいだは今の帯のまま）。
+   */
+  resultTier?: TierId | null
+  /**
+   * どれだけゴールに近づいたか（0〜1）。光の弾け方の強さ。
+   * ランクの縮みを `rankToHeat` で測ったもの（`RankMeter` と同じものさし）。
+   */
+  intensity?: number
+  /** 演出帯が上がったか。上がったときだけ光の輪が広がる。 */
+  tierUp?: boolean
   /** 結果を見せ終わったら呼ぶ。画面はここでゲーム状態を差し替える。 */
   onFinished: () => void
 }
 
-export function MixOverlay({ visible, tier, from, input, result, onFinished }: MixOverlayProps) {
+export function MixOverlay({
+  visible,
+  tier,
+  from,
+  input,
+  result,
+  resultTier = null,
+  intensity = 0,
+  tierUp = false,
+  onFinished,
+}: MixOverlayProps) {
   const { paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
+  /** 結果の帯。まだ来ていなければ今の帯（＝地は変わらない）。 */
+  const after = paletteForTier(resultTier ?? tier)
+  /** 0〜1 に丸めておく（サーバーの値で演出が暴れないように）。 */
+  const burst = Math.min(Math.max(intensity, 0), 1)
   const converge = useSharedValue(0)
   const glow = useSharedValue(0)
   const reveal = useSharedValue(0)
 
-  // 開いた瞬間：2 語を中央に寄せ、光を脈打たせる。
+  /**
+   * 見せている結果の語。**閉じ始めても消さない。**
+   *
+   * 閉じるときに親は `result` を null に戻す（次の手の準備）が、Modal は
+   * フェードアウトのあいだまだ描かれている。そこで元に戻すと、消えぎわに
+   * 「錬成中…」と 2 語が一瞬だけ蘇ってちらつく。開くときにだけ捨てる。
+   */
+  const [shownResult, setShownResult] = useState<string | null>(null)
+
   useEffect(() => {
-    if (!visible) {
-      converge.value = 0
-      glow.value = 0
-      reveal.value = 0
-      return
-    }
+    if (visible) setShownResult(null)
+  }, [visible])
+
+  useEffect(() => {
+    if (result !== null) setShownResult(result)
+  }, [result])
+
+  // 開いた瞬間：2 語を中央に寄せ、光を脈打たせる。
+  // **閉じるときには戻さない**（戻すと消えぎわに最初の絵が一瞬出る）。
+  useEffect(() => {
+    if (!visible) return
+    converge.value = 0
+    glow.value = 0
+    reveal.value = 0
     converge.value = withTiming(1, {
       duration: MIX_CONVERGE_MS,
       easing: Easing.inOut(Easing.cubic),
@@ -123,13 +176,25 @@ export function MixOverlay({ visible, tier, from, input, result, onFinished }: M
     ],
   }))
 
-  const coreStyle = useAnimatedStyle(() => ({
-    opacity: converge.value * (1 - reveal.value),
-    transform: [
-      {
-        scale: 1 - MIX_WORD_SHRINK + MIX_WORD_SHRINK * converge.value + MIX_CORE_PULSE * glow.value,
-      },
-    ],
+  // 結果が来た瞬間、近づいたぶんだけ光の玉が膨らみながら消える。
+  const coreStyle = useAnimatedStyle(() => {
+    const base =
+      1 - MIX_WORD_SHRINK + MIX_WORD_SHRINK * converge.value + MIX_CORE_PULSE * glow.value
+    return {
+      opacity: converge.value * (1 - reveal.value),
+      transform: [{ scale: base + reveal.value * MIX_BURST_SCALE * burst }],
+    }
+  })
+
+  // 地の温度。帯が変わらなければ同じ色どうしの補間なので、何も起きない。
+  const backdropStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(reveal.value, [0, 1], [colors.bg, after.bg]),
+  }))
+
+  // 帯が上がったときだけ広がる光の輪。紙吹雪のような既製の演出はしない。
+  const haloStyle = useAnimatedStyle(() => ({
+    opacity: tierUp ? MIX_HALO_OPACITY * reveal.value * (1 - reveal.value) * 4 : 0,
+    transform: [{ scale: 1 + reveal.value * (MIX_HALO_SCALE - 1) }],
   }))
 
   const resultStyle = useAnimatedStyle(() => ({
@@ -139,8 +204,13 @@ export function MixOverlay({ visible, tier, from, input, result, onFinished }: M
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent>
-      <View style={[styles.root, { backgroundColor: colors.bg }]}>
+      <Animated.View style={[styles.root, backdropStyle]}>
         <View style={styles.stage}>
+          <Animated.View
+            style={[styles.halo, { borderColor: after.accent }, haloStyle]}
+            pointerEvents="none"
+          />
+
           <Animated.Text
             numberOfLines={1}
             style={[typography.title, styles.word, { color: colors.sub }, leftStyle]}
@@ -160,7 +230,7 @@ export function MixOverlay({ visible, tier, from, input, result, onFinished }: M
             {input}
           </Animated.Text>
 
-          {result !== null ? (
+          {shownResult !== null ? (
             <Animated.Text
               numberOfLines={2}
               adjustsFontSizeToFit
@@ -169,21 +239,21 @@ export function MixOverlay({ visible, tier, from, input, result, onFinished }: M
                 styles.result,
                 {
                   color: colors.text,
-                  fontSize: heroFontSize(result),
-                  lineHeight: heroFontSize(result) * HERO_LINE_HEIGHT_RATIO,
+                  fontSize: heroFontSize(shownResult),
+                  lineHeight: heroFontSize(shownResult) * HERO_LINE_HEIGHT_RATIO,
                 },
                 resultStyle,
               ]}
             >
-              {result}
+              {shownResult}
             </Animated.Text>
           ) : null}
         </View>
 
         <Text style={[typography.label, styles.caption, { color: colors.sub }]}>
-          {result === null ? '錬成中…' : ' '}
+          {shownResult === null ? '錬成中…' : ' '}
         </Text>
-      </View>
+      </Animated.View>
     </Modal>
   )
 }
@@ -198,6 +268,13 @@ const styles = StyleSheet.create({
     height: MIX_CORE_SIZE,
     borderRadius: radius.pill,
     opacity: opacityToken.full,
+  },
+  halo: {
+    position: 'absolute',
+    width: MIX_CORE_SIZE,
+    height: MIX_CORE_SIZE,
+    borderRadius: radius.pill,
+    borderWidth: borderWidth.thick,
   },
   result: { textAlign: 'center', paddingHorizontal: spacing.lg },
   caption: { position: 'absolute', bottom: spacing.xxxl },

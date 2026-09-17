@@ -27,6 +27,20 @@ export const MIX_WORD_SHRINK = 0.25
 export const MIX_CORE_PULSE = 0.18
 /** 結果の語が現れるときの初期スケール。 */
 export const MIX_RESULT_FROM_SCALE = 0.86
+/**
+ * 「大きく近づいた」と見なすランクの縮み幅（`rankToHeat` の差）。
+ *
+ * ランクは対数の温度で測る（`RankMeter` と同じものさし）。この幅ぶん温度が上がったら
+ * 演出は最大。**手数ではなく「どれだけ近づいたか」で強さを決める**ので、
+ * 1 手目の大当たりも終盤の詰めも同じ基準で光る。
+ */
+export const MIX_BURST_HEAT_GAIN = 0.3
+/** 大きく近づいたときに光の玉がどこまで膨らむか（基準のスケールに足す量）。 */
+export const MIX_BURST_SCALE = 1.6
+/** 演出帯が上がったときに広がる光の輪の、最大の直径（光の玉に対する比）。 */
+export const MIX_HALO_SCALE = 3.2
+/** 光の輪の最も濃いときの不透明度。**地を塗り潰さない**（背景の温度変化を隠さない）。 */
+export const MIX_HALO_OPACITY = 0.45
 
 /** 語が入れ替わるとき、いったん縮む倍率。 */
 export const WORD_FADE_SCALE = 0.92
@@ -139,6 +153,21 @@ export const TIER_CELL_GAP = 5
 // ── 結果画面 ────────────────────────────────────────────────
 /** 実績バッジが順番に出てくる間隔。 */
 export const ACHIEVEMENT_STAGGER_MS = 120
+/**
+ * 経路のマスが 1 つずつ点いていく間隔。
+ *
+ * **ここが「意味空間を歩いた軌跡」を見せる演出そのもの**なので、速すぎると
+ * ただの点滅に見える。20 手（`MAX_MOVES`）でも 1 秒強に収まる値。
+ */
+export const TIER_PATH_DRAW_STEP_MS = 55
+/** マスが点くときの、始まりのスケール。 */
+export const TIER_PATH_FROM_SCALE = 0.4
+/** 結果の見出しが下から上がってくる距離。 */
+export const RESULT_HEADLINE_RISE = 14
+/** 完全錬成のときだけ、見出しがひと呼吸おいて光る周期。 */
+export const RESULT_PERFECT_GLOW_MS = 1400
+/** 完全錬成の見出しの光の振れ幅。 */
+export const RESULT_PERFECT_GLOW = 0.35
 
 // ── 背景 ────────────────────────────────────────────────────
 /** tier が切り替わるときの背景の補間時間。 */
