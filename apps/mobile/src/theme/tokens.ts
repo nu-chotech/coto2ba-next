@@ -1,26 +1,31 @@
 /**
- * デザイントークン。
+ * デザイントークンの入り口。
  *
- * 方向性（SPEC §8.5）：暗い宇宙の底のような地。和文タイポグラフィが主役。
- * 装飾は少なく、余白と字面で見せる。角丸は大きめ。
- * ここに無い色・寸法をコンポーネント側に直書きしないこと。
+ * 中身は役割ごとに分かれている（どれも **react-native に依存しない**ので、
+ * テストから素直に読める）:
+ *
+ * - `palettes.ts` 色（ライト / ダークの役割色）
+ * - `tiers.ts`    演出帯ごとの色
+ * - `metrics.ts`  余白・角丸・時間・レイアウト
+ * - `type.ts`     文字の段・セーフエリアの足し方
+ * - `scheme.tsx`  `ThemeProvider` / `useTheme()`
+ *
+ * このファイルには `Platform` が要るもの（フォント）だけが残っている。
+ *
+ * 方向性（SPEC §8.5 / §4）: **静かな土台 + 演出で爆発。** レイアウト・ナビ・部品は
+ * iOS 純正に徹して静かにし、「混ぜた瞬間」と「クリア」だけ派手にする。
+ * 和文タイポグラフィが主役。装飾は少なく、余白と字面で見せる。
+ *
+ * **ここに無い色・寸法をコンポーネント側に直書きしないこと。**
  */
 
 import type { TextStyle } from 'react-native'
 import { Platform } from 'react-native'
-import { PALETTES } from './palettes'
 import { tierPalettes } from './tiers'
 import { TYPE_SCALE } from './type'
 
 /** 文字の段とセーフエリアの足し方は `type.ts`。ここからも取れる。 */
 export * from './type'
-
-/**
- * ガラスの縁と、フォールバックに重ねる地。**ダーク固定の互換シム。**
- * スキームに追従する値は `PALETTES[scheme].glassEdge` / `.glassFallbackFill`。
- */
-export const glassEdge = PALETTES.dark.glassEdge
-export const glassFallbackFill = PALETTES.dark.glassFallbackFill
 
 // ── タイポグラフィ ──────────────────────────────────────────
 /**
