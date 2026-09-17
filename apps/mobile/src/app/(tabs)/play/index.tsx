@@ -14,6 +14,8 @@ import {
   type Difficulty,
   type Game,
   MAX_MOVES,
+  ROOM_MAX_PLAYERS,
+  ROOM_MIN_PLAYERS,
 } from '@coto2ba/contracts'
 import { useRouter } from 'expo-router'
 import { useCallback, useState } from 'react'
@@ -40,6 +42,7 @@ import {
   useDailyQuery,
   useMeQuery,
 } from '../../../features/game'
+import { ROOM_ENTRY_HREF } from '../../../features/rooms'
 import {
   heroFontSize,
   layout,
@@ -229,6 +232,23 @@ export default function LobbyScreen() {
             }
           />
           {me.isPending ? <Skeleton width="50%" height={14} /> : null}
+        </GlassCard>
+
+        {/* ── みんなで対戦 ──
+            **この 1 枚を消すと対戦機能がロビーから切り離せる**
+            （間に合わなかったときに機能ごと落とせるようにするための境界）。 */}
+        <GlassCard tint={colors.glassTint} style={styles.card}>
+          <Text style={[typography.label, { color: colors.sub }]}>みんなで対戦</Text>
+          <Text style={[typography.caption, { color: colors.sub }]}>
+            {ROOM_MIN_PLAYERS}〜{ROOM_MAX_PLAYERS} 人で同じお題を解いて、
+            最初にゴールへ着いた人が勝ちです
+          </Text>
+          <GlassButton
+            title="部屋を作る・参加する"
+            onPress={() => router.push(ROOM_ENTRY_HREF)}
+            tier={LOBBY_TIER}
+            variant="secondary"
+          />
         </GlassCard>
 
         {createError !== null ? (

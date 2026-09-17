@@ -18,8 +18,10 @@ import {
   achievementsResponseSchema,
   apiErrorSchema,
   type CreateGameRequest,
+  type CreateRoomRequest,
   collectionResponseSchema,
   createGameRequestSchema,
+  createRoomRequestSchema,
   dailyResponseSchema,
   deviceRegisterResponseSchema,
   ERROR_MESSAGES_JA,
@@ -34,6 +36,8 @@ import {
   moveResponseSchema,
   type PatchMeRequest,
   patchMeRequestSchema,
+  roomCodeSchema,
+  roomResponseSchema,
   transferClaimRequestSchema,
   transferClaimResponseSchema,
   transferCreateResponseSchema,
@@ -348,6 +352,49 @@ export function claimTransfer(token: string, signal?: AbortSignal) {
     schema: transferClaimResponseSchema,
     signal,
   })
+}
+
+// ── 対戦ルーム（SPEC §9）────────────────────────────────────
+/**
+ * **この節ごと消せば対戦機能が外れる。** 他の API はここを参照していない。
+ *
+ * コードは必ず `roomCodeSchema` を通してから URL に載せる
+ * （読み上げてもらって手入力する導線があるので、小文字と前後の空白を吸収する）。
+ */
+
+function roomPath(code: string, suffix = ''): string {
+  return `/api/rooms/${encodeURIComponent(roomCodeSchema.parse(code))}${suffix}`
+}
+
+export function createRoom(input: CreateRoomRequest, signal?: AbortSignal) {
+  return request('/api/rooms', {
+    method: 'POST',
+    body: createRoomRequestSchema.parse(input),
+    schema: roomResponseSchema,
+    signal,
+  })
+}
+
+/** 参加は**冪等**。既に入っている部屋に投げても増えない。 */
+export function joinRoom(code: string, signal?: AbortSignal) {
+  return request(roomPath(code, '/join'), {
+    method: 'POST',
+    schema: roomResponseSchema,
+    signal,
+  })
+}
+
+export function startRoom(code: string, signal?: AbortSignal) {
+  return request(roomPath(code, '/start'), {
+    method: 'POST',
+    schema: roomResponseSchema,
+    signal,
+  })
+}
+
+/** 1 秒ポーリングの取得先。**サーバー側は専用のレート制限バケツ。** */
+export function getRoom(code: string, signal?: AbortSignal) {
+  return request(roomPath(code), { schema: roomResponseSchema, signal })
 }
 
 // ── 端末トークン（Better Auth のフォールバック）──────────────

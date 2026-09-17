@@ -55,6 +55,7 @@ import {
   useMoveMutation,
   useWordDescriptionQuery,
 } from '../../../../features/game'
+import { normalizeRoomCode, RoomRace, roomHref } from '../../../../features/rooms'
 import { feedback, feedbackForRankChange } from '../../../../lib/feedback'
 import { isKnownWord, isVocabReady } from '../../../../lib/vocab'
 import { useUiStore } from '../../../../store/ui'
@@ -63,8 +64,14 @@ import { iconSize, layout, screenPadding, spacing, typography, useTheme } from '
 type Pending = { from: string; input: string }
 
 export default function GameScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>()
+  const { id, room } = useLocalSearchParams<{ id: string; room?: string }>()
   const gameId = typeof id === 'string' ? id : ''
+  /**
+   * 対戦ルームから開かれたときの参加コード（SPEC §9）。
+   * **付いているときだけ**順位のオーバーレイが載り、終局の行き先が部屋の結果になる。
+   * 付いていなければ普段どおりの 1 人用ゲーム画面で、何も変わらない。
+   */
+  const roomCode = typeof room === 'string' && room.length > 0 ? normalizeRoomCode(room) : null
   const router = useRouter()
   const insets = useSafeAreaInsets()
 
@@ -159,14 +166,18 @@ export default function GameScreen() {
     if (response.unlocked_achievements.length > 0) feedback('achievement')
 
     if (response.status !== 'playing') {
+      // ルーム戦の行き先は部屋の結果（勝敗はそこで決まる）。
+      // 自分ひとりの結果は、部屋の結果から「自分の結果を見る」で開ける。
       router.replace(
-        resultHref(
-          gameId,
-          response.unlocked_achievements.map((achievement) => achievement.id),
-        ),
+        roomCode !== null
+          ? roomHref(roomCode)
+          : resultHref(
+              gameId,
+              response.unlocked_achievements.map((achievement) => achievement.id),
+            ),
       )
     }
-  }, [revealed, setMixing, router, gameId])
+  }, [revealed, setMixing, router, gameId, roomCode])
 
   const openHints = useCallback(() => {
     feedback('hint_open')
@@ -241,6 +252,10 @@ export default function GameScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.content, screenPadding(insets)]}
       >
+        {/* 0. 対戦ルームの順位（ルームから来たときだけ。SPEC §9.2）。
+         **他人が打った語は出さない** ── サーバーも返してこない。 */}
+        {roomCode !== null ? <RoomRace code={roomCode} tier={tier} /> : null}
+
         {/* 1. ゴールカード */}
         <GlassCard tint={colors.glassTint} style={styles.card}>
           <View style={styles.row}>
@@ -289,7 +304,9 @@ export default function GameScreen() {
         {finished ? (
           <GlassButton
             title="結果を見る"
-            onPress={() => router.replace(resultHref(gameId))}
+            onPress={() =>
+              router.replace(roomCode !== null ? roomHref(roomCode) : resultHref(gameId))
+            }
             tier={tier}
           />
         ) : (

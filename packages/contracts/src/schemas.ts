@@ -293,6 +293,12 @@ export const roomResponseSchema = z.object({
   /** サーバーが順位順に並べたもの。**端末で並べ替えない。** */
   players: z.array(roomPlayerSchema),
   my_game_id: z.string().nullable(),
+  /**
+   * **自分の**ゲームの状態。自分のものなので返してよい。
+   * これが無いと、クリアした人を部屋の画面がもう一度ゲームへ送り返してしまう
+   * （待機 → ゲーム → 待機 の往復になる。実際に起きた）。
+   */
+  my_game_status: gameStatusSchema.nullable(),
   /** 参加用のディープリンク（QR に入れる）。 */
   join_url: z.string(),
 })

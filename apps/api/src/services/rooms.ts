@@ -31,6 +31,7 @@ import { expoDeepLink } from '../lib/deeplink'
 import { appError } from '../lib/errors'
 import { readableToken } from '../lib/random'
 import { type Challenge, createRoomGame, pickChallenge } from './game'
+import { generateDisplayName } from './names'
 import { canJoin, canStart, isRoomStatus, type RoomPlayerState, rankPlayers } from './room-rules'
 import { rankOf } from './vector'
 
@@ -69,13 +70,22 @@ async function findLiveRoom(db: Db, code: string): Promise<RoomRow> {
   return last
 }
 
+/**
+ * 表示名。**無ければここで作って保存する**（`GET /api/me` と同じ遅延付与）。
+ * これをしないと、`/api/me` を一度も叩いていない端末が「名無し」で部屋に並ぶ。
+ * ブースで全員が「名無し」になると誰が誰だか分からない。
+ */
 async function displayNameOf(db: Db, userId: string): Promise<string> {
   const rows = await db
     .select({ displayName: user.displayName })
     .from(user)
     .where(eq(user.id, userId))
     .limit(1)
-  return rows[0]?.displayName ?? '名無し'
+  const existing = rows[0]?.displayName
+  if (existing !== null && existing !== undefined && existing.length > 0) return existing
+  const generated = await generateDisplayName(db)
+  await db.update(user).set({ displayName: generated }).where(eq(user.id, userId))
+  return generated
 }
 
 /**
@@ -178,11 +188,16 @@ async function syncRoomProgress(db: Db, room: RoomRow): Promise<RoomRow> {
 /** 返す形に組み立てる。**待機中は goal / start を伏せる。** */
 function toResponse(
   room: RoomRow,
-  players: readonly { state: RoomPlayerState; gameId: string | null }[],
+  players: readonly {
+    state: RoomPlayerState
+    gameId: string | null
+    gameStatus: string | null
+  }[],
   viewerId: string,
 ): RoomResponse {
   const status = statusOf(room)
   const revealed = status !== 'waiting'
+  const mine = players.find((p) => p.state.userId === viewerId)
   const ranked = rankPlayers(players.map((p) => p.state))
   const entries: RoomPlayer[] = ranked.map((p) => ({
     user_id: p.userId,
@@ -202,7 +217,8 @@ function toResponse(
     goal: revealed ? room.goal : null,
     start: revealed ? room.start : null,
     players: entries,
-    my_game_id: players.find((p) => p.state.userId === viewerId)?.gameId ?? null,
+    my_game_id: mine?.gameId ?? null,
+    my_game_status: (mine?.gameStatus as RoomResponse['my_game_status']) ?? null,
     join_url: roomJoinUrl(room.code),
   }
 }
