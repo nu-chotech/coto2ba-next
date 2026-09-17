@@ -7,12 +7,20 @@
  * - **Web**: CanvasKit の WASM を非同期で読む必要があり、しかも `Skia` は import 時に
  *   束縛されるので、後から `LoadSkiaWeb()` しても import 済みのモジュールからは見えない
  *   （`WithSkiaWeb` による遅延 import が要る）。**Web は対象外**なので代替表示にする。
+ *
+ * **使うのは図鑑タブだけ。図鑑は宇宙なのでライトモードでも暗いまま**（SPEC §4.3）。
+ * ここをスキームに追従させると、暗い図鑑の上に紙色の板が出て文字が消える。
+ * だから `useTheme()` を使わず、ダーク固定の互換シムから `cosmos` を読む
+ * （覆い隠す画面と同じ地の色になる）。
  */
 
 import { rect } from '@shopify/react-native-skia'
 import type { ReactNode } from 'react'
 import { Platform, StyleSheet, Text, View } from 'react-native'
-import { spacing, typography, useTheme } from '../theme'
+import { paletteForTier, spacing, typography } from '../theme'
+
+/** 図鑑の地。スキームに追従させない（図鑑はライトでも暗い）。 */
+const SPACE_COLORS = paletteForTier('cosmos')
 
 /**
  * Skia が実際に使えるか。**存在チェックではなく 1 回呼んで確かめる。**
@@ -32,14 +40,12 @@ export function isSkiaAvailable(): boolean {
 }
 
 export function SkiaGate({ children, label }: { children: ReactNode; label: string }) {
-  const { paletteForTier } = useTheme()
   if (isSkiaAvailable()) return <>{children}</>
 
-  const colors = paletteForTier('mono')
   return (
-    <View style={[styles.fallback, { backgroundColor: colors.bg }]}>
-      <Text style={[styles.title, { color: colors.text }]}>{label}</Text>
-      <Text style={[styles.body, { color: colors.sub }]}>
+    <View style={styles.fallback}>
+      <Text style={styles.title}>{label}</Text>
+      <Text style={styles.body}>
         {Platform.OS === 'web'
           ? 'ブラウザでは 3D 表示に対応していません。Expo Go で開くと見られます。'
           : 'この端末では描画エンジンを使えませんでした。'}
@@ -59,7 +65,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm,
     padding: spacing.xl,
+    backgroundColor: SPACE_COLORS.bg,
   },
-  title: { ...typography.title, textAlign: 'center' },
-  body: { ...typography.body, textAlign: 'center' },
+  title: { ...typography.title, color: SPACE_COLORS.text, textAlign: 'center' },
+  body: { ...typography.body, color: SPACE_COLORS.sub, textAlign: 'center' },
 })

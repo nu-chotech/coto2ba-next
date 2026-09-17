@@ -14,6 +14,7 @@
  * ここは **react-native に依存しない**（テストから素直に読めるように）。
  */
 
+import { compositeOver } from './color'
 import { PALETTES, type Scheme } from './palettes'
 import { TIER_PALETTES } from './tiers'
 
@@ -24,12 +25,24 @@ export type TabBarColors = {
   tint: string
   /** 選んでいないタブのラベル。 */
   label: string
+  /**
+   * 選択中のタブに敷く帯。**Android と Web だけ**（iOS はシステムが描く）。
+   *
+   * **指定しないと expo-router の既定 `#444444` が出る。** ライトの画面に
+   * 濃いグレーの帯が出て、その上の藍色のラベルが 1.18:1 になって読めなくなっていた。
+   * 選択中のラベルが載るのは**この帯の上**なので、コントラストはここに対して測る。
+   */
+  indicator: string
 }
 
 export function tabBarColors(scheme: Scheme): TabBarColors {
+  const palette = PALETTES[scheme]
   return {
-    background: PALETTES[scheme].base,
+    background: palette.base,
     tint: TIER_PALETTES[scheme].cosmos.accent,
     label: TIER_PALETTES[scheme].mono.sub,
+    // カードの面と同じ言葉づかいで、地をひと段だけ持ち上げる（沈める）。
+    // 新しい色を発明せず、`surface` を地に重ねた結果を使う。
+    indicator: compositeOver(palette.surface, palette.base),
   }
 }

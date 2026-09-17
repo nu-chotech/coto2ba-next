@@ -11,13 +11,15 @@
  *
  * `ThemeProvider` が端末のライト / ダークを購読する。**地とステータスバーを塗るのは
  * その内側**（`Themed`）でないとスキームの切り替えを受け取れない。
+ *
+ * Web だけ、hydrate のあとに木を 1 回作り直す（`useWebHydrationKey`）。理由は下記。
  */
 
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
-import { useEffect } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { Platform, StyleSheet, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -40,8 +42,40 @@ function useBootstrap(): void {
   }, [])
 }
 
+/**
+ * Web で hydrate のあとに木を 1 回だけ作り直すための key。ネイティブでは `undefined`。
+ *
+ * `expo export --platform web` は各画面を静的 HTML に焼いてから hydrate する。
+ * 焼くのは Node なので `prefers-color-scheme` が無く、**必ずライトで焼かれる**。
+ * hydrate では react-native-web が吐いたクラス名がサーバー側のまま残るので、
+ * ダークの端末で開くと「地は明るいのに、あとから出たカードやロゴは暗い」という
+ * **混ざった状態**になり、エラーカードとロゴが 1.1:1 で消えていた。
+ *
+ * そこで **hydrate 直後に 1 回だけ key を変えて作り直す**。
+ * サーバー由来の DOM を捨ててクライアントのスキームで描き直すので混ざりが消える。
+ *
+ * 作り直しは **mount 直後の 1 回きり**で、スキームを key にはしない
+ * （key にすると、遊んでいる最中に端末のテーマを変えたときに
+ * ナビゲーションが初期化されてゲーム画面から飛ばされる）。
+ *
+ * **ネイティブは静的書き出しも hydrate も無いので、最初から `true`。**
+ * key は常に `undefined` のままで、作り直しも余分な再描画も起きない。
+ */
+function useWebHydrationKey(): string | undefined {
+  const isWeb = Platform.OS === 'web'
+  const [hydrated, setHydrated] = useState(!isWeb)
+
+  useEffect(() => {
+    if (!isWeb) return
+    setHydrated(true)
+  }, [isWeb])
+
+  return isWeb ? (hydrated ? 'client' : 'server') : undefined
+}
+
 export default function RootLayout() {
   useBootstrap()
+  const hydrationKey = useWebHydrationKey()
 
   return (
     <GestureHandlerRootView style={styles.root}>
@@ -49,7 +83,7 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
             <ThemeProvider>
-              <Themed />
+              <Themed key={hydrationKey} />
             </ThemeProvider>
           </QueryClientProvider>
         </SafeAreaProvider>

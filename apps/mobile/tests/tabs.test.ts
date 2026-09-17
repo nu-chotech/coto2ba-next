@@ -6,6 +6,11 @@
  * （iOS 26 未満 / Android / Web）では効く**。そこが破綻しないことを機械で固定する。
  *
  * ラベルが読めないタブバーは、展示で「どのタブにいるか分からない」に直結する。
+ *
+ * **地は「実際に描画で使われるもの」で測ること。**
+ * 選択中のタブは**バーの地ではなく選択中の帯（indicator）の上に載る**ので、
+ * バーの地に対して測ると通ってしまうが実際には読めない、という嘘のテストになる
+ * （実際にそうなっていた。Web のライトで 1.18:1、ダークでも 3.58:1 だった）。
  */
 
 import { describe, expect, it } from 'vitest'
@@ -33,20 +38,42 @@ describe('タブバーの色', () => {
     }
   })
 
-  // 選んでいるタブが分からないと、展示で迷子になる。
-  it('選択中のタブの色が地に対して読める', () => {
+  // 選択中のラベルが載るのは **選択中の帯の上**。バーの地ではない。
+  it('選択中のラベルが、その帯の上で読める', () => {
     for (const scheme of SCHEMES) {
       const colors = tabBarColors(scheme)
-      expect(contrastRatio(colors.tint, colors.background), scheme).toBeGreaterThanOrEqual(READABLE)
+      expect(contrastRatio(colors.tint, colors.indicator), scheme).toBeGreaterThanOrEqual(READABLE)
     }
   })
 
-  it('選んでいないタブのラベルが地に対して読める', () => {
+  // 選んでいないタブは帯を敷かない（CSS で transparent）ので、地はバーそのもの。
+  it('選んでいないタブのラベルが、バーの地の上で読める', () => {
     for (const scheme of SCHEMES) {
       const colors = tabBarColors(scheme)
       expect(contrastRatio(colors.label, colors.background), scheme).toBeGreaterThanOrEqual(
         READABLE,
       )
+    }
+  })
+
+  // 帯を指定しないと expo-router の既定（#444444）が出る。
+  // ライトの画面に濃いグレーの帯が出て、その上の藍色のラベルが 1.18:1 になっていた。
+  it('選択中の帯を自分で指定している（既定の #444444 に任せない）', () => {
+    for (const scheme of SCHEMES) {
+      const colors = tabBarColors(scheme)
+      expect(colors.indicator.toLowerCase(), scheme).not.toBe('#444444')
+      expect(
+        contrastRatio(colors.tint, '#444444'),
+        `${scheme} は既定の帯では読めない`,
+      ).toBeLessThan(READABLE)
+    }
+  })
+
+  // 帯が地と同じ色だと、どのタブにいるか分からない。
+  it('選択中の帯がバーの地と違う色である', () => {
+    for (const scheme of SCHEMES) {
+      const colors = tabBarColors(scheme)
+      expect(colors.indicator, scheme).not.toBe(colors.background)
     }
   })
 

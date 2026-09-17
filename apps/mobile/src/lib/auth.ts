@@ -17,7 +17,7 @@
  *    明示したときだけ。** 「届かなかった」と「無効だった」を区別する判定は
  *    `sessionState.ts`（純粋関数 + 判定表）に切り出してある。
  *    会場の Wi-Fi が一瞬切れただけで来場者の匿名アカウントが消えてはいけない。
- *    同じ理由で **SecureStore が読めなかったときも「トークンが無い」とは見なさない**
+ *    同じ理由で **保存先が読めなかったときも「トークンが無い」とは見なさない**
  *    （`readToken()` が `ok: false` を返す）。匿名サインインは、
  *    「本当にトークンが無い」と確認できたときだけ走らせる。
  * 2. **匿名サインインはグローバルに直列化する。** 同時に何本も走らせると
@@ -26,9 +26,8 @@
  * サーバーがまだ無い状態でもアプリが起動できるように、失敗は投げずに結果型で返す。
  */
 
-import * as SecureStore from 'expo-secure-store'
 import { apiUrl } from './config'
-import { API_TIMEOUT_MS, AUTH_TOKEN_HEADER, SECURE_STORE_AUTH_TOKEN_KEY } from './constants'
+import { API_TIMEOUT_MS, AUTH_TOKEN_HEADER } from './constants'
 import {
   type BodyRead,
   classifySessionBody,
@@ -42,6 +41,12 @@ import {
   type SessionUser,
   shouldDiscardToken,
 } from './sessionState'
+import {
+  deleteStoredToken,
+  readStoredToken,
+  TOKEN_STORE_NAME,
+  writeStoredToken,
+} from './tokenStore'
 
 export type { SessionCheck, SessionUser }
 export {
@@ -56,7 +61,7 @@ const GET_SESSION_PATH = '/api/auth/get-session'
 /** ログの目印。展示中に Metro のログを追えるように。 */
 const LOG = '[auth]'
 
-/** SecureStore は非同期なので、読んだ値をメモリにも持つ（毎リクエストの往復を避ける）。 */
+/** 保存先の読み書きは非同期なので、読んだ値をメモリにも持つ（毎リクエストの往復を避ける）。 */
 let cachedToken: string | null = null
 let cacheLoaded = false
 
@@ -92,20 +97,23 @@ export type TokenRead = { ok: true; token: string | null } | { ok: false }
 /**
  * 保存済みトークンを読む。
  *
- * **SecureStore の読み取りに失敗しても「トークンが無い」とは見なさない。**
+ * **読み取りに失敗しても「トークンが無い」とは見なさない。**
  * キーチェーンは起動直後（デバイスがまだロック解除されていない等）に一時的に
- * 読めないことがある。失敗したときはキャッシュを確定させず（＝次回もう一度読む）、
+ * 読めないことがあるし、Web の `localStorage` はプライベートブラウジングで触れない。
+ * 失敗したときはキャッシュを確定させず（＝次回もう一度読む）、
  * `ok: false` を返して呼び出し側に「判定不能」であることを伝える。
+ *
+ * 保存先の選び方は `lib/tokenStore.ts`（プラットフォーム分岐はそこだけ）。
  */
 export async function readToken(): Promise<TokenRead> {
   if (cacheLoaded) return { ok: true, token: cachedToken }
   try {
-    const stored = await SecureStore.getItemAsync(SECURE_STORE_AUTH_TOKEN_KEY)
+    const stored = await readStoredToken()
     cachedToken = stored
     cacheLoaded = true
     return { ok: true, token: stored }
   } catch (error) {
-    console.warn(`${LOG} SecureStore の読み取りに失敗。トークンの有無は判定不能`, error)
+    console.warn(`${LOG} ${TOKEN_STORE_NAME} の読み取りに失敗。トークンの有無は判定不能`, error)
     // cacheLoaded は立てない（= 次回もう一度読む）。
     return { ok: false }
   }
@@ -127,14 +135,14 @@ export async function setToken(token: string | null): Promise<void> {
   cacheLoaded = true
   try {
     if (token === null) {
-      await SecureStore.deleteItemAsync(SECURE_STORE_AUTH_TOKEN_KEY)
+      await deleteStoredToken()
     } else {
-      await SecureStore.setItemAsync(SECURE_STORE_AUTH_TOKEN_KEY, token)
+      await writeStoredToken(token)
     }
   } catch (error) {
-    // SecureStore が使えない環境（web など）でもメモリ上では動かす。
-    // ただしアプリを閉じるとトークンは消えるので、黙って握り潰さない。
-    console.warn(`${LOG} SecureStore に保存できませんでした（この起動中だけ有効）`, error)
+    // 保存先が使えない環境（サイトデータをブロックしているブラウザなど）でも
+    // メモリ上では動かす。ただし閉じるとトークンは消えるので、黙って握り潰さない。
+    console.warn(`${LOG} ${TOKEN_STORE_NAME} に保存できませんでした（この起動中だけ有効）`, error)
   }
   notify(token)
 }
