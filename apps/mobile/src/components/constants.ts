@@ -105,6 +105,10 @@ export const HINT_SHEET_MAX_HEIGHT_RATIO = 0.62
 /** ヒント 1 件ぶんの高さ（ローディング枠にも使う）。 */
 export const HINT_SLOT_HEIGHT = 48
 
+// ── アクションシート ────────────────────────────────────────
+/** 行の高さ。iOS のアクションシートの行に合わせる（最小タップ領域より大きい）。 */
+export const ACTION_SHEET_ROW_HEIGHT = 56
+
 // ── ボタン ──────────────────────────────────────────────────
 export const BUTTON_PRESSED_SCALE = 0.97
 /** 押せるものの最小の当たり判定（Apple Human Interface Guidelines）。 */
