@@ -131,6 +131,23 @@ def _exit_status(code: object) -> int:
     return 1
 
 
+@pytest.fixture(autouse=True)
+def _relax_min_source_word_count(request, monkeypatch):
+    """既存のテストは数十語規模のソースを使うため、本番想定の下限を無効化しておく。
+
+    `MIN_SOURCE_WORD_COUNT`（Round 4 で追加）は本番想定で 50,000 語超だが、
+    このテストスイートのほとんどは 10〜40 語程度の合成データを使う。
+    この下限そのものを検証するテストは `@pytest.mark.no_relax_source_count`
+    でこの緩和自体をオプトアウトする。
+    """
+    if "no_relax_source_count" in request.keywords:
+        return
+    # raising=False: このチェック自体が無い旧バージョンのスクリプトに対して
+    # red を確認する際に、このフィクスチャ自体の AttributeError で他のテストの
+    # red 理由が覆い隠されないようにする。
+    monkeypatch.setattr(module, "MIN_SOURCE_WORD_COUNT", 1, raising=False)
+
+
 # ── 1. 空 / 存在しない vocab、および word が 1 件も一致しない vocab は非ゼロ終了で弾く ──
 
 @requires_local_pg
@@ -449,8 +466,12 @@ def test_full_backfill_updates_all_and_is_idempotent(make_db, monkeypatch):
         assert row is not None
         assert list(row[0]) == pytest.approx([5.0, 2.5, 5 / 3])
 
-    # 再実行しても対象 0 件（冪等）。
-    module.main(["--target", target_url, "--batch-size", "10", "--dry-run"])
+    # 再実行すると「対象 0 件」になるが、これは S-1（Round 4）以降
+    # 「すでに完了している」と断定せず、確認を促して非ゼロ終了する
+    # （接続先の取り違えと見分けが付かないため）。何も壊れていないことだけ確認する。
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--target", target_url, "--batch-size", "10", "--dry-run"])
+    assert _exit_status(exc.value.code) != 0
     assert _null_count(target_url) == 0
 
 
@@ -468,7 +489,8 @@ def test_max_bytes_interrupts_and_resume_completes(make_db, monkeypatch):
     # --max-bytes をほぼ 0 にして、実データがあれば必ず 1 バッチ目で超過させる。
     with pytest.raises(SystemExit) as exc:
         module.main(["--target", target_url, "--batch-size", "10", "--max-bytes", "1"])
-    assert _exit_status(exc.value.code) != 0
+    assert exc.value.code == 1  # 意図的な中断（--max-bytes）は exit 1
+    assert exc.value.code != module.EXIT_INCOMPLETE  # S-3 の想定外終了（exit 3）とは別物
 
     remaining_after_interrupt = _null_count(target_url)
     assert 0 < remaining_after_interrupt < len(words)
@@ -499,11 +521,12 @@ def test_batch_size_negative_rejected_by_argparse():
 
 
 @requires_local_pg
-def test_zero_progress_with_remaining_work_fails_loudly(make_db, monkeypatch):
+def test_zero_progress_with_remaining_work_fails_loudly(make_db, monkeypatch, capsys):
     """`apply_batch` が万一 0 のまま返し続けても、残件がある限り exit 0 にしない防御線。
 
-    `--batch-size` を argparse で 1 以上に強制していれば通常は起きないはずだが、
-    その防御線自体が壊れていないかを確認する（Round 3 レビュー指摘）。
+    `processed == 0` のケース。`--batch-size` を argparse で 1 以上に
+    強制していれば通常は起きないはずだが、その防御線自体が壊れていないかを
+    確認する（Round 3 / Round 4 レビュー指摘）。
     """
     source_url = make_db("pos3_src")
     words = [(f"word{i}", [0.1, 0.2, 0.3]) for i in range(10)]
@@ -519,9 +542,58 @@ def test_zero_progress_with_remaining_work_fails_loudly(make_db, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         module.main(["--target", target_url, "--batch-size", "5"])
 
-    assert _exit_status(exc.value.code) != 0
-    assert "残" in str(exc.value)
+    assert exc.value.code == module.EXIT_INCOMPLETE
+    err = capsys.readouterr().err
+    assert "残" in err
     assert _null_count(target_url) == len(words)  # 実際には何も更新されていない
+
+
+@requires_local_pg
+def test_partial_progress_with_remaining_work_fails_loudly(make_db, monkeypatch, capsys):
+    """S-3（Round 4 レビュー指摘の核心）: `processed > 0` でも `remaining > 0` なら非ゼロ終了する。
+
+    Round 3 の実装は `processed == 0 and remaining > 0` だけを見ており、
+    「何行か書けたが全部は終わっていない」（`processed > 0 and remaining > 0`）は
+    素通りして「完了」と exit 0 で報告してしまっていた。ここでは `apply_batch` を
+    「最初の 1 回だけ本物の 3 語を更新し、以降はずっと 0 を返す」フェイクに
+    差し替え、10 語中 3 語だけ処理できて止まった状況（進捗はあるが未完了）を作る。
+    """
+    source_url = make_db("pos3_src")
+    words = [(f"word{i}", [0.1, 0.2, 0.3]) for i in range(10)]
+    _seed_source(source_url, words)
+
+    target_url = make_db("pos3_tgt")
+    _seed_target_all_null(target_url, [w for w, _ in words])
+
+    monkeypatch.setattr(module, "database_url", lambda: source_url)
+
+    real_apply_batch = module.apply_batch
+    call_count = {"n": 0}
+
+    def flaky_apply_batch(conn, batch_size):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # 最初の 1 回だけ本物の処理を 3 語ぶんだけ行う（進捗はある）。
+            return real_apply_batch(conn, 3)
+        # 2 回目以降は「対象を見つけられなくなった」体で常に 0 を返す
+        # （本当はまだ 7 語残っているのに、これ以上進まなくなった状況を模す）。
+        return 0
+
+    monkeypatch.setattr(module, "apply_batch", flaky_apply_batch)
+
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--target", target_url, "--batch-size", "3"])
+
+    # --max-bytes の意図的な中断（exit 1）とは異なる、専用の終了コードであること。
+    assert exc.value.code == module.EXIT_INCOMPLETE
+    assert exc.value.code != 1
+
+    err = capsys.readouterr().err
+    assert "残" in err
+    assert "3 行を更新済み" in err or "3" in err
+
+    # 実際に 3 語だけ更新されて止まっていること（進捗はあったことの確認）。
+    assert _null_count(target_url) == 7
 
 
 # ── 6. VACUUM が無言でスキップされたら警告する ────────────────────
@@ -576,3 +648,161 @@ def test_vacuum_skip_is_detected_and_warned(make_nonowner_role, make_db, monkeyp
     assert "効いていない" in err
     # 容量的には完走しているはず（--max-bytes のバックストップ内）。
     assert _null_count(target_url) == 0
+
+
+# ── 7. S-1: 接続先の取り違え（対象 0 件）を「完了」と断定しない ─────
+
+@requires_local_pg
+def test_missing_zero_before_any_work_requires_confirmation_dry_run(make_db, monkeypatch, capsys):
+    """target が「別の完了済み DB」だと交差 100% で「対象 0 件」になる（S-1 の核心）。
+
+    Round 3 までの実装は、この「対象 0 件」を「すでに完了しています」と
+    断定して exit 0 にしていた。これは「別の DB を取り違えている」ケースと
+    見分けが付かないため、判断を促す文言にして非ゼロ終了する
+    （Round 4 レビュー指摘）。
+    """
+    source_url = make_db("pos3_src")
+    words = [(f"word{i}", [0.1, 0.2, 0.3]) for i in range(10)]
+    _seed_source(source_url, words)
+
+    # target は「別の完了済み DB」を模す: ソースと同じ語彙だが、
+    # すでに pos3 が埋まっている（NULL が 1 件も無い）。
+    target_url = make_db("pos3_tgt_already_full")
+    with psycopg.connect(target_url, autocommit=True) as conn:
+        conn.execute("CREATE TABLE vocab (word text PRIMARY KEY, pos3 real[])")
+        for word, pos3 in words:
+            conn.execute("INSERT INTO vocab (word, pos3) VALUES (%s, %s)", (word, pos3))
+
+    monkeypatch.setattr(module, "database_url", lambda: source_url)
+
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--target", target_url, "--dry-run"])
+
+    assert _exit_status(exc.value.code) != 0
+    # 「対象が0件です...確認してください」というメッセージ自体は
+    # raise SystemExit(message) の中身（str(exc.value)）に入っている。
+    message = str(exc.value)
+    assert "確認してください" in message
+    assert "host=" in message
+    assert "db=" in message
+    # さらに、起動時にも接続先が標準エラーに表示されていること。
+    err = capsys.readouterr().err
+    assert "接続先" in err
+    assert "host=" in err
+
+
+@requires_local_pg
+def test_missing_zero_before_any_work_requires_confirmation_real_run(make_db, monkeypatch):
+    """dry-run だけでなく本実行でも同じガードが効くこと。データも壊さないこと。"""
+    source_url = make_db("pos3_src")
+    words = [(f"word{i}", [0.1, 0.2, 0.3]) for i in range(10)]
+    _seed_source(source_url, words)
+
+    target_url = make_db("pos3_tgt_already_full2")
+    with psycopg.connect(target_url, autocommit=True) as conn:
+        conn.execute("CREATE TABLE vocab (word text PRIMARY KEY, pos3 real[])")
+        for word, pos3 in words:
+            conn.execute("INSERT INTO vocab (word, pos3) VALUES (%s, %s)", (word, pos3))
+
+    monkeypatch.setattr(module, "database_url", lambda: source_url)
+
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--target", target_url])  # dry-run 無し
+
+    assert _exit_status(exc.value.code) != 0
+    # 何も壊れていない（既存の値がそのまま残っている）。
+    with psycopg.connect(target_url) as conn:
+        row = conn.execute("SELECT pos3 FROM vocab WHERE word = 'word0'").fetchone()
+        assert row is not None
+        assert list(row[0]) == pytest.approx([0.1, 0.2, 0.3])
+
+
+def test_connection_target_is_always_printed(monkeypatch, capsys):
+    """S-1: 接続先（host / db）を起動時に必ず表示する。パスワードは出さない。
+
+    pooled ガードで弾かれる場合も含め、何が試みられたか分かるように
+    最初に出力する。
+    """
+    with pytest.raises(SystemExit):
+        module.main(
+            [
+                "--target",
+                "postgresql://secretuser:supersecretpassword@ep-xxx-pooler.aws.neon.tech/mydb",
+                "--dry-run",
+            ]
+        )
+
+    err = capsys.readouterr().err
+    assert "接続先" in err
+    assert "host=ep-xxx-pooler.aws.neon.tech" in err
+    assert "db=mydb" in err
+    assert "supersecretpassword" not in err
+    assert "secretuser" not in err
+
+
+# ── 8. S-2: ソース側の語数が極端に少ない場合も中断する ─────────────
+
+@requires_local_pg
+def test_source_word_count_below_threshold_fails_loudly(make_db, monkeypatch):
+    """ソースの pos3 あり語数が極端に少ない（DB 破損・パイプライン未完了の疑い）。
+
+    Round 3 までの実装はソース側の語数を一切検証しておらず、
+    pos3 が 2 語しかないソース × 無関係な target でも「完了」と exit 0 で
+    報告してしまっていた（Round 4 レビュー指摘）。
+    """
+    # このテストが検証したい下限そのものなので、autouse フィクスチャの
+    # 緩和（1）を明示的に上書きする。
+    monkeypatch.setattr(module, "MIN_SOURCE_WORD_COUNT", 50)
+
+    source_url = make_db("pos3_src_tiny")
+    _seed_source(source_url, [("word0", [0.1, 0.2, 0.3]), ("word1", [0.4, 0.5, 0.6])])  # 2 語のみ
+
+    target_url = make_db("pos3_tgt")
+    _seed_target_all_null(target_url, [f"other{i}" for i in range(5000)])
+
+    monkeypatch.setattr(module, "database_url", lambda: source_url)
+
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--target", target_url, "--dry-run"])
+
+    assert _exit_status(exc.value.code) != 0
+    assert "ソース" in str(exc.value)
+    # target には一切触れていない（この時点で中断しているので接続すらしない）。
+    assert _null_count(target_url) == 5000
+
+
+@pytest.mark.no_relax_source_count
+def test_min_source_word_count_is_half_of_n_output():
+    """しきい値が N_OUTPUT（本番の実測語数）から機械的に導出されていること。"""
+    assert module.MIN_SOURCE_WORD_COUNT == module.N_OUTPUT // 2
+
+
+# ── describe_target: 接続先の表示（パスワードを漏らさない） ────────
+
+def test_describe_target_uri_format():
+    assert (
+        module.describe_target(
+            "postgresql://neondb_owner:supersecret@ep-xxx.aws.neon.tech/neondb?sslmode=require"
+        )
+        == "host=ep-xxx.aws.neon.tech db=neondb"
+    )
+
+
+def test_describe_target_never_leaks_password():
+    rendered = module.describe_target(
+        "postgresql://neondb_owner:supersecret@ep-xxx.aws.neon.tech/neondb"
+    )
+    assert "supersecret" not in rendered
+    assert "neondb_owner" not in rendered
+
+
+def test_describe_target_libpq_keyword_format():
+    rendered = module.describe_target(
+        "host=ep-xxx.aws.neon.tech dbname=neondb user=me password=secret"
+    )
+    assert rendered == "host=ep-xxx.aws.neon.tech db=neondb"
+    assert "secret" not in rendered
+
+
+def test_describe_target_unknown_format_shows_placeholder():
+    assert module.describe_target("totally not a connection string") == "host=(不明) db=(不明)"

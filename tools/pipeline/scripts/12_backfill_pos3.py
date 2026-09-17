@@ -57,6 +57,26 @@ Neon Free は 512MB 中 318MB 使用済みで、102,520 行の一括 UPDATE は�
 安全側に倒して拒否する**（Round 3 レビュー指摘: 旧実装は `urlparse().hostname`
 が `None` になる形式を無条件に素通りしていた）。
 
+**接続先を起動時に表示する（S-1・Round 4 レビュー指摘）。** `host=... db=...` の
+形でホスト名とデータベース名を必ず出力する（パスワードは絶対に出さない）。
+`--target` が「本番ではないが別のバックフィル済み DB」を指していると、
+交差はほぼ 100% のまま対象だけ 0 件になる。**「対象 0 件」を「完了している」と
+断定せず**、接続先を確認するよう促すメッセージで**非ゼロ終了**する
+（dry-run・本実行のどちらでも）。「自分が書いた（完了）」と「自分は何もしていない
+（対象が無い）」は別の状態なので、同じ成功として扱わない。
+
+**ソース側にも下限を設ける（S-2・Round 4 レビュー指摘）。** ローカル DB の
+pos3 あり語数が `MIN_SOURCE_WORD_COUNT` を下回ったら中断する。ローカル DB が
+壊れている、またはパイプラインが中途半端な状態（`02_prune` や
+`06_umap_coords` の再実行中など）だと、ごく少数の語だけを「対象」として
+処理し尽くして「完了」と報告してしまう穴があった。
+
+**未処理が残っているなら、何行書けていようと非ゼロで終了する（S-3・Round 4
+レビュー指摘）。** Round 3 は `processed == 0` のときしか見ておらず、
+「何行か書けたが全部は終わっていない」場合を見逃していた。正常終了は
+`remaining == 0` のときだけとし、`--max-bytes` による意図的な中断（exit 1）とは
+別の終了コード（`EXIT_INCOMPLETE` = 3）で区別する。
+
 一時テーブル経由でまとめて読み込み、バッチの切り出しは DB 側の
 `WHERE pos3 IS NULL LIMIT --batch-size` に任せる（1 行ずつの UPDATE は遅すぎる。
 `06_umap_coords.py` と同様に一時テーブルは autocommit 前提で手動 DROP する）。
@@ -82,6 +102,7 @@ import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import database_url  # noqa: E402
+from _constants import N_OUTPUT  # noqa: E402
 from _db import connect  # noqa: E402
 
 DEFAULT_BATCH_SIZE = 5_000
@@ -99,9 +120,29 @@ SOURCE_LOAD_TABLE = "pos3_backfill_source"
 # 値として選んだ（実測の一致率 99% 超に対して十分な安全マージンがある）。
 MIN_INTERSECTION_RATIO = 0.5
 
+# ソース（ローカル DB）の pos3 あり語数がこれを下回ったら中断する（Round 4 レビュー指摘）。
+# 「pos3 が 2 語しかないソース」のような、ローカル DB が壊れている／02_prune や
+# 06_umap_coords がまだ完走していない中途半端な状態を検知するための下限。
+# 本番の実測値は `N_OUTPUT`（102,520 語）なので、その半分を下限にした。
+# 半分より多く欠けることは通常の運用では起きないはずで、かつ将来 02_prune の
+# 閾値が多少変わっても誤検知しない程度の余裕を持たせている。
+MIN_SOURCE_WORD_COUNT = N_OUTPUT // 2
+
+# 「バッチが終わったのに未処理が残っている」という想定外の状態の終了コード（Round 4
+# レビュー指摘）。--max-bytes による意図的な中断（exit 1）と混同されないよう、
+# 明確に別の値にしてある。
+EXIT_INCOMPLETE = 3
+
 
 #  `host='...'` / `host="..."` / `host=...`（空白まで）のいずれにもマッチする。
-_LIBPQ_HOST_RE = re.compile(r"(?:^|\s)host=(?:'([^']*)'|\"([^\"]*)\"|(\S+))", re.IGNORECASE)
+# `key` を差し替えれば `dbname=...` など他の libpq キーワードにも使える。
+def _extract_libpq_value(url: str, key: str) -> str | None:
+    """libpq の keyword=value 形式接続文字列から特定のキーの値を取り出す（ベストエフォート）。"""
+    pattern = re.compile(rf"(?:^|\s){re.escape(key)}=(?:'([^']*)'|\"([^\"]*)\"|(\S+))", re.IGNORECASE)
+    match = pattern.search(url)
+    if match:
+        return next((g for g in match.groups() if g is not None), None)
+    return None
 
 
 def resolve_host(url: str) -> str | None:
@@ -115,10 +156,39 @@ def resolve_host(url: str) -> str | None:
     parsed = urlparse(url)
     if parsed.hostname:
         return parsed.hostname
-    match = _LIBPQ_HOST_RE.search(url)
-    if match:
-        return next((g for g in match.groups() if g is not None), None)
-    return None
+    return _extract_libpq_value(url, "host")
+
+
+def describe_target(url: str) -> str:
+    """接続先を `host=... db=...` の形で表示用に整形する。**パスワードは絶対に含めない**。
+
+    Round 4 レビュー指摘（S-1）: このスクリプトは接続先を一切表示しておらず、
+    `--target` が「本番ではないが別のバックフィル済み DB」を指していても
+    気づく手段が無かった。起動時と「対象 0 件」のメッセージの両方で使う。
+    """
+    host = resolve_host(url)
+    parsed = urlparse(url)
+    # scheme + netloc が無い（= URI 形式ではない）ときに `.path` を使うと、
+    # keyword=value 形式の文字列全体がそのまま迷い込むので使わない。
+    dbname = parsed.path.lstrip("/") or None if parsed.scheme and parsed.netloc else None
+    if dbname is None:
+        dbname = _extract_libpq_value(url, "dbname")
+    return f"host={host or '(不明)'} db={dbname or '(不明)'}"
+
+
+def _zero_target_message(url: str) -> str:
+    """S-1（Round 4 レビュー指摘）: 対象 0 件を「完了」と断定しないための文言。
+
+    target が「別の完了済み DB」を誤って指していても、交差はほぼ 100% のまま
+    対象だけ 0 件になり、これまでの実装は「すでに完了しています」と exit 0 で
+    片付けていた。「自分が書いた（完了）」と「自分は何もしていない（対象が無い）」は
+    別の状態なので、同じ成功として扱わず、必ず人間の確認を挟ませる。
+    """
+    return (
+        "対象が 0 件です。「完了している」とは断定できません"
+        "（接続先を取り違えている場合も同じ 0 件になります）。"
+        f" 接続先が意図したものか確認してください（{describe_target(url)}）。"
+    )
 
 
 def is_pooled_host(url: str) -> bool:
@@ -340,6 +410,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = ap.parse_args(argv)
 
+    # S-1（Round 4 レビュー指摘）: 接続先を一切表示していなかったため、
+    # 「別の完了済み DB を誤って指している」事故に気づく手段が無かった。
+    # パスワードは describe_target が絶対に含めない。
+    print(f"接続先: {describe_target(args.target)}", file=sys.stderr)
+
     host = resolve_host(args.target)
     if host is None and not args.allow_pooled:
         raise SystemExit(
@@ -362,6 +437,16 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  ソース側 pos3 あり: {len(rows)} 語", file=sys.stderr)
     if not rows:
         raise SystemExit("ソースに pos3 が 1 件もありません。中断します。")
+    if len(rows) < MIN_SOURCE_WORD_COUNT:
+        # S-2（Round 4 レビュー指摘）: ソース側の語数を検証していなかったため、
+        # pos3 が数語しかない壊れたローカル DB でも「対象 2 語」を全部処理して
+        # 「完了」と報告してしまっていた。
+        raise SystemExit(
+            f"ソースの pos3 あり語数が {len(rows)} 語しかありません"
+            f"（最低 {MIN_SOURCE_WORD_COUNT} 語を期待）。ローカル DB が壊れている、"
+            " またはパイプライン（02_prune / 06_umap_coords 等）が中途半端な状態の"
+            " 可能性があるため中断します。"
+        )
     words = [word for word, _ in rows]
 
     with connect(args.target) as conn:
@@ -383,6 +468,8 @@ def main(argv: list[str] | None = None) -> None:
         if args.dry_run:
             missing = count_missing_readonly(conn, words)
             print(f"対象（target の pos3 が NULL かつソースに値あり）: {missing} 語", file=sys.stderr)
+            if missing == 0:
+                raise SystemExit(_zero_target_message(args.target))
             print(
                 "dry-run のため書き込みは行いません（一時テーブルも作成していません）。",
                 file=sys.stderr,
@@ -395,8 +482,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"対象（target の pos3 が NULL かつソースに値あり）: {missing} 語", file=sys.stderr)
 
             if missing == 0:
-                print("対象がありません。すでに完了しています。", file=sys.stderr)
-                return
+                raise SystemExit(_zero_target_message(args.target))
 
             vacuum_notices = install_vacuum_watchdog(conn)
             vacuum_skipped_batches = 0
@@ -445,14 +531,30 @@ def main(argv: list[str] | None = None) -> None:
                     sys.exit(1)
 
             remaining = count_missing(conn)
-            if processed == 0 and remaining > 0:
-                # --batch-size は argparse で 1 以上に強制しているので通常は起きない
-                # はずだが、万一 apply_batch がバグって 1 行も進まないまま
-                # ループを抜けた場合の防御線（Round 3 レビュー指摘）。
-                raise SystemExit(
-                    f"1 行も更新していないのに、まだ {remaining} 件の未処理が残っています。"
-                    " --batch-size の設定かコードにバグがある可能性があるため中断します。"
+            if remaining > 0:
+                # S-3（Round 4 レビュー指摘）: Round 3 は `processed == 0` のときしか
+                # 見ておらず、「何行か書けたが全部は終わっていない」
+                # （processed > 0 and remaining > 0）を素通りして「完了」と
+                # exit 0 で報告していた。**未処理が残っているなら、何行書けて
+                # いようと非ゼロで終了する。** 正常終了は remaining == 0 のときだけ。
+                # --max-bytes による意図的な中断（exit 1）とは区別できるよう、
+                # 専用の終了コード（EXIT_INCOMPLETE = 3）を使う。
+                print(
+                    f"⚠ バッチ処理を終えましたが、まだ {remaining} 件の未処理が残っています"
+                    f"（今回の実行で {processed} 行を更新済み）。"
+                    " --max-bytes による意図的な中断（exit 1）とは異なり、想定外の状態です。"
+                    " apply_batch が対象を検出できなくなったのに、まだ pos3 が NULL の"
+                    " 語が残っています。コードにバグがある可能性があるため中断します"
+                    f"（exit {EXIT_INCOMPLETE}）。",
+                    file=sys.stderr,
                 )
+                if vacuum_skipped_batches:
+                    print(
+                        f"⚠ さらに、VACUUM vocab は {vacuum_skipped_batches}/{batch_no}"
+                        " バッチでスキップされていました。",
+                        file=sys.stderr,
+                    )
+                sys.exit(EXIT_INCOMPLETE)
             print(
                 f"\n完了: {processed} 行更新しました。pos3 IS NULL の残り: {remaining} 件。",
                 file=sys.stderr,
