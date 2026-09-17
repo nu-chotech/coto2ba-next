@@ -108,8 +108,22 @@ jobs:
 
       # ARCHITECTURE §4 の検証。ワークスペース依存がバンドルに畳み込まれず
       # import として残っていると、Vercel 上で実行時に解決できず 500 になる。
+      # workspace の import が残っていると Vercel 側で解決できず落ちる。
+      # ただし **文字列の単純一致では駄目**。JSDoc コメントに `@coto2ba/contracts` と
+      # 書いてあるだけで落ちていた（2026-09-18）。import / require / 動的 import の
+      # 形になっているものだけを見る。
       - name: Verify bundle has no workspace imports
-        run: test "$(grep -c '@coto2ba' apps/api/api/index.mjs)" -eq 0
+        run: |
+          hits=$(grep -cE "from ['\"]@coto2ba|require\(['\"]@coto2ba|import\(['\"]@coto2ba" \
+            apps/api/api/index.mjs || true)
+          if [ "$hits" -ne 0 ]; then
+            echo "::error::バンドルに workspace の import が $hits 件残っています"
+            grep -nE "from ['\"]@coto2ba|require\(['\"]@coto2ba|import\(['\"]@coto2ba" \
+              apps/api/api/index.mjs | head -5
+            exit 1
+          fi
+          echo "workspace の import なし"
+
 
       # ---- production 経路（main への push / 手動実行）----
       - name: Vercel deploy (prebuilt, production)
