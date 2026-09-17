@@ -6,7 +6,8 @@
  * `rooms` / `room_players` / `games` の行だけが権威。
  *
  * ## 進行中に配ってよいもの
- * 順位・手数・到達した最良ランクだけ。**他人が打った語（current / input）は絶対に返さない。**
+ * 順位・手数・ヒント数・到達した最良ランクだけ。
+ * **他人が打った語（current / input）は絶対に返さない。**
  * 見せると真似で解かれて競技にならない（§9.2）。SELECT する列をここで絞っているのはそのため。
  *
  * ## 同期はポーリング
@@ -112,6 +113,7 @@ async function loadPlayers(
     game_id: string | null
     game_status: string | null
     move_count: number | null
+    hint_count: number | null
     best_rank: number | null
     finished_at: Date | string | null
   }>(sql`
@@ -120,6 +122,9 @@ async function loadPlayers(
            rp.game_id,
            g.status AS game_status,
            g.move_count,
+           -- **順位キーの一部**（room-rules.rankPlayers）。ここを落とすと
+           -- 対戦でヒントが完全に無料になる。
+           g.hint_count,
            -- これまでに到達した最良（最小）のランク。単調に良くなるので順位バーが跳ねない。
            LEAST(g.current_rank, COALESCE(m.min_rank, g.current_rank)) AS best_rank,
            rp.finished_at
@@ -137,6 +142,7 @@ async function loadPlayers(
       userId: r.user_id,
       displayName: r.display_name,
       moveCount: Number(r.move_count ?? 0),
+      hintCount: Number(r.hint_count ?? 0),
       // ゲームがまだ無い（待機中）なら最下位扱い。
       bestRank: Number(r.best_rank ?? Number.MAX_SAFE_INTEGER),
       finishedAt: toIso(r.finished_at),
@@ -213,6 +219,7 @@ function toResponse(
     user_id: p.userId,
     display_name: p.displayName,
     move_count: p.moveCount,
+    hint_count: p.hintCount,
     // まだゲームが無い人の bestRank は巨大なので、表示に出さず 0 に潰す。
     best_rank: p.bestRank === Number.MAX_SAFE_INTEGER ? 0 : p.bestRank,
     finished_at: p.finishedAt,

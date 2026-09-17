@@ -93,6 +93,16 @@ export const roomPlayerSchema = z.object({
   user_id: z.string(),
   display_name: z.string(),
   move_count: z.number().int().nonnegative(),
+  /**
+   * そのプレイヤーがヒントを開いた回数。
+   *
+   * **順位キーに入っている**（`services/room-rules.ts` の `rankPlayers`）。
+   * ヒントの一番上に従うと実測で 51% がクリア圏に着地するので、対戦で無料だと
+   * 押した側が数秒で勝ってしまう。禁止も隠蔽もせず、デイリーのランキング
+   * （ヒント数 → 手数 → クリア時刻）と**同じ原則でランキングに課金する**。
+   * 画面にも出す ── 押すと不利になることが分からないと、課金にならない。
+   */
+  hint_count: z.number().int().nonnegative(),
   /** そのプレイヤーが到達した最良の（小さい）ランク。 */
   best_rank: z.number().int().nonnegative(),
   finished_at: z.string().nullable(),

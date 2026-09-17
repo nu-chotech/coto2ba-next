@@ -109,6 +109,7 @@ const player = (id: string, over: Partial<RoomResponse['players'][number]> = {})
   user_id: id,
   display_name: id,
   move_count: 0,
+  hint_count: 0,
   best_rank: 100,
   finished_at: null,
   is_me: false,

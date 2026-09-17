@@ -95,6 +95,7 @@ const ALLOWED_STANDING_KEYS = [
   'best_rank',
   'display_name',
   'finished_at',
+  'hint_count',
   'is_me',
   'move_count',
   'user_id',
@@ -205,7 +206,7 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('対戦ルームのエンド�
    * 1. **目印になる語を相手のゲームに埋めて、生のレスポンスに出てこないこと**
    *    相手の `current` を「他のどこにも存在しない文字列」にするので、
    *    1 文字でも漏れれば必ず捕まる。
-   * 2. **順位の各行が持つキーが決まった 6 つだけであること**
+   * 2. **順位の各行が持つキーが決まった 7 つだけであること**
    *    将来フィールドが増えたときに、語を載せる隙間ができたら落ちる
    *
    * **どちらも `moveResponseSchema.parse()` を通す前の生の JSON で見る。**
@@ -224,7 +225,7 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('対戦ルームのエンド�
     expect(JSON.stringify(raw)).not.toContain(sentinel)
   })
 
-  it('順位の各行が持つキーは決まった 6 つだけ', async () => {
+  it('順位の各行が持つキーは決まった 7 つだけ', async () => {
     if (!hasDb) return
     const { host, hostGameId } = await startedRoom()
     const raw = (await playAnyMove(host, hostGameId)) as {
