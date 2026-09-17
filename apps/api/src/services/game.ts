@@ -540,10 +540,20 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
     }
     // 表記揺れの除外は hintCandidates の中で行う。
     hints = await hintCandidates(db, game.goal, game.current, [...exclude], HINT_COUNT)
-    await db
-      .insert(hintCache)
-      .values({ goal: game.goal, current: game.current, hints })
-      .onConflictDoNothing()
+    // **キャッシュに書けなくてもヒントは返す。** ここは速くするための保存でしかなく、
+    // 正しいヒントはもう手元にある。書き込みの失敗（スキーマが古い・容量・権限など）で
+    // ヒント機能ごと 500 にする理由が無い。
+    // 実際にありうるのは「`0004_hint_cache_jsonb` を流す前の DB に新コードが当たる」型で、
+    // そのときここだけが落ちる（デプロイ順序は
+    // docs/superpowers/plans/2026-09-17-exhibition-ops.md Task 0.7）。
+    try {
+      await db
+        .insert(hintCache)
+        .values({ goal: game.goal, current: game.current, hints })
+        .onConflictDoNothing()
+    } catch (e) {
+      console.error('hint_cache への保存に失敗（ヒント自体は返す）', e)
+    }
   }
 
   const updated = await db
