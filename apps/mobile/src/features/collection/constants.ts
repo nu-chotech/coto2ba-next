@@ -19,8 +19,12 @@ import { tierPalettes } from '../../theme/tiers'
  * 回しても主役が画面の真ん中から逃げないので、迷子になりにくい。
  */
 export const SPACE_DISTANCE_DEFAULT = 3.2
-/** 短い経路にぴったり寄れるところまで許す（近すぎるとゴースト点が手前で切れる）。 */
-export const SPACE_DISTANCE_MIN = 0.9
+/**
+ * 短い経路にぴったり寄れるところまで許す。
+ * 実データの軌跡は**空間全体に対してとても小さい**（半径 0.15 ほど）ので、
+ * 以前の 1.5 のままだとどの経路も「画面中央の小さな点の塊」になる。
+ */
+export const SPACE_DISTANCE_MIN = 0.4
 /** これ以上引くと経路が点にしか見えない。 */
 export const SPACE_DISTANCE_MAX = 6
 /** ピンチ中だけ許す行き過ぎ（離すとバネで戻る）。 */
@@ -31,6 +35,14 @@ export const SPACE_FOCUS_DISTANCE = 2.1
 /** ドラッグ 1pt あたりの回転量（ラジアン）。 */
 export const SPACE_YAW_PER_PX = 0.0062
 export const SPACE_PITCH_PER_PX = 0.0062
+/**
+ * 回転量に掛ける倍率の範囲（`SPACE_DISTANCE_DEFAULT / distance` を丸める）。
+ * 寄るほど速く回す補正は残すが、**経路にぴったり寄せたときに暴れないよう**に
+ * 上下限を付ける（距離 0.6 では素の倍率が 5 倍を超えて、指が触れた瞬間に
+ * 宇宙が吹っ飛ぶ ＝ 迷子になる）。
+ */
+export const SPACE_ROTATE_GAIN_MIN = 0.7
+export const SPACE_ROTATE_GAIN_MAX = 1.6
 /**
  * 真上・真下を向くと方向感覚を失うので pitch は ±66° で止める。
  * （±80° まで許していたときは、ほぼ真上から見下ろして戻れなくなることがあった）
@@ -75,7 +87,13 @@ export const SPACE_FRAMING_FOV = 2 * Math.atan(1 / (2 * SPACE_FOCAL * SPACE_WORL
 /** 経路の外側に取る余白（1.0 で短辺ぴったり）。ラベルが画面外に出ないぶん。 */
 export const SPACE_FRAMING_MARGIN = 1.45
 /** 1 点だけの経路（半径 0）でもこれ以上は寄らない。カメラがめり込む。 */
-export const SPACE_FRAMING_DISTANCE_MIN = 1
+export const SPACE_FRAMING_DISTANCE_MIN = 0.45
+/**
+ * 経路のいちばん手前の節と、カメラの間に必ず空ける距離。
+ * 画角だけで決めると、半径の小さい経路では手前側の節が near plane
+ * （`SPACE_NEAR_PLANE`）の向こうに入って**線が途切れる**。
+ */
+export const SPACE_FRAMING_NEAR_GAP = 0.45
 /**
  * フレーミングでわずかに見下ろす角。
  * 0 にすると経路がぴったり画面と平行になり、奥行きのある宇宙に見えない。
@@ -187,3 +205,5 @@ export const SPACE_SEARCH_LIMIT = 8
 export const SPACE_SHEET_MAX_HEIGHT_RATIO = 0.55
 /** 検索欄の高さ。 */
 export const SPACE_SEARCH_HEIGHT = 44
+/** 上に浮かべる検索ボタン（丸）の一辺。最小タップ領域に合わせる。 */
+export const SPACE_SEARCH_BUTTON_SIZE = 44

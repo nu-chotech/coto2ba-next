@@ -16,7 +16,12 @@
  */
 
 import {
+  SPACE_DISTANCE_MAX,
+  SPACE_DISTANCE_MIN,
   SPACE_FRAMING_DISTANCE_MIN,
+  SPACE_FRAMING_FOV,
+  SPACE_FRAMING_MARGIN,
+  SPACE_FRAMING_NEAR_GAP,
   SPACE_FRAMING_PITCH_TILT,
   SPACE_PITCH_MAX,
   SPACE_PITCH_MIN,
@@ -72,16 +77,20 @@ export function boundingSphere(points: readonly Vec3[]): BoundingSphere {
 /**
  * 半径 `radius` の球が画角 `fovRad` に `margin` の余白つきで収まる距離。
  *
- * 1 点だけの経路（`radius === 0`）でも 0 を返さない。
- * 0 を返すとカメラが点にめり込み、near plane の向こう側に消える。
+ * 下限が 2 つある。
+ * - `SPACE_FRAMING_DISTANCE_MIN`: 1 点だけの経路（`radius === 0`）でカメラが
+ *   点にめり込まないため
+ * - `radius + SPACE_FRAMING_NEAR_GAP`: 手前側の節が near plane の向こうに
+ *   入って**線が途切れない**ため。画角だけで決めると半径の小さい経路で起きる
  */
 export function framingDistance(radius: number, fovRad: number, margin: number): number {
   'worklet'
+  const safe = Math.max(SPACE_FRAMING_DISTANCE_MIN, radius + SPACE_FRAMING_NEAR_GAP)
   const tangent = Math.tan(fovRad / 2)
-  if (!(tangent > 0)) return SPACE_FRAMING_DISTANCE_MIN
+  if (!(tangent > 0)) return safe
   const distance = (radius / tangent) * margin
-  if (!Number.isFinite(distance)) return SPACE_FRAMING_DISTANCE_MIN
-  return Math.max(SPACE_FRAMING_DISTANCE_MIN, distance)
+  if (!Number.isFinite(distance)) return safe
+  return Math.max(safe, distance)
 }
 
 /**
@@ -129,4 +138,29 @@ export function yawPitchToFace(_center: Vec3, points: readonly Vec3[]): Orientat
 
   // pitch は 0 が厳密解だが、それだと絵が平たくなるのでわずかに見下ろす。
   return { yaw, pitch: tilt }
+}
+
+export type Framing = Orientation & {
+  distance: number
+  /** カメラが注視する点（経路の中心）。 */
+  target: [number, number, number]
+}
+
+/**
+ * 経路 →「それが画面に収まるカメラ」。図鑑を開いた瞬間に置く値。
+ *
+ * 距離はカメラの上下限に丸める。**フレーミングだけが操作の範囲外に
+ * 行かないように**（寄りすぎて指で戻せない、という迷子を作らない）。
+ */
+export function framePoints(points: readonly Vec3[]): Framing {
+  'worklet'
+  const sphere = boundingSphere(points)
+  const { yaw, pitch } = yawPitchToFace(sphere.center, points)
+  const distance = framingDistance(sphere.radius, SPACE_FRAMING_FOV, SPACE_FRAMING_MARGIN)
+  return {
+    yaw,
+    pitch,
+    distance: Math.min(Math.max(distance, SPACE_DISTANCE_MIN), SPACE_DISTANCE_MAX),
+    target: sphere.center,
+  }
 }

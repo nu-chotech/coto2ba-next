@@ -41,6 +41,7 @@ export const SYMBOLS = {
 
   // ── 画面の操作 ──
   'ellipsis.circle': 'more_horiz',
+  magnifyingglass: 'search',
   'chevron.left': 'chevron_left',
   'chevron.right': 'chevron_right',
   'arrow.up': 'arrow_upward',

@@ -7,7 +7,18 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { boundingSphere, framingDistance, yawPitchToFace } from '../src/features/collection/framing'
+import {
+  SPACE_DISTANCE_MAX,
+  SPACE_DISTANCE_MIN,
+  SPACE_WORLD_SCALE,
+} from '../src/features/collection/constants'
+import {
+  boundingSphere,
+  framePoints,
+  framingDistance,
+  yawPitchToFace,
+} from '../src/features/collection/framing'
+import { projectAll } from '../src/features/collection/projection'
 
 type P = readonly [number, number, number]
 
@@ -137,5 +148,128 @@ describe('yawPitchToFace（広がりが画面の中で寝ること）', () => {
     const { yaw, pitch } = yawPitchToFace([0.5, 0.5, 0.5], points)
     expect(Number.isFinite(yaw)).toBe(true)
     expect(Number.isFinite(pitch)).toBe(true)
+  })
+})
+
+// ── 「開いた瞬間に経路が画面に収まっている」を機械で固定する ──
+// 図鑑の唯一にして最大の要件なので、実機を見なくても壊れたら分かるようにする。
+describe('framePoints（経路が画面に収まること）', () => {
+  const WIDTH = 414
+  const HEIGHT = 896
+  const SHORT = Math.min(WIDTH, HEIGHT)
+
+  function projectWithFraming(points: readonly P[]) {
+    const framing = framePoints(points)
+    const xyz = new Float32Array(points.length * 3)
+    points.forEach((p, i) => {
+      xyz[i * 3] = p[0]
+      xyz[i * 3 + 1] = p[1]
+      xyz[i * 3 + 2] = p[2]
+    })
+    const screen = new Float32Array(points.length * 2)
+    const sizeMul = new Float32Array(points.length)
+    const alphaMul = new Float32Array(points.length)
+    const depth = new Float32Array(points.length)
+    projectAll(
+      xyz,
+      points.length,
+      framing.yaw,
+      framing.pitch,
+      framing.distance,
+      framing.target[0],
+      framing.target[1],
+      framing.target[2],
+      WIDTH / 2,
+      HEIGHT / 2,
+      SHORT * SPACE_WORLD_SCALE,
+      screen,
+      sizeMul,
+      alphaMul,
+      depth,
+    )
+    return { framing, screen, sizeMul }
+  }
+
+  const CASES: { name: string; points: P[] }[] = [
+    {
+      // 本番 DB の実データ（投影 → 広角レンズ → レンズ → ガラス）。
+      // **実際の軌跡は空間全体に対してとても小さい**（半径 0.15 ほど）。
+      // ここを作り話の座標で固定すると、実機で「点の塊」になっていても気づけない。
+      name: '実データの経路（デイリー 3 手）',
+      points: [
+        [-0.35195744, 0.29206252, 0.7735214],
+        [-0.2940532, 0.28930414, 0.8850682],
+        [-0.3024522, 0.296543, 0.8811785],
+        [-0.35258317, 0.41743922, 0.61661863],
+      ],
+    },
+    {
+      name: '空間の端から端まで伸びる経路',
+      points: [
+        [-0.95, -0.9, -0.9],
+        [-0.2, 0.1, 0.3],
+        [0.9, 0.88, 0.95],
+      ],
+    },
+    {
+      name: '中心から離れたところの経路（カメラが原点を回っていた頃に画面外へ逃げた形）',
+      points: [
+        [0.7, -0.75, 0.8],
+        [0.82, -0.6, 0.9],
+        [0.9, -0.7, 0.72],
+        [0.75, -0.82, 0.85],
+      ],
+    },
+    {
+      name: '1 手だけの経路（2 点）',
+      points: [
+        [-0.4, 0.3, 0.2],
+        [-0.1, 0.35, 0.25],
+      ],
+    },
+  ]
+
+  for (const { name, points } of CASES) {
+    it(`${name}：全部の節が画面の中に入る`, () => {
+      const { screen, sizeMul } = projectWithFraming(points)
+      for (let i = 0; i < points.length; i += 1) {
+        expect(sizeMul[i]).toBeGreaterThan(0)
+        expect(screen[i * 2]).toBeGreaterThanOrEqual(0)
+        expect(screen[i * 2]).toBeLessThanOrEqual(WIDTH)
+        expect(screen[i * 2 + 1]).toBeGreaterThanOrEqual(0)
+        expect(screen[i * 2 + 1]).toBeLessThanOrEqual(HEIGHT)
+      }
+    })
+
+    it(`${name}：点の塊にならない（短辺の 3 割以上に広がる）`, () => {
+      const { screen } = projectWithFraming(points)
+      let minX = Number.POSITIVE_INFINITY
+      let maxX = Number.NEGATIVE_INFINITY
+      let minY = Number.POSITIVE_INFINITY
+      let maxY = Number.NEGATIVE_INFINITY
+      for (let i = 0; i < points.length; i += 1) {
+        minX = Math.min(minX, screen[i * 2] as number)
+        maxX = Math.max(maxX, screen[i * 2] as number)
+        minY = Math.min(minY, screen[i * 2 + 1] as number)
+        maxY = Math.max(maxY, screen[i * 2 + 1] as number)
+      }
+      expect(Math.max(maxX - minX, maxY - minY)).toBeGreaterThan(SHORT * 0.3)
+    })
+  }
+
+  it('経路が空でも壊れない（距離は正、角度は有限）', () => {
+    const framing = framePoints([])
+    expect(framing.distance).toBeGreaterThan(0)
+    expect(Number.isFinite(framing.yaw)).toBe(true)
+    expect(Number.isFinite(framing.pitch)).toBe(true)
+    expect(framing.target).toEqual([0, 0, 0])
+  })
+
+  it('距離はカメラの上下限に収まる（フレーミングだけ別世界に行かない）', () => {
+    for (const { points } of CASES) {
+      const { distance } = framePoints(points)
+      expect(distance).toBeGreaterThanOrEqual(SPACE_DISTANCE_MIN)
+      expect(distance).toBeLessThanOrEqual(SPACE_DISTANCE_MAX)
+    }
   })
 })

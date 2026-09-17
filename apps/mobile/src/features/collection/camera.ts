@@ -7,6 +7,8 @@
  *
  * - パン（1 本指）→ yaw / pitch。離すと `withDecay` で滑る。
  * - ピンチ → distance。行き過ぎを許してバネで戻す。
+ * - **二本指タップ → 選択中の経路へ戻す**（迷子からの復帰。画面下の
+ *   「経路にもどす」ボタンと同じ働きで、こちらは指だけで完結する）。
  * - `Gesture.Simultaneous` で同時に効く。
  *
  * 注意（docs/research/rn-game-ui.md）：
@@ -14,15 +16,17 @@
  * - パンは `.minPointers(1).maxPointers(1)`。しないと 2 本目の指の動きがパンに漏れる。
  */
 
-import { useCallback, useMemo } from 'react'
+import { type MutableRefObject, useCallback, useMemo, useRef } from 'react'
 import { Gesture } from 'react-native-gesture-handler'
 import {
   clamp,
+  runOnJS,
   type SharedValue,
   useAnimatedReaction,
   useSharedValue,
   withDecay,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated'
 import {
   SPACE_CAMERA_SPRING,
@@ -32,12 +36,18 @@ import {
   SPACE_DISTANCE_MIN,
   SPACE_DISTANCE_OVERSHOOT,
   SPACE_FOCUS_DISTANCE,
+  SPACE_FRAME_DURATION_MS,
   SPACE_PITCH_INITIAL,
   SPACE_PITCH_MAX,
   SPACE_PITCH_MIN,
   SPACE_PITCH_PER_PX,
+  SPACE_ROTATE_GAIN_MAX,
+  SPACE_ROTATE_GAIN_MIN,
+  SPACE_TAP_MAX_DISTANCE,
+  SPACE_TAP_MAX_DURATION_MS,
   SPACE_YAW_PER_PX,
 } from './constants'
+import { framePoints, type Vec3 } from './framing'
 
 export type SpaceCamera = {
   yaw: SharedValue<number>
@@ -73,6 +83,13 @@ export type UseSpaceCameraResult = {
   reset: () => void
   /** その語が画面の真ん中に来るように注視点を移す（検索・近傍から呼ぶ）。 */
   focusOn: (pos: readonly [number, number, number]) => void
+  /** 経路が画面に収まる位置へ。`immediate` なら待たせずにその位置から始める。 */
+  frameTo: (points: readonly Vec3[], immediate: boolean) => void
+  /**
+   * 二本指タップで呼ぶ処理。画面側が「選択中の経路に戻す」を入れる。
+   * どの経路が選ばれているかはカメラの知るところではないので ref で受け取る。
+   */
+  onRecenterRef: MutableRefObject<() => void>
 }
 
 export function useSpaceCamera(): UseSpaceCameraResult {
@@ -85,6 +102,12 @@ export function useSpaceCamera(): UseSpaceCameraResult {
   const interacting = useSharedValue(0)
   const distanceStart = useSharedValue(SPACE_DISTANCE_DEFAULT)
   const lastMovedAt = useSharedValue(0)
+
+  const onRecenterRef = useRef<() => void>(() => undefined)
+  // ジェスチャの依存に入れるので、毎回作り直さない包みを 1 つだけ持つ。
+  const callRecenter = useCallback(() => {
+    onRecenterRef.current()
+  }, [])
 
   // カメラが動いたフレームだけ時刻を刻む。値の和で見る（同時に打ち消し合って
   // 和が変わらないことは実質起きない）。UI スレッド内で完結するので安い。
@@ -110,8 +133,8 @@ export function useSpaceCamera(): UseSpaceCameraResult {
         interacting.value = 1
       })
       .onChange((event) => {
-        // distance で割ると、どの寄り具合でも指の動きと 1:1 に感じる。
-        const gain = SPACE_DISTANCE_DEFAULT / distance.value
+        // 寄るほど速く回す補正。経路に寄せたときに暴れないよう上下限で丸める。
+        const gain = rotateGain(distance.value)
         yaw.value -= event.changeX * SPACE_YAW_PER_PX * gain
         pitch.value = clamp(
           pitch.value + event.changeY * SPACE_PITCH_PER_PX * gain,
@@ -120,7 +143,7 @@ export function useSpaceCamera(): UseSpaceCameraResult {
         )
       })
       .onEnd((event) => {
-        const gain = SPACE_DISTANCE_DEFAULT / distance.value
+        const gain = rotateGain(distance.value)
         yaw.value = withDecay({
           velocity: -event.velocityX * SPACE_YAW_PER_PX * gain,
           deceleration: SPACE_DECELERATION,
@@ -160,8 +183,18 @@ export function useSpaceCamera(): UseSpaceCameraResult {
         interacting.value = 0
       })
 
-    return Gesture.Simultaneous(pan, pinch)
-  }, [yaw, pitch, distance, distanceStart, interacting])
+    // 二本指タップ＝「経路にもどす」。パン（1 本指）とは指の本数で分かれ、
+    // ピンチとは同時に走るが、少しでも広げ／縮めれば距離の判定で落ちる。
+    const recenterTap = Gesture.Tap()
+      .minPointers(2)
+      .maxDistance(SPACE_TAP_MAX_DISTANCE)
+      .maxDuration(SPACE_TAP_MAX_DURATION_MS)
+      .onEnd(() => {
+        runOnJS(callRecenter)()
+      })
+
+    return Gesture.Simultaneous(pan, pinch, recenterTap)
+  }, [yaw, pitch, distance, distanceStart, interacting, callRecenter])
 
   const reset = useCallback(() => {
     yaw.value = withSpring(nearestAngle(yaw.value, 0), SPACE_CAMERA_SPRING)
@@ -192,10 +225,48 @@ export function useSpaceCamera(): UseSpaceCameraResult {
     [distance, targetX, targetY, targetZ],
   )
 
+  /**
+   * 経路が画面に収まる位置へカメラを置く。
+   *
+   * `immediate` は **図鑑を開いた最初の 1 回**に使う。アニメーションで寄せると
+   * 「まず放り出されて、それから連れて行かれる」ことになり、
+   * 「これは自分の軌跡だ」と分かるまでが一拍遅れる。
+   */
+  const frameTo = useCallback(
+    (points: readonly Vec3[], immediate: boolean) => {
+      const framing = framePoints(points)
+      if (immediate) {
+        yaw.value = framing.yaw
+        pitch.value = framing.pitch
+        distance.value = framing.distance
+        targetX.value = framing.target[0]
+        targetY.value = framing.target[1]
+        targetZ.value = framing.target[2]
+        return
+      }
+      const timing = { duration: SPACE_FRAME_DURATION_MS }
+      yaw.value = withTiming(nearestAngle(yaw.value, framing.yaw), timing)
+      pitch.value = withTiming(framing.pitch, timing)
+      distance.value = withTiming(framing.distance, timing)
+      targetX.value = withTiming(framing.target[0], timing)
+      targetY.value = withTiming(framing.target[1], timing)
+      targetZ.value = withTiming(framing.target[2], timing)
+    },
+    [yaw, pitch, distance, targetX, targetY, targetZ],
+  )
+
   return {
     camera: { yaw, pitch, distance, targetX, targetY, targetZ, interacting, lastMovedAt },
     gesture,
     reset,
     focusOn,
+    frameTo,
+    onRecenterRef,
   }
+}
+
+/** 寄り具合に応じた回転の倍率。上下限で丸める（寄せたときに暴れさせない）。 */
+function rotateGain(distance: number): number {
+  'worklet'
+  return clamp(SPACE_DISTANCE_DEFAULT / distance, SPACE_ROTATE_GAIN_MIN, SPACE_ROTATE_GAIN_MAX)
 }
