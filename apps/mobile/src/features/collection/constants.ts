@@ -7,28 +7,41 @@
  * contracts に昇格させるべき値（深度フォールオフの帯など）は親に報告すること。
  */
 
+import { SPACE_FOCAL } from '@coto2ba/contracts'
+
 // ── カメラ ──────────────────────────────────────────────────
-/** 原点からカメラまでの距離。小さいほど寄る。 */
+/**
+ * 注視点からカメラまでの距離。小さいほど寄る。
+ * カメラは **世界の原点ではなく `target`（選択中の経路の中心）のまわりを回る**。
+ * 回しても主役が画面の真ん中から逃げないので、迷子になりにくい。
+ */
 export const SPACE_DISTANCE_DEFAULT = 3.2
-export const SPACE_DISTANCE_MIN = 1.5
-export const SPACE_DISTANCE_MAX = 8
+/** 短い経路にぴったり寄れるところまで許す（近すぎるとゴースト点が手前で切れる）。 */
+export const SPACE_DISTANCE_MIN = 0.9
+/** これ以上引くと経路が点にしか見えない。 */
+export const SPACE_DISTANCE_MAX = 6
 /** ピンチ中だけ許す行き過ぎ（離すとバネで戻る）。 */
 export const SPACE_DISTANCE_OVERSHOOT = 1.3
-/** 検索で語に寄るときの距離。 */
+/** 検索・近傍で語に寄るときの距離。 */
 export const SPACE_FOCUS_DISTANCE = 2.1
 
 /** ドラッグ 1pt あたりの回転量（ラジアン）。 */
 export const SPACE_YAW_PER_PX = 0.0062
 export const SPACE_PITCH_PER_PX = 0.0062
-/** 極でひっくり返らないよう pitch は ±80° 程度で止める。 */
-export const SPACE_PITCH_MIN = -1.4
-export const SPACE_PITCH_MAX = 1.4
+/**
+ * 真上・真下を向くと方向感覚を失うので pitch は ±66° で止める。
+ * （±80° まで許していたときは、ほぼ真上から見下ろして戻れなくなることがあった）
+ */
+export const SPACE_PITCH_MIN = -1.15
+export const SPACE_PITCH_MAX = 1.15
 /** 慣性の減衰（既定 0.998 より少しだけ短く滑る）。 */
 export const SPACE_DECELERATION = 0.997
 /** 端で戻すときのバネ。 */
 export const SPACE_CAMERA_SPRING = { damping: 20, stiffness: 200, mass: 0.7 } as const
 /** 初期の見下ろし角。 */
 export const SPACE_PITCH_INITIAL = 0.3
+/** 経路を切り替えたときにカメラが寄る時間（初回表示は待たせずに即座に置く）。 */
+export const SPACE_FRAME_DURATION_MS = 420
 
 // ── 投影 ────────────────────────────────────────────────────
 /**
@@ -47,6 +60,24 @@ export const SPACE_DEPTH_SIZE_MAX = 1.4
 /** 深度によるアルファのフォールオフ（SPEC §9.2）。 */
 export const SPACE_DEPTH_ALPHA_MIN = 0.35
 export const SPACE_DEPTH_ALPHA_MAX = 1
+
+// ── 経路のフレーミング ──────────────────────────────────────
+/**
+ * 画面の短辺いっぱいに写る画角。**投影と同じ値から導く**
+ * （`projection.ts` は `screen = center + x * (SPACE_FOCAL / depth) * min(w, h) * SPACE_WORLD_SCALE`
+ * なので、半径 r が短辺の半分に収まる距離は `r / tan(fov / 2)`）。
+ * ここを手打ちの定数にすると投影と食い違って「収めたのにはみ出す」ことになる。
+ */
+export const SPACE_FRAMING_FOV = 2 * Math.atan(1 / (2 * SPACE_FOCAL * SPACE_WORLD_SCALE))
+/** 経路の外側に取る余白（1.0 で短辺ぴったり）。ラベルが画面外に出ないぶん。 */
+export const SPACE_FRAMING_MARGIN = 1.45
+/** 1 点だけの経路（半径 0）でもこれ以上は寄らない。カメラがめり込む。 */
+export const SPACE_FRAMING_DISTANCE_MIN = 1
+/**
+ * フレーミングでわずかに見下ろす角。
+ * 0 にすると経路がぴったり画面と平行になり、奥行きのある宇宙に見えない。
+ */
+export const SPACE_FRAMING_PITCH_TILT = 0.18
 
 // ── 点 ──────────────────────────────────────────────────────
 /** Atlas に貼る白いドットのテクスチャの一辺（px）。 */

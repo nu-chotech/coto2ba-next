@@ -1,5 +1,6 @@
 export * from './camera'
 export * from './constants'
+export * from './framing'
 export * from './ghost'
 export * from './projection'
 export * from './queries'
