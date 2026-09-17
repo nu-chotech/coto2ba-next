@@ -25,6 +25,7 @@ import {
   pathPoints,
   recentPaths,
   sameCamera,
+  selectPath,
   stackLabelY,
   stepLabel,
 } from '../src/features/collection/paths'
@@ -146,6 +147,39 @@ describe('defaultPathIndex / findPathByGameId', () => {
     expect(findPathByGameId(paths, 'b')).toBe(1)
     expect(findPathByGameId(paths, 'zzz')).toBeNull()
     expect(findPathByGameId(paths, null)).toBeNull()
+  })
+})
+
+/**
+ * 結果画面の「この軌跡を見る」から `?game=<id>` で入ってくる経路の決め方。
+ *
+ * **黙って別の軌跡に落ちないこと。** 図鑑に残るのはクリアした挑戦だけなので、
+ * ギブアップした挑戦を指されると必ず外れる。以前はそのまま
+ * 「いちばん新しいクリア」を開いていて、来場者には**自分の別の試合の軌跡**が
+ * 何の説明もなく出ていた。
+ */
+describe('selectPath', () => {
+  it('指した軌跡があればそれを開く', () => {
+    const paths = [makePath({ gameId: 'a' }), makePath({ gameId: 'b' })]
+    expect(selectPath(paths, 'b')).toEqual({ index: 1, fellBack: false })
+  })
+
+  it('何も指していなければ、いちばん新しい軌跡（落ちたとは言わない）', () => {
+    const paths = [makePath({ gameId: 'a' }), makePath({ gameId: 'b' })]
+    expect(selectPath(paths, null)).toEqual({ index: 1, fellBack: false })
+  })
+
+  it('指した軌跡が無ければ、落ちたことが分かる形で返す', () => {
+    const paths = [makePath({ gameId: 'a' }), makePath({ gameId: 'b' })]
+    expect(selectPath(paths, 'gave-up')).toEqual({ index: 1, fellBack: true })
+  })
+
+  it('軌跡が 1 本も無いのに指されたときも、落ちたことが分かる', () => {
+    expect(selectPath([], 'gave-up')).toEqual({ index: null, fellBack: true })
+  })
+
+  it('軌跡が 1 本も無く、何も指していなければ落ちていない', () => {
+    expect(selectPath([], null)).toEqual({ index: null, fellBack: false })
   })
 })
 

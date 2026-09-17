@@ -269,14 +269,19 @@ export default function ResultScreen() {
               シェアできませんでした（{shareError}）
             </Text>
           ) : null}
-          {/* タブをまたぐので push で行く（プレイタブのスタックは残る）。 */}
-          <GlassButton
-            title="この軌跡を見る"
-            icon="sparkles"
-            onPress={() => router.push(spaceHref(gameId))}
-            tier={tier}
-            variant="ghost"
-          />
+          {/* 図鑑に残るのは**クリアした挑戦だけ**（`GET /api/collection` が
+              cleared しか返さない）。ギブアップでここを出すと、図鑑は指された
+              軌跡を見つけられず、**自分の別の試合の軌跡**を開いてしまう。
+              タブをまたぐので push で行く（プレイタブのスタックは残る）。 */}
+          {cleared ? (
+            <GlassButton
+              title="この軌跡を見る"
+              icon="sparkles"
+              onPress={() => router.push(spaceHref(gameId))}
+              tier={tier}
+              variant="ghost"
+            />
+          ) : null}
           {boothMode ? (
             <>
               <GlassButton

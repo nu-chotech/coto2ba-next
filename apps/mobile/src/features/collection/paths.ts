@@ -78,6 +78,26 @@ export function defaultPathIndex(paths: readonly SpacePath[]): number | null {
   return paths.length === 0 ? null : paths.length - 1
 }
 
+/**
+ * どの経路を開くか。**黙って別の軌跡に落ちない。**
+ *
+ * 図鑑に残るのは**クリアした挑戦だけ**（`GET /api/collection` が cleared しか
+ * 返さない）なので、ギブアップした挑戦の `?game=<id>` は必ず外れる。
+ * 以前はそのまま「いちばん新しいクリア」を開いていて、来場者には
+ * **自分の別の試合の軌跡**が何の説明もなく出ていた。
+ *
+ * 落ちたことは `fellBack` で呼び出し側に渡し、画面に一言出す。
+ */
+export function selectPath(
+  paths: readonly SpacePath[],
+  pickedGameId: string | null,
+): { index: number | null; fellBack: boolean } {
+  const picked = findPathByGameId(paths, pickedGameId)
+  if (picked !== null) return { index: picked, fellBack: false }
+  const asked = pickedGameId !== null && pickedGameId.length > 0
+  return { index: defaultPathIndex(paths), fellBack: asked }
+}
+
 /** `?game=<id>` から経路を引く。見つからなければ null。 */
 export function findPathByGameId(
   paths: readonly SpacePath[],
