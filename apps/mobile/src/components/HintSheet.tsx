@@ -1,11 +1,13 @@
 /**
- * ヒントシート（SPEC §8.3-7）。
+ * ヒントシート（SPEC §8.3-7 / §3.3）。
  *
- * 6 語をガラスのシートで出す。タップすると入力欄に入るだけで、**自動で混合はしない**。
+ * ヒントは「語」ではなく「**語 + 混ぜ方**」で 1 つの提案。タップすると語と比率の
+ * 両方が入力に載るだけで、**自動で混合はしない**。
+ * サーバーは「混ぜると実際にゴールへ近づく手」だけを返すので、6 件に満たないことがある。
  * 開いた回数はカード側に出す（サーバーの `hint_count` が正）。
  */
 
-import { HINT_COUNT, type Hint, type TierId } from '@coto2ba/contracts'
+import { HINT_COUNT, type Hint, ratioMixLabel, type TierId } from '@coto2ba/contracts'
 import {
   Modal,
   Pressable,
@@ -20,6 +22,13 @@ import { HINT_SHEET_MAX_HEIGHT_RATIO, HINT_SLOT_HEIGHT } from './constants'
 import { GlassCard } from './GlassCard'
 import { PrimaryButton } from './PrimaryButton'
 import { Skeleton } from './Skeleton'
+
+/**
+ * 効く手が 1 つも見つからなかったときの文言。
+ * 「効かない語で埋めない」設計なので、0 件はエラーではなく正常な状態。
+ */
+const EMPTY_MESSAGE =
+  'いまの語からゴールに近づく手が見つかりませんでした。1 手打ってからもう一度開いてみてください。'
 
 /** ローディング中に並べる枠。index を key にしないため、先に固定の id を作っておく。 */
 const HINT_SLOT_IDS = Array.from({ length: HINT_COUNT }, (_, i) => `hint-slot-${i}`)
@@ -67,7 +76,7 @@ export function HintSheet({
             <Text style={[typography.label, { color: colors.sub }]}>使った回数 {hintCount}</Text>
           </View>
           <Text style={[typography.caption, { color: colors.sub }]}>
-            タップすると入力欄に入ります（混合はされません）
+            タップすると語と混ぜ方が入力に入ります（混合はされません）
           </Text>
 
           <ScrollView contentContainerStyle={styles.list}>
@@ -79,6 +88,8 @@ export function HintSheet({
                   <Pressable
                     key={hint.word}
                     onPress={() => onPick(hint)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${hint.word} を ${ratioMixLabel(hint.ratio)} で混ぜる`}
                     style={({ pressed }) => [
                       styles.item,
                       {
@@ -88,8 +99,20 @@ export function HintSheet({
                     ]}
                   >
                     <Text style={[typography.body, { color: colors.text }]}>{hint.word}</Text>
+                    <View style={styles.ratio}>
+                      <Text style={[typography.label, { color: colors.sub }]}>混ぜ方</Text>
+                      <Text style={[typography.subtitle, { color: colors.accent }]}>
+                        {ratioMixLabel(hint.ratio)}
+                      </Text>
+                    </View>
                   </Pressable>
                 ))}
+
+            {!loading &&
+            hints.length === 0 &&
+            (errorMessage === null || errorMessage.length === 0) ? (
+              <Text style={[typography.caption, { color: colors.sub }]}>{EMPTY_MESSAGE}</Text>
+            ) : null}
 
             {errorMessage !== null && errorMessage.length > 0 ? (
               <View style={styles.error}>
@@ -122,10 +145,16 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   list: { gap: spacing.sm, paddingVertical: spacing.sm },
   item: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     borderRadius: radius.md,
     borderWidth: borderWidth.hairline,
   },
+  /** 「今の語 : 混ぜる語」。表記は contracts の ratioMixLabel に集約している。 */
+  ratio: { alignItems: 'flex-end' },
   error: { gap: spacing.sm, paddingTop: spacing.sm },
 })

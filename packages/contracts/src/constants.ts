@@ -185,6 +185,15 @@ export const SPACE_FOCAL = 1.5
 export const SUGGEST_LIMIT = 5
 
 // ── 表示 ────────────────────────────────────────────────────
+/**
+ * 比率の表示（「今の語 : 混ぜる語」）。0.4 なら "6 : 4"。
+ * 生の 0.4 より混ぜ具合として読める。**表記はここ 1 箇所に集約する。**
+ */
+export function ratioMixLabel(ratio: number): string {
+  const input = Math.round(ratio * 10)
+  return `${10 - input} : ${input}`
+}
+
 /** rank → 温度（0〜1）。rank 0（完全錬成）は 1。 */
 export function rankToHeat(rank: number, nOutput: number = N_OUTPUT): number {
   if (rank <= 0) return 1

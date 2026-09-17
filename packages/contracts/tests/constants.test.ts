@@ -17,6 +17,7 @@ import {
   RATIO_STEP_COUNT,
   RATIOS,
   rankToHeat,
+  ratioMixLabel,
   ratioToIndex,
 } from '../src/constants'
 
@@ -144,5 +145,20 @@ describe('公開 URL', () => {
   it('末尾にスラッシュを付けない', () => {
     expect(API_BASE_URL.endsWith('/')).toBe(false)
     expect(LANDING_URL.endsWith('/')).toBe(false)
+  })
+})
+
+describe('ratioMixLabel', () => {
+  it('今の語 : 混ぜる語 の比で読める', () => {
+    expect(ratioMixLabel(0.4)).toBe('6 : 4')
+    expect(ratioMixLabel(0.1)).toBe('9 : 1')
+    expect(ratioMixLabel(0.8)).toBe('2 : 8')
+  })
+
+  it('8 段階すべてで合計が 10 になる', () => {
+    for (const r of RATIOS) {
+      const [left, right] = ratioMixLabel(r).split(' : ').map(Number)
+      expect((left as number) + (right as number)).toBe(10)
+    }
   })
 })
