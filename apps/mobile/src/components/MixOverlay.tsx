@@ -25,10 +25,10 @@ import Animated, {
 import {
   heroFontSize,
   opacity as opacityToken,
-  paletteForTier,
   radius,
   spacing,
   typography,
+  useTheme,
 } from '../theme'
 import {
   HERO_LINE_HEIGHT_RATIO,
@@ -58,6 +58,7 @@ export type MixOverlayProps = {
 }
 
 export function MixOverlay({ visible, tier, from, input, result, onFinished }: MixOverlayProps) {
+  const { paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   const converge = useSharedValue(0)
   const glow = useSharedValue(0)

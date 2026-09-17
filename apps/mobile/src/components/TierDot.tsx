@@ -11,7 +11,7 @@
 
 import type { TierId } from '@coto2ba/contracts'
 import { type StyleProp, StyleSheet, View, type ViewStyle } from 'react-native'
-import { paletteForTier, radius } from '../theme'
+import { radius, useTheme } from '../theme'
 import { TIER_CELL_GAP, TIER_CELL_RADIUS, TIER_CELL_SIZE, TIER_DOT_SIZE } from './constants'
 
 export type TierDotProps = {
@@ -23,6 +23,7 @@ export type TierDotProps = {
 
 /** 文字の横に置く丸。 */
 export function TierDot({ tier, size = TIER_DOT_SIZE, style }: TierDotProps) {
+  const { paletteForTier } = useTheme()
   return (
     <View
       style={[
@@ -50,6 +51,7 @@ export type TierPathProps = {
 
 /** 経路を 1 手 1 マスで並べたもの（結果画面）。 */
 export function TierPath({ moves, size = TIER_CELL_SIZE, style }: TierPathProps) {
+  const { paletteForTier } = useTheme()
   return (
     <View style={[styles.path, style]}>
       {moves.map((move) => (

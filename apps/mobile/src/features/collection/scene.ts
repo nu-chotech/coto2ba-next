@@ -14,6 +14,8 @@
 
 import type { ClearedPath, CollectionResponse, Encounter, TierId } from '@coto2ba/contracts'
 import { parseColor } from '../../theme'
+// 図鑑は宇宙なので、ライトモードでも暗いまま（意図的な例外、SPEC §4.3）。
+// 点の色はダーク固定の tier パレットから取る。
 import { tierPalettes } from '../../theme/tiers'
 import {
   SPACE_DOT_GHOST_PT,

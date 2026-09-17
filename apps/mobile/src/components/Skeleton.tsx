@@ -11,7 +11,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated'
-import { palette, radius, spacing } from '../theme'
+import { radius, spacing, useTheme } from '../theme'
 import { SKELETON_MAX_OPACITY, SKELETON_MIN_OPACITY, SKELETON_PULSE_MS } from './constants'
 
 export type SkeletonProps = {
@@ -27,6 +27,7 @@ export function Skeleton({
   cornerRadius = radius.sm,
   style,
 }: SkeletonProps) {
+  const { palette } = useTheme()
   const pulse = useSharedValue(SKELETON_MIN_OPACITY)
 
   useEffect(() => {
@@ -45,7 +46,7 @@ export function Skeleton({
   return (
     <Animated.View
       style={[
-        { width, height, borderRadius: cornerRadius, backgroundColor: palette.divider },
+        { width, height, borderRadius: cornerRadius, backgroundColor: palette.border },
         animatedStyle,
         style,
       ]}
@@ -55,8 +56,9 @@ export function Skeleton({
 
 /** カード 1 枚ぶんのスケルトン（ロビーで使う）。 */
 export function SkeletonCard({ style }: { style?: StyleProp<ViewStyle> }) {
+  const { palette } = useTheme()
   return (
-    <View style={[styles.card, style]}>
+    <View style={[styles.card, { backgroundColor: palette.surface }, style]}>
       <Skeleton width="40%" height={16} />
       <Skeleton width="70%" height={40} />
       <Skeleton width="90%" height={14} />
@@ -70,6 +72,5 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg,
     borderRadius: radius.lg,
-    backgroundColor: palette.tiers.mono.surface,
   },
 })

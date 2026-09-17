@@ -15,7 +15,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
-import { palette, paletteForTier, radius, spacing, typography } from '../theme'
+import { radius, spacing, typography, useTheme } from '../theme'
 import { HINT_SHEET_MAX_HEIGHT_RATIO, HINT_SLOT_HEIGHT } from './constants'
 import { GlassButton } from './GlassButton'
 import { GlassCard } from './GlassCard'
@@ -50,12 +50,17 @@ export function HintSheet({
   onClose,
   onRetry,
 }: HintSheetProps) {
+  const { palette, paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   const { height } = useWindowDimensions()
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="閉じる" />
+      <Pressable
+        style={[styles.scrim, { backgroundColor: palette.scrim }]}
+        onPress={onClose}
+        accessibilityLabel="閉じる"
+      />
       <View style={styles.dock} pointerEvents="box-none">
         <GlassCard
           variant="sheet"
@@ -110,14 +115,7 @@ export function HintSheet({
 }
 
 const styles = StyleSheet.create({
-  scrim: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: palette.scrim,
-  },
+  scrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   dock: { flex: 1, justifyContent: 'flex-end', padding: spacing.lg },
   sheet: { gap: spacing.md },
   header: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },

@@ -1,3 +1,6 @@
 export * from './color'
+export * from './metrics'
+export * from './palettes'
+export * from './scheme'
 export * from './tiers'
 export * from './tokens'

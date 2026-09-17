@@ -38,7 +38,7 @@ import {
   useDailyQuery,
   useMeQuery,
 } from '../../../features/game'
-import { heroFontSize, layout, paletteForTier, radius, spacing, typography } from '../../../theme'
+import { heroFontSize, layout, radius, spacing, typography, useTheme } from '../../../theme'
 
 /** ロビーは演出帯を持たないので、常に落ち着いた mono。 */
 const LOBBY_TIER = 'mono'
@@ -78,6 +78,7 @@ function dailyActionLabel(state: DailyState): string {
 export default function LobbyScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const { paletteForTier } = useTheme()
   const colors = paletteForTier(LOBBY_TIER)
 
   const daily = useDailyQuery()

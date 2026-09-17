@@ -13,7 +13,7 @@ import { BlurView } from 'expo-blur'
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect'
 import type { ReactNode } from 'react'
 import { type StyleProp, StyleSheet, View, type ViewStyle } from 'react-native'
-import { blurIntensity, glassEdge, glassFallbackFill, radius, spacing } from '../theme'
+import { blurIntensity, radius, spacing, useTheme } from '../theme'
 
 export type GlassCardVariant = 'card' | 'sheet'
 
@@ -43,11 +43,12 @@ export function GlassCard({
   padding = spacing.lg,
   style,
 }: GlassCardProps) {
+  const { palette } = useTheme()
   const shape: ViewStyle = {
     borderRadius: cornerRadius,
     padding,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: glassEdge,
+    borderColor: palette.glassEdge,
     overflow: 'hidden',
   }
 
@@ -67,10 +68,12 @@ export function GlassCard({
     <View style={[shape, style]}>
       <BlurView
         intensity={variant === 'sheet' ? blurIntensity.sheet : blurIntensity.card}
-        tint="dark"
+        tint={palette.blurTint}
         style={StyleSheet.absoluteFill}
       />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: tint ?? glassFallbackFill }]} />
+      <View
+        style={[StyleSheet.absoluteFill, { backgroundColor: tint ?? palette.glassFallbackFill }]}
+      />
       {children}
     </View>
   )

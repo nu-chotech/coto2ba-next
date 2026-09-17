@@ -40,11 +40,11 @@ import {
   iconSize,
   layout,
   opacity,
-  palette,
-  paletteForTier,
   radius,
   spacing,
+  TRANSPARENT,
   typography,
+  useTheme,
 } from '../../../theme'
 
 /** ランキングは演出帯を持たない。ロビーと同じ落ち着いた地。 */
@@ -58,6 +58,7 @@ const SKELETON_IDS = Array.from(
 
 export default function RankingScreen() {
   const insets = useSafeAreaInsets()
+  const { paletteForTier } = useTheme()
   const colors = paletteForTier(RANKING_TIER)
 
   const today = useMemo(() => jstToday(), [])
@@ -188,6 +189,7 @@ function DateArrow({
   disabled?: boolean
   tierColor: string
 }) {
+  const { palette } = useTheme()
   return (
     <Pressable
       accessibilityRole="button"
@@ -198,8 +200,9 @@ function DateArrow({
       style={({ pressed }) => [
         styles.arrow,
         {
+          borderColor: palette.border,
           opacity: disabled ? opacity.disabled : opacity.full,
-          backgroundColor: pressed ? palette.pressed : palette.transparent,
+          backgroundColor: pressed ? palette.pressed : TRANSPARENT,
         },
       ]}
     >
@@ -221,7 +224,6 @@ const styles = StyleSheet.create({
     height: MIN_TAP_SIZE,
     borderRadius: radius.pill,
     borderWidth: borderWidth.hairline,
-    borderColor: palette.divider,
     alignItems: 'center',
     justifyContent: 'center',
   },

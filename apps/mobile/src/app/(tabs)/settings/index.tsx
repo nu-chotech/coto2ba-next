@@ -72,15 +72,7 @@ import {
 import { isDevApiUrl, resolveApiBaseUrl } from '../../../lib/config'
 import { feedback } from '../../../lib/feedback'
 import { useSettingsStore } from '../../../store/settings'
-import {
-  borderWidth,
-  layout,
-  palette,
-  paletteForTier,
-  radius,
-  spacing,
-  typography,
-} from '../../../theme'
+import { borderWidth, layout, radius, spacing, typography, useTheme } from '../../../theme'
 
 /**
  * サーバーが返す引き継ぎ URL が「Expo Go が開くディープリンク」かどうかの判定。
@@ -91,7 +83,6 @@ const EXPO_GO_URL_PREFIX = 'exp://'
 
 /** 設定は演出帯を持たない。 */
 const SETTINGS_TIER = 'mono'
-const colors = paletteForTier(SETTINGS_TIER)
 
 const CREDITS = [
   {
@@ -129,6 +120,8 @@ const CREDITS = [
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
+  const { palette, paletteForTier } = useTheme()
+  const colors = paletteForTier(SETTINGS_TIER)
 
   const me = useMeQuery()
   const updateProfile = useUpdateProfileMutation()
@@ -364,6 +357,10 @@ export default function SettingsScreen() {
             value={boothMode}
             onChange={onToggleBooth}
             disabled={me.isPending}
+            accent={colors.accent}
+            textColor={colors.text}
+            subColor={colors.sub}
+            trackColor={palette.border}
           />
           {updateProfile.isError ? (
             <Text style={[typography.label, { color: palette.negative }]}>
@@ -488,8 +485,12 @@ export default function SettingsScreen() {
             description="端末がサイレントのときは鳴りません。"
             value={soundEnabled}
             onChange={setSoundEnabled}
+            accent={colors.accent}
+            textColor={colors.text}
+            subColor={colors.sub}
+            trackColor={palette.border}
           />
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: palette.border }]} />
           <ToggleRow
             title="ハプティクス"
             description="混合・ランク変化・クリアで振動します。"
@@ -498,6 +499,10 @@ export default function SettingsScreen() {
               setHapticsEnabled(next)
               if (next) feedback('slider_detent')
             }}
+            accent={colors.accent}
+            textColor={colors.text}
+            subColor={colors.sub}
+            trackColor={palette.border}
           />
         </GlassCard>
 
@@ -539,25 +544,33 @@ function ToggleRow({
   value,
   onChange,
   disabled = false,
+  accent,
+  textColor,
+  subColor,
+  trackColor,
 }: {
   title: string
   description: string
   value: boolean
   onChange: (next: boolean) => void
   disabled?: boolean
+  accent: string
+  textColor: string
+  subColor: string
+  trackColor: string
 }) {
   return (
     <View style={styles.toggleRow}>
       <View style={styles.toggleText}>
-        <Text style={[typography.body, { color: colors.text }]}>{title}</Text>
-        <Text style={[typography.label, { color: colors.sub }]}>{description}</Text>
+        <Text style={[typography.body, { color: textColor }]}>{title}</Text>
+        <Text style={[typography.label, { color: subColor }]}>{description}</Text>
       </View>
+      {/* つまみの色は指定しない（iOS も Android も素の白が正しい）。 */}
       <Switch
         value={value}
         onValueChange={onChange}
         disabled={disabled}
-        trackColor={{ false: palette.divider, true: colors.accent }}
-        thumbColor={palette.white}
+        trackColor={{ false: trackColor, true: accent }}
       />
     </View>
   )
@@ -591,7 +604,7 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   toggleText: { flex: 1, gap: spacing.xs },
-  divider: { height: borderWidth.hairline, backgroundColor: palette.divider },
+  divider: { height: borderWidth.hairline },
   transfer: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
   token: { textAlign: 'center', letterSpacing: 1 },
   copyRow: { flexDirection: 'row', gap: spacing.sm },

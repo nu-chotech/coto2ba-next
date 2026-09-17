@@ -8,7 +8,7 @@
 import type { TierId } from '@coto2ba/contracts'
 import { type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native'
 import { isApiError } from '../lib/api'
-import { paletteForTier, spacing, typography } from '../theme'
+import { spacing, typography, useTheme } from '../theme'
 import { GlassButton } from './GlassButton'
 
 /** 何が起きても日本語の 1 文にする。 */
@@ -34,6 +34,7 @@ export function ErrorState({
   title = 'うまくいきませんでした',
   style,
 }: ErrorStateProps) {
+  const { paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   return (
     <View style={[styles.root, style]}>
@@ -56,6 +57,7 @@ export function PlaceholderState({
   description: string
   tier?: TierId
 }) {
+  const { paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   return (
     <View style={styles.placeholder}>

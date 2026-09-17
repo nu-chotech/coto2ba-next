@@ -29,12 +29,12 @@ import {
   iconSize,
   layout,
   opacity,
-  palette,
-  paletteForTier,
   radius,
   spacing,
   spring,
+  TRANSPARENT,
   typography,
+  useTheme,
 } from '../theme'
 import { type ButtonVariant, buttonSurface } from './buttonStyle'
 import { BUTTON_PRESSED_SCALE, MIN_TAP_SIZE } from './constants'
@@ -72,6 +72,7 @@ export function GlassButton({
   subtitle = null,
   style,
 }: GlassButtonProps) {
+  const { palette, paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   const surface = buttonSurface(variant, colors)
   const scale = useSharedValue(1)
@@ -94,7 +95,7 @@ export function GlassButton({
       style={({ pressed }) => [
         styles.pressable,
         compact ? styles.compact : styles.regular,
-        { backgroundColor: pressed ? palette.pressed : palette.transparent },
+        { backgroundColor: pressed ? palette.pressed : TRANSPARENT },
       ]}
     >
       {loading ? (

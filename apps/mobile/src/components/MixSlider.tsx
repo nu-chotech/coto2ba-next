@@ -19,16 +19,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated'
 import { feedback } from '../lib/feedback'
-import {
-  duration,
-  layout,
-  opacity,
-  paletteForTier,
-  radius,
-  spacing,
-  spring,
-  typography,
-} from '../theme'
+import { duration, layout, opacity, radius, spacing, spring, typography, useTheme } from '../theme'
 import {
   SLIDER_EDGE_PADDING,
   SLIDER_HIT_HEIGHT,
@@ -48,6 +39,7 @@ export type MixSliderProps = {
 }
 
 export function MixSlider({ value, onChange, tier, disabled = false, style }: MixSliderProps) {
+  const { paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   const trackWidth = useSharedValue(0)
   /** 直近にコミットした段。ディテント判定はこれだけを見る（真の値）。 */

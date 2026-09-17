@@ -8,7 +8,7 @@
 
 import type { ReactNode } from 'react'
 import { Pressable, type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native'
-import { iconSize, palette, radius, spacing, typography } from '../theme'
+import { iconSize, radius, spacing, typography, useTheme } from '../theme'
 import { MIN_TAP_SIZE } from './constants'
 import { SymbolIcon } from './SymbolIcon'
 import type { SymbolName } from './symbols'
@@ -46,6 +46,8 @@ export function ListRow({
   right,
   style,
 }: ListRowProps) {
+  const { palette } = useTheme()
+
   const body = (
     <>
       {icon !== undefined ? <SymbolIcon name={icon} size={iconSize.md} color={subColor} /> : null}
@@ -65,8 +67,12 @@ export function ListRow({
     </>
   )
 
+  const divider = divided
+    ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: palette.border }
+    : null
+
   if (onPress === null) {
-    return <View style={[styles.row, divided && styles.divided, style]}>{body}</View>
+    return <View style={[styles.row, divider, style]}>{body}</View>
   }
 
   return (
@@ -75,8 +81,8 @@ export function ListRow({
       onPress={onPress}
       style={({ pressed }) => [
         styles.row,
-        divided && styles.divided,
-        pressed && styles.pressed,
+        divider,
+        pressed ? [styles.pressed, { backgroundColor: palette.pressed }] : null,
         style,
       ]}
     >
@@ -93,13 +99,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingVertical: spacing.sm,
   },
-  divided: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: palette.divider,
-  },
   // 押下の被膜は行の端まで届かせたいので、負のマージンでカードの余白ぶん広げる。
   pressed: {
-    backgroundColor: palette.pressed,
     borderRadius: radius.sm,
     marginHorizontal: -spacing.sm,
     paddingHorizontal: spacing.sm,

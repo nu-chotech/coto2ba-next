@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "coto2ba",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "dev.chotech.coto2ba",
@@ -46,9 +46,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0B0B10",
+          "backgroundColor": "#F5F4F1",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 96
+          "imageWidth": 96,
+          "dark": {
+            "backgroundColor": "#0B0B10",
+            "image": "./assets/images/splash-icon.png"
+          }
         }
       ],
       "expo-audio",

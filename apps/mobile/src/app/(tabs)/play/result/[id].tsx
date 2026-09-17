@@ -42,7 +42,7 @@ import { ShareCardHost, useShareResult } from '../../../../features/share'
 import { resetSession } from '../../../../lib/auth'
 import { queryClient } from '../../../../lib/queryClient'
 import { useSettingsStore } from '../../../../store/settings'
-import { iconSize, layout, paletteForTier, spacing, typography } from '../../../../theme'
+import { iconSize, layout, spacing, typography, useTheme } from '../../../../theme'
 
 export default function ResultScreen() {
   const { id, unlocked } = useLocalSearchParams<{ id: string; unlocked?: string }>()
@@ -56,6 +56,7 @@ export default function ResultScreen() {
 
   const achievements = useMemo(() => parseAchievementIds(unlocked), [unlocked])
 
+  const { paletteForTier } = useTheme()
   const detail = game.data ?? null
   const tier = detail === null ? 'mono' : currentTier(detail)
   const colors = paletteForTier(tier)

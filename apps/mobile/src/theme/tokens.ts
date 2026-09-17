@@ -8,15 +8,15 @@
 
 import type { TextStyle } from 'react-native'
 import { Platform } from 'react-native'
+import { PALETTES } from './palettes'
 import { tierPalettes } from './tiers'
 
-/** 寸法は react-native に依存しない `metrics.ts` に置いてある。ここからも取れる。 */
-export * from './metrics'
-
-/** ガラスの縁。tier に依存しない中立の白。 */
-export const glassEdge = 'rgba(255, 255, 255, 0.14)'
-/** ガラスのフォールバック（expo-blur）に重ねる地の色。 */
-export const glassFallbackFill = 'rgba(255, 255, 255, 0.06)'
+/**
+ * ガラスの縁と、フォールバックに重ねる地。**ダーク固定の互換シム。**
+ * スキームに追従する値は `PALETTES[scheme].glassEdge` / `.glassFallbackFill`。
+ */
+export const glassEdge = PALETTES.dark.glassEdge
+export const glassFallbackFill = PALETTES.dark.glassFallbackFill
 
 // ── タイポグラフィ ──────────────────────────────────────────
 /**
@@ -95,8 +95,11 @@ export function heroFontSize(word: string): number {
 
 // ── 色 ──────────────────────────────────────────────────────
 /**
- * tier に依存しない固定色 + tier パレット。
- * 画面の地・文字・アクセントは基本的に tier から取る（`tierPalettes`）。
+ * ダーク固定の色。**互換シム。**
+ *
+ * 触ってはいけないガラスのタブバー（`(tabs)/_layout.tsx`）と、
+ * 地が常に暗い場所（図鑑・シェア画像）がここを読む。
+ * **画面の新しいコードはこれを使わず、`useTheme().palette` を使うこと。**
  */
 export const palette = {
   /** 起動時・tier 未確定のときの地。splash の backgroundColor と一致させること。 */

@@ -12,7 +12,7 @@
 import { rect } from '@shopify/react-native-skia'
 import type { ReactNode } from 'react'
 import { Platform, StyleSheet, Text, View } from 'react-native'
-import { paletteForTier, spacing, typography } from '../theme'
+import { spacing, typography, useTheme } from '../theme'
 
 /**
  * Skia が実際に使えるか。**存在チェックではなく 1 回呼んで確かめる。**
@@ -32,12 +32,14 @@ export function isSkiaAvailable(): boolean {
 }
 
 export function SkiaGate({ children, label }: { children: ReactNode; label: string }) {
+  const { paletteForTier } = useTheme()
   if (isSkiaAvailable()) return <>{children}</>
 
+  const colors = paletteForTier('mono')
   return (
-    <View style={styles.fallback}>
-      <Text style={styles.title}>{label}</Text>
-      <Text style={styles.body}>
+    <View style={[styles.fallback, { backgroundColor: colors.bg }]}>
+      <Text style={[styles.title, { color: colors.text }]}>{label}</Text>
+      <Text style={[styles.body, { color: colors.sub }]}>
         {Platform.OS === 'web'
           ? 'ブラウザでは 3D 表示に対応していません。Expo Go で開くと見られます。'
           : 'この端末では描画エンジンを使えませんでした。'}
@@ -57,8 +59,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm,
     padding: spacing.xl,
-    backgroundColor: paletteForTier('mono').bg,
   },
-  title: { ...typography.title, color: paletteForTier('mono').text, textAlign: 'center' },
-  body: { ...typography.body, color: paletteForTier('mono').sub, textAlign: 'center' },
+  title: { ...typography.title, textAlign: 'center' },
+  body: { ...typography.body, textAlign: 'center' },
 })

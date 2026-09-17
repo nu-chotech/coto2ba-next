@@ -8,13 +8,16 @@
  * GestureHandlerRootView の内側・SafeAreaProvider の外側。入力欄は
  * `KeyboardAwareScrollView` / `KeyboardStickyView` を使うこと
  * （`KeyboardAvoidingView` とは戦わない。ARCHITECTURE §5）。
+ *
+ * `ThemeProvider` が端末のライト / ダークを購読する。**地とステータスバーを塗るのは
+ * その内側**（`Themed`）でないとスキームの切り替えを受け取れない。
  */
 
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
-import { StyleSheet } from 'react-native'
+import { StyleSheet, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -23,7 +26,7 @@ import { ensureSession } from '../lib/auth'
 import { initFeedback } from '../lib/feedback'
 import { queryClient } from '../lib/queryClient'
 import { loadVocab } from '../lib/vocab'
-import { palette } from '../theme'
+import { ThemeProvider, useTheme } from '../theme'
 
 /**
  * 起動時に走らせるもの。いずれも失敗しても投げない
@@ -45,16 +48,9 @@ export default function RootLayout() {
       <KeyboardProvider>
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
-            <StatusBar style="light" />
-            {/* 引き継ぎ QR（`exp://…?transfer=`）で開かれたときの受け取り。SPEC §7.4。
-                どの画面に着地しても動くよう、Provider の内側にここだけ置く（描画しない）。 */}
-            <TransferDeepLinkGate />
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: palette.base },
-              }}
-            />
+            <ThemeProvider>
+              <Themed />
+            </ThemeProvider>
           </QueryClientProvider>
         </SafeAreaProvider>
       </KeyboardProvider>
@@ -62,6 +58,26 @@ export default function RootLayout() {
   )
 }
 
+/** ThemeProvider の内側。ここでないとスキームの切り替えを受け取れない。 */
+function Themed() {
+  const { palette } = useTheme()
+
+  return (
+    <View style={[styles.root, { backgroundColor: palette.base }]}>
+      <StatusBar style={palette.statusBar} />
+      {/* 引き継ぎ QR（`exp://…?transfer=`）で開かれたときの受け取り。SPEC §7.4。
+          どの画面に着地しても動くよう、Provider の内側にここだけ置く（描画しない）。 */}
+      <TransferDeepLinkGate />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: palette.base },
+        }}
+      />
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: palette.base },
+  root: { flex: 1 },
 })

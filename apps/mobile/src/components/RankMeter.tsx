@@ -10,7 +10,7 @@ import { PERFECT_RANK, rankToHeat, type TierId } from '@coto2ba/contracts'
 import { useEffect } from 'react'
 import { type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native'
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
-import { iconSize, palette, paletteForTier, radius, spacing, typography } from '../theme'
+import { iconSize, radius, spacing, typography, useTheme } from '../theme'
 import { RANK_METER_DURATION_MS, RANK_METER_HEIGHT } from './constants'
 import { SymbolIcon } from './SymbolIcon'
 import type { SymbolName } from './symbols'
@@ -46,6 +46,7 @@ function formatDelta(rank: number, prevRank: number | null | undefined): Delta |
 }
 
 export function RankMeter({ rank, prevRank = null, tier, style }: RankMeterProps) {
+  const { palette, paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   const heat = rankToHeat(rank)
   const fill = useSharedValue(heat)
@@ -83,7 +84,7 @@ export function RankMeter({ rank, prevRank = null, tier, style }: RankMeterProps
           </View>
         ) : null}
       </View>
-      <View style={[styles.track, { backgroundColor: palette.divider }]}>
+      <View style={[styles.track, { backgroundColor: palette.border }]}>
         <Animated.View style={[styles.fill, { backgroundColor: colors.accent }, fillStyle]} />
       </View>
       <Text style={[typography.label, { color: colors.sub }]}>

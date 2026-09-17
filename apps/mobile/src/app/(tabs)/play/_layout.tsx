@@ -4,9 +4,10 @@
  */
 
 import { Stack } from 'expo-router'
-import { palette } from '../../../theme'
+import { useTheme } from '../../../theme'
 
 export default function PlayLayout() {
+  const { palette } = useTheme()
   return (
     <Stack
       screenOptions={{

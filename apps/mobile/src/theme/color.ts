@@ -75,6 +75,19 @@ export function withAlpha(input: string | null | undefined, alpha: number): stri
   return formatRgba([r, g, b, alpha])
 }
 
+/**
+ * 半透明の色を地の上に重ねた結果の色（アルファ合成）。
+ *
+ * カードの面（`surface`）やガラスの着色は半透明なので、**そのままの値で
+ * コントラストを測っても意味がない**。合成してから測るために使う。
+ */
+export function compositeOver(foreground: string, background: string): string {
+  const [fr, fg, fb, fa] = parseColor(foreground)
+  const [br, bg, bb] = parseColor(background)
+  const a = Math.min(Math.max(fa, 0), 1)
+  return formatRgba([fr * a + br * (1 - a), fg * a + bg * (1 - a), fb * a + bb * (1 - a), 1])
+}
+
 /** 2 色を線形補間する（JS スレッド用。worklet 側は interpolateColor を使う）。 */
 export function mixColor(from: string, to: string, t: number): string {
   const a = parseColor(from)

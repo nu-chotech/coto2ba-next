@@ -11,7 +11,8 @@ import { BUTTON_VARIANTS, buttonSurface } from '../src/components/buttonStyle'
 import { MIN_TAP_SIZE } from '../src/components/constants'
 import { contrastRatio } from '../src/theme/color'
 import { layout } from '../src/theme/metrics'
-import { tierPalettes } from '../src/theme/tiers'
+import { SCHEMES } from '../src/theme/palettes'
+import { TIER_PALETTES } from '../src/theme/tiers'
 
 /** WCAG AA（本文）。 */
 const READABLE = 4.5
@@ -35,29 +36,35 @@ describe('ボタンの配色', () => {
     expect([...BUTTON_VARIANTS].sort()).toEqual(['ghost', 'primary', 'secondary'])
   })
 
-  it('どの tier・どの variant でも文字が地に対して読める', () => {
-    for (const tier of TIER_IDS) {
-      for (const variant of BUTTON_VARIANTS) {
-        const surface = buttonSurface(variant, tierPalettes[tier])
-        expect(
-          contrastRatio(surface.label, surface.contrastAgainst),
-          `${tier} / ${variant}`,
-        ).toBeGreaterThanOrEqual(READABLE)
+  it('どのスキーム・どの tier・どの variant でも文字が地に対して読める', () => {
+    for (const scheme of SCHEMES) {
+      for (const tier of TIER_IDS) {
+        for (const variant of BUTTON_VARIANTS) {
+          const surface = buttonSurface(variant, TIER_PALETTES[scheme][tier])
+          expect(
+            contrastRatio(surface.label, surface.contrastAgainst),
+            `${scheme} / ${tier} / ${variant}`,
+          ).toBeGreaterThanOrEqual(READABLE)
+        }
       }
     }
   })
 
   it('primary はガラスの上に tier の accent を乗せる', () => {
-    for (const tier of TIER_IDS) {
-      const surface = buttonSurface('primary', tierPalettes[tier])
-      expect(surface.fill).toBe(tierPalettes[tier].accent)
-      expect(surface.usesGlass).toBe(true)
+    for (const scheme of SCHEMES) {
+      for (const tier of TIER_IDS) {
+        const surface = buttonSurface('primary', TIER_PALETTES[scheme][tier])
+        expect(surface.fill).toBe(TIER_PALETTES[scheme][tier].accent)
+        expect(surface.usesGlass).toBe(true)
+      }
     }
   })
 
   it('ghost はガラスを敷かない（iOS の plain ボタン）', () => {
-    for (const tier of TIER_IDS) {
-      expect(buttonSurface('ghost', tierPalettes[tier]).usesGlass).toBe(false)
+    for (const scheme of SCHEMES) {
+      for (const tier of TIER_IDS) {
+        expect(buttonSurface('ghost', TIER_PALETTES[scheme][tier]).usesGlass).toBe(false)
+      }
     }
   })
 })

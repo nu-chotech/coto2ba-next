@@ -5,15 +5,7 @@
 
 import type { TierId } from '@coto2ba/contracts'
 import { Pressable, type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native'
-import {
-  borderWidth,
-  opacity,
-  palette,
-  paletteForTier,
-  radius,
-  spacing,
-  typography,
-} from '../theme'
+import { borderWidth, opacity, radius, spacing, TRANSPARENT, typography, useTheme } from '../theme'
 
 export type SegmentedOption<T extends string> = {
   value: T
@@ -37,13 +29,18 @@ export function Segmented<T extends string>({
   disabled = false,
   style,
 }: SegmentedProps<T>) {
+  const { palette, paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
 
   return (
     <View
       style={[
         styles.root,
-        { backgroundColor: colors.surface, opacity: disabled ? opacity.disabled : opacity.full },
+        {
+          backgroundColor: colors.surface,
+          borderColor: palette.border,
+          opacity: disabled ? opacity.disabled : opacity.full,
+        },
         style,
       ]}
     >
@@ -59,15 +56,11 @@ export function Segmented<T extends string>({
             style={({ pressed }) => [
               styles.segment,
               {
-                backgroundColor: selected
-                  ? colors.accent
-                  : pressed
-                    ? palette.pressed
-                    : palette.transparent,
+                backgroundColor: selected ? colors.accent : pressed ? palette.pressed : TRANSPARENT,
               },
             ]}
           >
-            <Text style={[typography.label, { color: selected ? palette.base : colors.text }]}>
+            <Text style={[typography.label, { color: selected ? colors.onAccent : colors.text }]}>
               {option.label}
             </Text>
           </Pressable>
@@ -84,7 +77,6 @@ const styles = StyleSheet.create({
     padding: spacing.xs,
     gap: spacing.xs,
     borderWidth: borderWidth.hairline,
-    borderColor: palette.divider,
   },
   segment: {
     flex: 1,

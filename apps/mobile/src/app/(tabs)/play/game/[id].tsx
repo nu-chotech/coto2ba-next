@@ -57,7 +57,7 @@ import {
 import { feedback, feedbackForRankChange } from '../../../../lib/feedback'
 import { isKnownWord, isVocabReady } from '../../../../lib/vocab'
 import { useUiStore } from '../../../../store/ui'
-import { iconSize, layout, paletteForTier, spacing, typography } from '../../../../theme'
+import { iconSize, layout, spacing, typography, useTheme } from '../../../../theme'
 
 type Pending = { from: string; input: string }
 
@@ -86,6 +86,7 @@ export default function GameScreen() {
   const [inputError, setInputError] = useState<string | null>(null)
   const [hints, setHints] = useState<string[]>([])
 
+  const { paletteForTier } = useTheme()
   const detail = game.data ?? null
   const tier = detail === null ? 'mono' : currentTier(detail)
   const colors = paletteForTier(tier)

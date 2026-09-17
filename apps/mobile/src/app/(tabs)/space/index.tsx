@@ -41,7 +41,12 @@ import {
   typography,
 } from '../../../theme'
 
-/** 図鑑は宇宙。tier は固定。 */
+/**
+ * 図鑑は宇宙。tier は固定。
+ *
+ * **意図的な例外：ライトモードでも地は暗いまま**（SPEC §4.3）。
+ * `useTheme()` ではなくダーク固定の互換シムを読む。宇宙が白いと figure が壊れる。
+ */
 const SPACE_TIER = 'cosmos'
 const colors = paletteForTier(SPACE_TIER)
 

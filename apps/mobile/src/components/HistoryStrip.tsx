@@ -8,7 +8,7 @@
 import { type Move, PERFECT_RANK, type TierId } from '@coto2ba/contracts'
 import { useEffect, useRef } from 'react'
 import { ScrollView, type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native'
-import { borderWidth, palette, paletteForTier, radius, spacing, typography } from '../theme'
+import { borderWidth, radius, spacing, typography, useTheme } from '../theme'
 import { HISTORY_CHIP_MIN_WIDTH, HISTORY_STRIP_HEIGHT } from './constants'
 import { TierDot } from './TierDot'
 
@@ -25,6 +25,7 @@ function formatRank(rank: number): string {
 }
 
 export function HistoryStrip({ moves, tier, start, style }: HistoryStripProps) {
+  const { paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   const scrollRef = useRef<ScrollView | null>(null)
 
@@ -45,7 +46,7 @@ export function HistoryStrip({ moves, tier, start, style }: HistoryStripProps) {
         contentContainerStyle={styles.row}
         style={styles.scroll}
       >
-        <View style={[styles.chip, styles.startChip, { borderColor: colors.sub }]}>
+        <View style={[styles.chip, { borderColor: colors.sub }]}>
           <Text style={[typography.label, { color: colors.sub }]}>スタート</Text>
           <Text style={[typography.body, { color: colors.text }]} numberOfLines={1}>
             {start}
@@ -89,7 +90,6 @@ const styles = StyleSheet.create({
     borderWidth: borderWidth.hairline,
     gap: spacing.xs,
   },
-  startChip: { backgroundColor: palette.transparent },
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   result: { flex: 1 },
 })

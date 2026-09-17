@@ -8,6 +8,10 @@
  * 地は必ず不透明にすること（透明のまま撮ると真っ黒な PNG になる端末がある）。
  *
  * 画面には出さない。`ShareCardHost` が画面外に置いて描画だけさせる。
+ *
+ * **意図的な例外：ライトモードでも暗いまま。** これは X に貼られる画像で、
+ * 端末の設定ではなく作品の見た目を決め打ちすべきところなので、
+ * `useTheme()` ではなくダーク固定の互換シムを読む。
  */
 
 import { DIFFICULTY_LABELS_JA, type GameDetail, LANDING_URL, MAX_MOVES } from '@coto2ba/contracts'
