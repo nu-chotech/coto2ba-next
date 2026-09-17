@@ -58,14 +58,21 @@ export const blurIntensity = {
 
 // ── レイアウト ──────────────────────────────────────────────
 export const layout = {
-  /** 画面の左右パディング。 */
-  screenPaddingHorizontal: spacing.xl,
+  /** 画面の左右パディング。iOS のリスト・フォームの内寄せに合わせる。 */
+  screenPaddingHorizontal: spacing.lg + spacing.xs,
+  /**
+   * セクション（カード）どうしの間隔。
+   * **関連する要素同士は近く、違う塊は遠く。** その「遠く」のほう。
+   */
+  sectionGap: spacing.xl,
+  /** カードの中の、関連する要素どうしの間隔。「近く」のほう。 */
+  cardGap: spacing.md,
   /** カードの内側パディング。 */
   cardPadding: spacing.lg,
-  /** 主要ボタンの高さ。最小タップ領域（44pt）を下回らない。 */
-  buttonHeight: 56,
+  /** 主要ボタンの高さ。Apple の「大きい」コントロール相当。 */
+  buttonHeight: 50,
   /** 入力欄の高さ。最小タップ領域（44pt）を下回らない。 */
-  inputHeight: 52,
+  inputHeight: 48,
   /** ratio スライダーのトラック高さ。 */
   sliderTrackHeight: 6,
   sliderThumbSize: 28,

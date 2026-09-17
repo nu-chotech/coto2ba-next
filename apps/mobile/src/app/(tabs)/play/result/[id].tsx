@@ -42,7 +42,7 @@ import { ShareCardHost, useShareResult } from '../../../../features/share'
 import { resetSession } from '../../../../lib/auth'
 import { queryClient } from '../../../../lib/queryClient'
 import { useSettingsStore } from '../../../../store/settings'
-import { iconSize, layout, spacing, typography, useTheme } from '../../../../theme'
+import { iconSize, layout, screenInsets, spacing, typography, useTheme } from '../../../../theme'
 
 export default function ResultScreen() {
   const { id, unlocked } = useLocalSearchParams<{ id: string; unlocked?: string }>()
@@ -77,7 +77,7 @@ export default function ResultScreen() {
   if (game.isPending) {
     return (
       <TierBackground tier="mono">
-        <View style={[styles.center, { paddingTop: insets.top + spacing.xxl }]}>
+        <View style={[styles.center, { paddingTop: insets.top }]}>
           <SkeletonCard />
         </View>
       </TierBackground>
@@ -87,7 +87,7 @@ export default function ResultScreen() {
   if (game.isError || detail === null) {
     return (
       <TierBackground tier="mono">
-        <View style={[styles.center, { paddingTop: insets.top + spacing.xxl }]}>
+        <View style={[styles.center, { paddingTop: insets.top }]}>
           <ErrorState
             error={game.error}
             onRetry={() => void game.refetch()}
@@ -104,21 +104,17 @@ export default function ResultScreen() {
 
   return (
     <TierBackground tier={tier}>
-      <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.xl },
-        ]}
-      >
-        <Text style={[typography.title, styles.headline, { color: colors.text }]}>
-          {detail.perfect ? '完全錬成' : cleared ? 'クリア' : 'ギブアップ'}
-        </Text>
-
-        {detail.perfect ? (
-          <Text style={[typography.caption, styles.headline, { color: colors.accent }]}>
-            ゴールの語そのものを錬成しました
+      <ScrollView contentContainerStyle={[styles.content, screenInsets(insets)]}>
+        <View style={styles.header}>
+          <Text style={[typography.largeTitle, styles.headline, { color: colors.text }]}>
+            {detail.perfect ? '完全錬成' : cleared ? 'クリア' : 'ギブアップ'}
           </Text>
-        ) : null}
+          {detail.perfect ? (
+            <Text style={[typography.caption, styles.headline, { color: colors.accent }]}>
+              ゴールの語そのものを錬成しました
+            </Text>
+          ) : null}
+        </View>
 
         <GlassCard tint={colors.glassTint} style={styles.card}>
           <View style={styles.row}>
@@ -227,10 +223,11 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingHorizontal: layout.screenPaddingHorizontal,
-    gap: spacing.lg,
+    gap: layout.sectionGap,
   },
   center: { flex: 1, justifyContent: 'center', paddingHorizontal: layout.screenPaddingHorizontal },
-  card: { gap: spacing.sm },
+  header: { gap: spacing.xs },
+  card: { gap: layout.cardGap },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headline: { textAlign: 'center' },
   path: { paddingTop: spacing.sm },
@@ -242,5 +239,5 @@ const styles = StyleSheet.create({
   },
   achievementText: { flex: 1, gap: spacing.xs },
   shareError: { textAlign: 'center' },
-  actions: { gap: spacing.md, marginTop: 'auto' },
+  actions: { gap: spacing.md, marginTop: 'auto', paddingTop: layout.sectionGap },
 })

@@ -10,6 +10,10 @@ import type { TextStyle } from 'react-native'
 import { Platform } from 'react-native'
 import { PALETTES } from './palettes'
 import { tierPalettes } from './tiers'
+import { TYPE_SCALE } from './type'
+
+/** 文字の段とセーフエリアの足し方は `type.ts`。ここからも取れる。 */
+export * from './type'
 
 /**
  * ガラスの縁と、フォールバックに重ねる地。**ダーク固定の互換シム。**
@@ -29,69 +33,19 @@ export const fontFamily = {
   mono: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
 } as const
 
+/**
+ * 画面が使う文字のスタイル。段（寸法）は `type.ts`、ここでは
+ * `Platform` が要るもの（等幅フォント・数字の字形）だけを足す。
+ */
 export const typography = {
-  /** 現在の語。画面の主役。 */
-  hero: {
-    fontSize: 54,
-    lineHeight: 64,
-    fontWeight: '700',
-    letterSpacing: -1,
-  },
-  /** ゴール語、画面見出し。 */
-  title: {
-    fontSize: 28,
-    lineHeight: 36,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-  },
-  /** 小見出し・ランク数値。 */
-  subtitle: {
-    fontSize: 20,
-    lineHeight: 28,
-    fontWeight: '600',
-    letterSpacing: -0.2,
-  },
-  /** 本文・説明文。 */
-  body: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: '400',
-  },
-  /** 補助テキスト。 */
-  caption: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '400',
-  },
-  /** ラベル・チップ。 */
-  label: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-  /** 手数・ランクなど桁が動く数値。等幅で揺れを止める。 */
+  ...TYPE_SCALE,
   mono: {
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '500',
+    ...TYPE_SCALE.mono,
     fontFamily: fontFamily.mono,
     fontVariant: ['tabular-nums'] as NonNullable<TextStyle['fontVariant']>,
   },
 } as const satisfies Record<string, TextStyle>
 export type TypographyToken = keyof typeof typography
-
-/** 現在の語は字数で縮める（48〜56pt の帯に収める）。 */
-export const HERO_FONT_SIZE_MAX = 56
-export const HERO_FONT_SIZE_MIN = 28
-export const HERO_COMFORTABLE_LENGTH = 5
-
-export function heroFontSize(word: string): number {
-  const length = [...word].length
-  if (length <= HERO_COMFORTABLE_LENGTH) return HERO_FONT_SIZE_MAX
-  const shrunk = Math.round((HERO_FONT_SIZE_MAX * HERO_COMFORTABLE_LENGTH) / length)
-  return Math.max(HERO_FONT_SIZE_MIN, Math.min(HERO_FONT_SIZE_MAX, shrunk))
-}
 
 // ── 色 ──────────────────────────────────────────────────────
 /**

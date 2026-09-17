@@ -57,7 +57,7 @@ import {
 import { feedback, feedbackForRankChange } from '../../../../lib/feedback'
 import { isKnownWord, isVocabReady } from '../../../../lib/vocab'
 import { useUiStore } from '../../../../store/ui'
-import { iconSize, layout, spacing, typography, useTheme } from '../../../../theme'
+import { iconSize, layout, screenInsets, spacing, typography, useTheme } from '../../../../theme'
 
 type Pending = { from: string; input: string }
 
@@ -208,7 +208,7 @@ export default function GameScreen() {
   if (game.isPending) {
     return (
       <TierBackground tier="mono">
-        <View style={[styles.center, { paddingTop: insets.top + spacing.xxl }]}>
+        <View style={[styles.center, { paddingTop: insets.top }]}>
           <SkeletonCard />
         </View>
       </TierBackground>
@@ -218,7 +218,7 @@ export default function GameScreen() {
   if (game.isError || detail === null) {
     return (
       <TierBackground tier="mono">
-        <View style={[styles.center, { paddingTop: insets.top + spacing.xxl }]}>
+        <View style={[styles.center, { paddingTop: insets.top }]}>
           <ErrorState
             error={game.error}
             onRetry={() => void game.refetch()}
@@ -236,10 +236,7 @@ export default function GameScreen() {
       <KeyboardAwareScrollView
         bottomOffset={spacing.xxl}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.xxxl },
-        ]}
+        contentContainerStyle={[styles.content, screenInsets(insets)]}
       >
         {/* 1. ゴールカード */}
         <GlassCard tint={colors.glassTint} style={styles.card}>
@@ -352,12 +349,13 @@ export default function GameScreen() {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: layout.screenPaddingHorizontal,
-    gap: spacing.lg,
+    gap: layout.sectionGap,
   },
   center: { flex: 1, justifyContent: 'center', paddingHorizontal: layout.screenPaddingHorizontal },
-  card: { gap: spacing.sm },
+  card: { gap: layout.cardGap },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  hero: { paddingVertical: spacing.lg },
+  // 主役の語だけは上下を大きく空けて、1 つだけ浮かせる。
+  hero: { paddingVertical: spacing.xl },
   // 「…」は小さいので、当たり判定を Apple の 44pt まで広げてカードの角に寄せる。
   menuButton: {
     width: MIN_TAP_SIZE,

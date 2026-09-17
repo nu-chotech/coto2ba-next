@@ -72,7 +72,15 @@ import {
 import { isDevApiUrl, resolveApiBaseUrl } from '../../../lib/config'
 import { feedback } from '../../../lib/feedback'
 import { useSettingsStore } from '../../../store/settings'
-import { borderWidth, layout, radius, spacing, typography, useTheme } from '../../../theme'
+import {
+  borderWidth,
+  layout,
+  radius,
+  screenInsets,
+  spacing,
+  typography,
+  useTheme,
+} from '../../../theme'
 
 /**
  * サーバーが返す引き継ぎ URL が「Expo Go が開くディープリンク」かどうかの判定。
@@ -290,15 +298,12 @@ export default function SettingsScreen() {
     <TierBackground tier={SETTINGS_TIER}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.xxxl },
-        ]}
+        contentContainerStyle={[styles.content, screenInsets(insets)]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.sub} />
         }
       >
-        <Text style={[typography.title, { color: colors.text }]}>設定</Text>
+        <Text style={[typography.largeTitle, { color: colors.text }]}>設定</Text>
 
         {/* ── 表示名 ── */}
         <GlassCard tint={colors.glassTint} style={styles.card}>
@@ -588,9 +593,9 @@ function formatExpiry(expiresAt: string | null): string {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: layout.screenPaddingHorizontal,
-    gap: spacing.lg,
+    gap: layout.sectionGap,
   },
-  card: { gap: spacing.sm },
+  card: { gap: layout.cardGap },
   input: {
     height: layout.inputHeight,
     borderRadius: radius.md,

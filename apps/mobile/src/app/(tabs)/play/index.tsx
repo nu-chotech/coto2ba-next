@@ -38,7 +38,15 @@ import {
   useDailyQuery,
   useMeQuery,
 } from '../../../features/game'
-import { heroFontSize, layout, radius, spacing, typography, useTheme } from '../../../theme'
+import {
+  heroFontSize,
+  layout,
+  radius,
+  screenInsets,
+  spacing,
+  typography,
+  useTheme,
+} from '../../../theme'
 
 /** ロビーは演出帯を持たないので、常に落ち着いた mono。 */
 const LOBBY_TIER = 'mono'
@@ -119,18 +127,17 @@ export default function LobbyScreen() {
   return (
     <TierBackground tier={LOBBY_TIER}>
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.xxxl },
-        ]}
+        contentContainerStyle={[styles.content, screenInsets(insets)]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.sub} />
         }
       >
-        <Text style={[typography.title, { color: colors.text }]}>コトコトバ</Text>
-        <Text style={[typography.caption, { color: colors.sub }]}>
-          言葉を混ぜて、ゴールの語に近づける
-        </Text>
+        <View style={styles.header}>
+          <Text style={[typography.largeTitle, { color: colors.text }]}>コトコトバ</Text>
+          <Text style={[typography.caption, { color: colors.sub }]}>
+            言葉を混ぜて、ゴールの語に近づける
+          </Text>
+        </View>
 
         {/* ── 今日のデイリー ── */}
         {daily.isPending ? (
@@ -234,9 +241,11 @@ export default function LobbyScreen() {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: layout.screenPaddingHorizontal,
-    gap: spacing.lg,
+    gap: layout.sectionGap,
   },
-  card: { gap: spacing.md, borderRadius: radius.lg },
+  // 見出しと一行説明は同じ塊なので近づける。
+  header: { gap: spacing.xs },
+  card: { gap: layout.cardGap, borderRadius: radius.lg },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   goal: { textAlign: 'center', paddingVertical: spacing.sm },
   error: { textAlign: 'center' },

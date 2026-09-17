@@ -41,6 +41,7 @@ import {
   layout,
   opacity,
   radius,
+  screenInsets,
   spacing,
   TRANSPARENT,
   typography,
@@ -90,18 +91,17 @@ export default function RankingScreen() {
   return (
     <TierBackground tier={RANKING_TIER}>
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.xxxl },
-        ]}
+        contentContainerStyle={[styles.content, screenInsets(insets)]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.sub} />
         }
       >
-        <Text style={[typography.title, { color: colors.text }]}>ランキング</Text>
-        <Text style={[typography.caption, { color: colors.sub }]}>
-          その日のデイリーをクリアした人。手数 → ヒント数 → クリア時刻の順。
-        </Text>
+        <View style={styles.header}>
+          <Text style={[typography.largeTitle, { color: colors.text }]}>ランキング</Text>
+          <Text style={[typography.caption, { color: colors.sub }]}>
+            その日のデイリーをクリアした人。手数 → ヒント数 → クリア時刻の順。
+          </Text>
+        </View>
 
         {/* ── 日付切替 ── */}
         <View style={styles.dateBar}>
@@ -214,9 +214,10 @@ function DateArrow({
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: layout.screenPaddingHorizontal,
-    gap: spacing.lg,
+    gap: layout.sectionGap,
   },
-  card: { gap: spacing.sm },
+  header: { gap: spacing.xs },
+  card: { gap: layout.cardGap },
   dateBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   dateLabel: { flex: 1, alignItems: 'center', gap: spacing.xs },
   arrow: {
