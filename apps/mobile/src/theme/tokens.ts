@@ -22,10 +22,37 @@
 import type { TextStyle } from 'react-native'
 import { Platform } from 'react-native'
 import { tierPalettes } from './tiers'
-import { TYPE_SCALE } from './type'
+import {
+  SCREEN_PADDING_TOP,
+  type ScreenEdgeInsets,
+  screenInsets,
+  TYPE_SCALE,
+  WEB_SCREEN_PADDING_TOP,
+} from './type'
 
 /** 文字の段とセーフエリアの足し方は `type.ts`。ここからも取れる。 */
 export * from './type'
+
+// ── セーフエリア ────────────────────────────────────────────
+/**
+ * 画面の中身を始める高さ。
+ *
+ * ネイティブはタブバーが **下** なので、上はひと呼吸だけでよい。
+ * Web は `NativeTabs` が画面の **上** に浮くバーになるので、その下端ぶんを空ける。
+ */
+export const SCREEN_TOP_PADDING =
+  Platform.OS === 'web' ? WEB_SCREEN_PADDING_TOP : SCREEN_PADDING_TOP
+
+/**
+ * 画面のセーフエリア余白。**全画面でこれを使う。**
+ * 画面ごとに足し方が違うと、タブを切り替えたときに見出しの位置が跳ねる。
+ */
+export function screenPadding(insets: ScreenEdgeInsets): {
+  paddingTop: number
+  paddingBottom: number
+} {
+  return screenInsets(insets, SCREEN_TOP_PADDING)
+}
 
 // ── タイポグラフィ ──────────────────────────────────────────
 /**

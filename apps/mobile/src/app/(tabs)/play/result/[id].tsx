@@ -42,7 +42,7 @@ import { ShareCardHost, useShareResult } from '../../../../features/share'
 import { resetSession } from '../../../../lib/auth'
 import { queryClient } from '../../../../lib/queryClient'
 import { useSettingsStore } from '../../../../store/settings'
-import { iconSize, layout, screenInsets, spacing, typography, useTheme } from '../../../../theme'
+import { iconSize, layout, screenPadding, spacing, typography, useTheme } from '../../../../theme'
 
 export default function ResultScreen() {
   const { id, unlocked } = useLocalSearchParams<{ id: string; unlocked?: string }>()
@@ -104,7 +104,7 @@ export default function ResultScreen() {
 
   return (
     <TierBackground tier={tier}>
-      <ScrollView contentContainerStyle={[styles.content, screenInsets(insets)]}>
+      <ScrollView contentContainerStyle={[styles.content, screenPadding(insets)]}>
         <View style={styles.header}>
           <Text style={[typography.largeTitle, styles.headline, { color: colors.text }]}>
             {detail.perfect ? '完全錬成' : cleared ? 'クリア' : 'ギブアップ'}

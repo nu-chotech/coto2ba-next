@@ -11,7 +11,13 @@
 import { describe, expect, it } from 'vitest'
 import { MIN_TAP_SIZE } from '../src/components/constants'
 import { layout, spacing } from '../src/theme/metrics'
-import { heroFontSize, screenInsets, TYPE_SCALE } from '../src/theme/type'
+import {
+  heroFontSize,
+  screenInsets,
+  TYPE_SCALE,
+  WEB_SCREEN_PADDING_TOP,
+  WEB_TAB_BAR_BOTTOM,
+} from '../src/theme/type'
 
 describe('タイポグラフィ', () => {
   it('Apple の本文・補足・ラベルの寸法に合っている', () => {
@@ -87,5 +93,23 @@ describe('セーフエリア', () => {
     const padding = screenInsets({ top: 0, bottom: 0 })
     expect(padding.paddingTop).toBeGreaterThan(0)
     expect(padding.paddingBottom).toBeGreaterThan(0)
+  })
+
+  // Web の NativeTabs は画面の「上」に浮くバーになる（ネイティブは下）。
+  // ここを空けないと、来場者が最初に見る画面でロゴがバーに隠れる。
+  it('Web ではタブバーの下端より下から中身が始まる', () => {
+    const padding = screenInsets({ top: 0, bottom: 0 }, WEB_SCREEN_PADDING_TOP)
+    expect(padding.paddingTop).toBeGreaterThan(WEB_TAB_BAR_BOTTOM)
+  })
+
+  it('Web の上余白はネイティブより広い', () => {
+    const web = screenInsets({ top: 0, bottom: 0 }, WEB_SCREEN_PADDING_TOP)
+    const native = screenInsets({ top: 0, bottom: 0 })
+    expect(web.paddingTop).toBeGreaterThan(native.paddingTop)
+  })
+
+  // ネイティブ側の見た目は変えない。
+  it('既定の上余白は今までどおり', () => {
+    expect(screenInsets({ top: 59, bottom: 34 }).paddingTop).toBe(59 + spacing.lg)
   })
 })

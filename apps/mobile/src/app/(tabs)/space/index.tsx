@@ -37,7 +37,7 @@ import {
   palette,
   paletteForTier,
   radius,
-  SCREEN_PADDING_TOP,
+  SCREEN_TOP_PADDING,
   spacing,
   typography,
 } from '../../../theme'
@@ -157,7 +157,7 @@ export default function SpaceScreen() {
       {/* ── 上：検索 ── */}
       {/* 浮いている操作なので中身は絶対配置だが、上端の余白は他の画面と揃える。 */}
       <View
-        style={[styles.top, { paddingTop: insets.top + SCREEN_PADDING_TOP }]}
+        style={[styles.top, { paddingTop: insets.top + SCREEN_TOP_PADDING }]}
         pointerEvents="box-none"
       >
         <TextInput

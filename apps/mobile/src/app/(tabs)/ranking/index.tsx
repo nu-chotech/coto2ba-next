@@ -41,7 +41,7 @@ import {
   layout,
   opacity,
   radius,
-  screenInsets,
+  screenPadding,
   spacing,
   TRANSPARENT,
   typography,
@@ -91,7 +91,7 @@ export default function RankingScreen() {
   return (
     <TierBackground tier={RANKING_TIER}>
       <ScrollView
-        contentContainerStyle={[styles.content, screenInsets(insets)]}
+        contentContainerStyle={[styles.content, screenPadding(insets)]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.sub} />
         }

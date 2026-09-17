@@ -100,14 +100,33 @@ export const SCREEN_PADDING_TOP = spacing.lg
 /** 下はタブバーのガラスに文字が潜らないよう、上より大きく取る。 */
 export const SCREEN_PADDING_BOTTOM = spacing.xxxl
 
+/**
+ * Web の `NativeTabs` は画面の **上** に浮くバーになる（ネイティブは下）。
+ * その下端（バーの上の余白 24 + 高さ 40）。実測値。
+ *
+ * ここを空けないと、**来場者が最初に見る画面でロゴがバーに隠れる**。
+ * Web 版は SDK 58 で Expo Go が切り替わったときの保険でもあるので、落とせない。
+ */
+export const WEB_TAB_BAR_BOTTOM = 64
+
+/** Web で画面の中身を始めてよい高さ。バーの下端 + ひと呼吸。 */
+export const WEB_SCREEN_PADDING_TOP = WEB_TAB_BAR_BOTTOM + spacing.sm
+
 export type ScreenEdgeInsets = { top: number; bottom: number }
 
-export function screenInsets(insets: ScreenEdgeInsets): {
+/**
+ * セーフエリアに足す余白。`topPadding` はプラットフォームで変わるので外から渡す
+ * （**画面は `screenPadding()` を使うこと。** そちらが Web かどうかを見て決める）。
+ */
+export function screenInsets(
+  insets: ScreenEdgeInsets,
+  topPadding: number = SCREEN_PADDING_TOP,
+): {
   paddingTop: number
   paddingBottom: number
 } {
   return {
-    paddingTop: insets.top + SCREEN_PADDING_TOP,
+    paddingTop: insets.top + topPadding,
     paddingBottom: insets.bottom + SCREEN_PADDING_BOTTOM,
   }
 }

@@ -57,7 +57,7 @@ import {
 import { feedback, feedbackForRankChange } from '../../../../lib/feedback'
 import { isKnownWord, isVocabReady } from '../../../../lib/vocab'
 import { useUiStore } from '../../../../store/ui'
-import { iconSize, layout, screenInsets, spacing, typography, useTheme } from '../../../../theme'
+import { iconSize, layout, screenPadding, spacing, typography, useTheme } from '../../../../theme'
 
 type Pending = { from: string; input: string }
 
@@ -236,7 +236,7 @@ export default function GameScreen() {
       <KeyboardAwareScrollView
         bottomOffset={spacing.xxl}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[styles.content, screenInsets(insets)]}
+        contentContainerStyle={[styles.content, screenPadding(insets)]}
       >
         {/* 1. ゴールカード */}
         <GlassCard tint={colors.glassTint} style={styles.card}>

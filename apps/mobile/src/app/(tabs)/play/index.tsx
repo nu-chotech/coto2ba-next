@@ -44,7 +44,7 @@ import {
   heroFontSize,
   layout,
   radius,
-  screenInsets,
+  screenPadding,
   spacing,
   typography,
   useTheme,
@@ -129,7 +129,7 @@ export default function LobbyScreen() {
   return (
     <TierBackground tier={LOBBY_TIER}>
       <ScrollView
-        contentContainerStyle={[styles.content, screenInsets(insets)]}
+        contentContainerStyle={[styles.content, screenPadding(insets)]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.sub} />
         }

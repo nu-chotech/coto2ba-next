@@ -76,7 +76,7 @@ import {
   borderWidth,
   layout,
   radius,
-  screenInsets,
+  screenPadding,
   spacing,
   typography,
   useTheme,
@@ -298,7 +298,7 @@ export default function SettingsScreen() {
     <TierBackground tier={SETTINGS_TIER}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[styles.content, screenInsets(insets)]}
+        contentContainerStyle={[styles.content, screenPadding(insets)]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.sub} />
         }
