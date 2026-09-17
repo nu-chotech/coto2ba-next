@@ -190,3 +190,26 @@ export const opacity = {
   muted: 0.6,
   full: 1,
 } as const
+
+// ── アイコン ────────────────────────────────────────────────
+/**
+ * SF Symbols の大きさ。**隣に置く文字の光学サイズに合わせる**のが Apple の作法なので、
+ * typography のフォントサイズと対になっている。
+ */
+export const iconSize = {
+  /** label（13pt）と並べる。 */
+  sm: 15,
+  /** body（17pt）と並べる。 */
+  md: 20,
+  /** 単独で押せるアイコン。 */
+  lg: 24,
+  /** subtitle（20pt）以上の見出しと並べる。 */
+  xl: 28,
+} as const
+export type IconSizeToken = keyof typeof iconSize
+
+/** アイコンの既定値。`SymbolIcon` が何も指定されなかったときに使う。 */
+export const ICON_DEFAULT_SIZE = iconSize.lg
+export const ICON_DEFAULT_WEIGHT = 'regular'
+/** 台帳に無い名前が来たときに描く点の直径（アイコン寸法に対する比）。 */
+export const ICON_UNKNOWN_DOT_RATIO = 0.34

@@ -5,13 +5,15 @@
  * 端末側で並べ替えない。`entry.rank` もサーバーの値をそのまま出す。
  *
  * - 自分の行は枠と地でハイライトする。
- * - 完全錬成には印（contracts の `TIER_EMOJI.gold`）。
+ * - 完全錬成には印（SF Symbols の `crown.fill`）。
  */
 
-import { type LeaderboardEntry, TIER_EMOJI, type TierId } from '@coto2ba/contracts'
+import type { LeaderboardEntry, TierId } from '@coto2ba/contracts'
 import { StyleSheet, Text, View } from 'react-native'
+import { SymbolIcon } from '../../components'
 import {
   borderWidth,
+  iconSize,
   palette,
   paletteForTier,
   radius,
@@ -74,9 +76,10 @@ export function LeaderboardRow({ entry, tier, detached = false }: LeaderboardRow
       <View style={styles.right}>
         <Text style={[typography.subtitle, { color: colors.text }]}>{entry.move_count} 手</Text>
         {entry.perfect ? (
-          <Text style={[typography.label, { color: tierPalettes.gold.accent }]}>
-            {TIER_EMOJI.gold} 完全錬成
-          </Text>
+          <View style={styles.perfect}>
+            <SymbolIcon name="crown.fill" size={iconSize.sm} color={tierPalettes.gold.accent} />
+            <Text style={[typography.label, { color: tierPalettes.gold.accent }]}>完全錬成</Text>
+          </View>
         ) : null}
       </View>
     </View>
@@ -102,4 +105,5 @@ const styles = StyleSheet.create({
   },
   middle: { flex: 1, gap: spacing.xs },
   right: { alignItems: 'flex-end', gap: spacing.xs },
+  perfect: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
 })

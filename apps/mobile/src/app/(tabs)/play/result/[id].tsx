@@ -21,13 +21,14 @@ import { useCallback, useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
+  achievementIcon,
   ErrorState,
   GlassCard,
-  PATH_CELL_FONT_SIZE,
-  PATH_CELL_LINE_HEIGHT_RATIO,
   PrimaryButton,
   SkeletonCard,
+  SymbolIcon,
   TierBackground,
+  TierPath,
 } from '../../../../components'
 import {
   achievementDescription,
@@ -35,14 +36,13 @@ import {
   currentTier,
   LOBBY_HREF,
   parseAchievementIds,
-  tierPath,
   useGameQuery,
 } from '../../../../features/game'
 import { ShareCardHost, useShareResult } from '../../../../features/share'
 import { resetSession } from '../../../../lib/auth'
 import { queryClient } from '../../../../lib/queryClient'
 import { useSettingsStore } from '../../../../store/settings'
-import { layout, paletteForTier, spacing, typography } from '../../../../theme'
+import { iconSize, layout, paletteForTier, spacing, typography } from '../../../../theme'
 
 export default function ResultScreen() {
   const { id, unlocked } = useLocalSearchParams<{ id: string; unlocked?: string }>()
@@ -98,7 +98,8 @@ export default function ResultScreen() {
   }
 
   const cleared = detail.status === 'cleared'
-  const path = tierPath(detail)
+  // 経路は tier の色そのままで出す。`tierPath()` の絵文字はシェアテキスト専用。
+  const path = detail.moves
 
   return (
     <TierBackground tier={tier}>
@@ -140,9 +141,13 @@ export default function ResultScreen() {
             </Text>
           </View>
 
-          <Text style={[styles.path, { color: colors.text }]}>
-            {path.length > 0 ? path.join('') : 'まだ 1 手も打っていません'}
-          </Text>
+          {path.length > 0 ? (
+            <TierPath moves={path} style={styles.path} />
+          ) : (
+            <Text style={[typography.caption, styles.headline, { color: colors.sub }]}>
+              まだ 1 手も打っていません
+            </Text>
+          )}
         </GlassCard>
 
         {achievements.length > 0 ? (
@@ -150,12 +155,19 @@ export default function ResultScreen() {
             <Text style={[typography.label, { color: colors.sub }]}>解除した実績</Text>
             {achievements.map((achievementId) => (
               <View key={achievementId} style={styles.achievement}>
-                <Text style={[typography.body, { color: colors.text }]}>
-                  {achievementTitle(achievementId)}
-                </Text>
-                <Text style={[typography.label, { color: colors.sub }]}>
-                  {achievementDescription(achievementId)}
-                </Text>
+                <SymbolIcon
+                  name={achievementIcon(achievementId)}
+                  size={iconSize.lg}
+                  color={colors.accent}
+                />
+                <View style={styles.achievementText}>
+                  <Text style={[typography.body, { color: colors.text }]}>
+                    {achievementTitle(achievementId)}
+                  </Text>
+                  <Text style={[typography.label, { color: colors.sub }]}>
+                    {achievementDescription(achievementId)}
+                  </Text>
+                </View>
               </View>
             ))}
           </GlassCard>
@@ -214,13 +226,14 @@ const styles = StyleSheet.create({
   card: { gap: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headline: { textAlign: 'center' },
-  path: {
-    fontSize: PATH_CELL_FONT_SIZE,
-    lineHeight: PATH_CELL_FONT_SIZE * PATH_CELL_LINE_HEIGHT_RATIO,
-    textAlign: 'center',
-    paddingTop: spacing.sm,
+  path: { paddingTop: spacing.sm },
+  achievement: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.xs,
   },
-  achievement: { gap: spacing.xs, paddingVertical: spacing.xs },
+  achievementText: { flex: 1, gap: spacing.xs },
   shareError: { textAlign: 'center' },
   actions: { gap: spacing.md, marginTop: 'auto' },
 })

@@ -20,7 +20,6 @@ import {
   normalizeWord,
 } from '@coto2ba/contracts'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { SymbolView } from 'expo-symbols'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native'
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
@@ -32,11 +31,13 @@ import {
   HistoryStrip,
   INPUT_OOV_MESSAGE,
   INPUT_SANITY_MAX_LENGTH,
+  MIN_TAP_SIZE,
   MixOverlay,
   MixSlider,
   PrimaryButton,
   RankMeter,
   SkeletonCard,
+  SymbolIcon,
   TierBackground,
   toMessageJa,
   WordDisplay,
@@ -56,7 +57,7 @@ import {
 import { feedback, feedbackForRankChange } from '../../../../lib/feedback'
 import { isKnownWord, isVocabReady } from '../../../../lib/vocab'
 import { useUiStore } from '../../../../store/ui'
-import { layout, paletteForTier, spacing, typography } from '../../../../theme'
+import { iconSize, layout, paletteForTier, spacing, typography } from '../../../../theme'
 
 type Pending = { from: string; input: string }
 
@@ -247,14 +248,9 @@ export default function GameScreen() {
               accessibilityRole="button"
               accessibilityLabel="メニュー"
               onPress={confirmGiveUp}
-              hitSlop={spacing.md}
+              style={styles.menuButton}
             >
-              <SymbolView
-                name="ellipsis.circle"
-                tintColor={colors.sub}
-                size={typography.subtitle.fontSize}
-                fallback={<Text style={[typography.subtitle, { color: colors.sub }]}>…</Text>}
-              />
+              <SymbolIcon name="ellipsis.circle" size={iconSize.xl} color={colors.sub} />
             </Pressable>
           </View>
 
@@ -365,4 +361,13 @@ const styles = StyleSheet.create({
   card: { gap: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   hero: { paddingVertical: spacing.lg },
+  // 「…」は小さいので、当たり判定を Apple の 44pt まで広げてカードの角に寄せる。
+  menuButton: {
+    width: MIN_TAP_SIZE,
+    height: MIN_TAP_SIZE,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginRight: -spacing.sm,
+    marginVertical: -spacing.md,
+  },
 })

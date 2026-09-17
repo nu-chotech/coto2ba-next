@@ -13,7 +13,15 @@ import { LEADERBOARD_LIMIT } from '@coto2ba/contracts'
 import { useCallback, useMemo, useState } from 'react'
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ErrorState, GlassCard, Skeleton, TierBackground } from '../../../components'
+import {
+  ErrorState,
+  GlassCard,
+  MIN_TAP_SIZE,
+  Skeleton,
+  SymbolIcon,
+  type SymbolName,
+  TierBackground,
+} from '../../../components'
 import {
   clearedCountLabel,
   formatJstDateLabel,
@@ -29,6 +37,7 @@ import {
 } from '../../../features/ranking'
 import {
   borderWidth,
+  iconSize,
   layout,
   opacity,
   palette,
@@ -96,7 +105,7 @@ export default function RankingScreen() {
         {/* ── 日付切替 ── */}
         <View style={styles.dateBar}>
           <DateArrow
-            label="◀"
+            icon="chevron.left"
             accessibilityLabel="前の日"
             onPress={goPrev}
             tierColor={colors.text}
@@ -111,7 +120,7 @@ export default function RankingScreen() {
             </Text>
           </View>
           <DateArrow
-            label="▶"
+            icon="chevron.right"
             accessibilityLabel="次の日"
             onPress={goNext}
             disabled={!canGoForward}
@@ -167,13 +176,13 @@ export default function RankingScreen() {
 }
 
 function DateArrow({
-  label,
+  icon,
   accessibilityLabel,
   onPress,
   disabled = false,
   tierColor,
 }: {
-  label: string
+  icon: SymbolName
   accessibilityLabel: string
   onPress: () => void
   disabled?: boolean
@@ -194,7 +203,7 @@ function DateArrow({
         },
       ]}
     >
-      <Text style={[typography.subtitle, { color: tierColor }]}>{label}</Text>
+      <SymbolIcon name={icon} size={iconSize.md} color={tierColor} weight="semibold" />
     </Pressable>
   )
 }
@@ -208,8 +217,8 @@ const styles = StyleSheet.create({
   dateBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   dateLabel: { flex: 1, alignItems: 'center', gap: spacing.xs },
   arrow: {
-    width: layout.buttonHeight,
-    height: layout.buttonHeight,
+    width: MIN_TAP_SIZE,
+    height: MIN_TAP_SIZE,
     borderRadius: radius.pill,
     borderWidth: borderWidth.hairline,
     borderColor: palette.divider,

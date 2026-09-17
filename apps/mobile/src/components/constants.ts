@@ -79,12 +79,21 @@ export const HINT_SLOT_HEIGHT = 48
 
 // ── ボタン ──────────────────────────────────────────────────
 export const BUTTON_PRESSED_SCALE = 0.97
+/** 押せるものの最小の当たり判定（Apple Human Interface Guidelines）。 */
+export const MIN_TAP_SIZE = 44
+
+// ── アイコン ────────────────────────────────────────────────
+/** アイコン名の台帳は `components/symbols.ts`。寸法は `theme/tokens.ts` の `iconSize`。 */
+
+// ── tier の印（TierDot / TierPath）──────────────────────────
+/** 文字の横に置く丸の直径。 */
+export const TIER_DOT_SIZE = 8
+/** 経路の 1 手ぶんのマスの一辺。 */
+export const TIER_CELL_SIZE = 14
+export const TIER_CELL_RADIUS = 4
+export const TIER_CELL_GAP = 5
 
 // ── 結果画面 ────────────────────────────────────────────────
-/** 経路のマス 1 つの文字サイズ。 */
-export const PATH_CELL_FONT_SIZE = 26
-/** 経路のマスの行の高さ（フォントサイズに対する比）。 */
-export const PATH_CELL_LINE_HEIGHT_RATIO = 1.4
 /** 実績バッジが順番に出てくる間隔。 */
 export const ACHIEVEMENT_STAGGER_MS = 120
 

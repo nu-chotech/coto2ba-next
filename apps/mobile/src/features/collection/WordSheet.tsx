@@ -7,7 +7,7 @@
  * 説明・近傍はサーバー頼みなので、取れなくてもシートは開く（その行が出ないだけ）。
  */
 
-import { TIER_EMOJI, type TierId } from '@coto2ba/contracts'
+import type { TierId } from '@coto2ba/contracts'
 import {
   Modal,
   Pressable,
@@ -17,7 +17,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
-import { GlassCard, PrimaryButton, Skeleton } from '../../components'
+import { GlassCard, PrimaryButton, Skeleton, TierDot } from '../../components'
 import { borderWidth, palette, paletteForTier, radius, spacing, typography } from '../../theme'
 import { formatJstDateLabel, toJstDateString } from '../ranking/dates'
 import { SPACE_SHEET_MAX_HEIGHT_RATIO } from './constants'
@@ -63,10 +63,12 @@ export function WordSheet({ node, onClose, onPickWord }: WordSheetProps) {
               <View style={styles.header}>
                 <Text style={[typography.title, { color: colors.text }]}>{node.word}</Text>
                 {node.tier !== null ? (
-                  <Text style={[typography.label, { color: colors.sub }]}>
-                    {TIER_EMOJI[node.tier]}
-                    {node.kind === 'goal' ? ' 今日のゴール' : ' 初遭遇の帯'}
-                  </Text>
+                  <View style={styles.tierRow}>
+                    <TierDot tier={node.tier} />
+                    <Text style={[typography.label, { color: colors.sub }]}>
+                      {node.kind === 'goal' ? '今日のゴール' : '初遭遇の帯'}
+                    </Text>
+                  </View>
                 ) : null}
               </View>
 
@@ -147,6 +149,7 @@ const styles = StyleSheet.create({
   sheet: { gap: spacing.md },
   body: { gap: spacing.sm, paddingBottom: spacing.sm },
   header: { gap: spacing.xs },
+  tierRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   neighbors: { gap: spacing.sm },
   neighbor: {
     flexDirection: 'row',
