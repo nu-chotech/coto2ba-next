@@ -43,6 +43,13 @@
       "when": 1789659795250,
       "tag": "0005_leaderboard_hint_first",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789663637383,
+      "tag": "0006_rooms",
+      "breakpoints": true
     }
   ]
 }

@@ -75,6 +75,40 @@ export const nameParts = pgTable('name_parts', {
   kind: text('kind').notNull(),
 })
 
+// ── 対戦ルーム（マルチプレイ・SPEC §9）──────────────────────
+/**
+ * 部屋。ホストが作り、参加者はコードか QR で入る。
+ * **お題（goal / start / forbidden_inputs）は部屋で 1 度だけ抽選して全員に配る。**
+ * ゲーム本体は既存の `games` をそのまま使い、`room_id` で紐づける。
+ *
+ * `games` より先に宣言してあるのは、`games.room_id` がここを参照するため。
+ */
+export const rooms = pgTable(
+  'rooms',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** 参加コード。大文字英数 4 桁。同時に生きている部屋の中で一意。 */
+    code: text('code').notNull(),
+    hostUserId: text('host_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    difficulty: text('difficulty').notNull(),
+    goal: text('goal').notNull(),
+    start: text('start').notNull(),
+    /** ゴールに近すぎる語。games と同じものを部屋で 1 度だけ計算して配る。 */
+    forbiddenInputs: text('forbidden_inputs').array().notNull().default(sql`ARRAY[]::text[]`),
+    status: text('status').notNull().default('waiting'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => [
+    // 終わった部屋のコードは再利用できる。生きている部屋だけ一意にする。
+    uniqueIndex('rooms_code_live_uq').on(t.code).where(sql`status <> 'finished'`),
+    index('rooms_created_at_idx').on(t.createdAt),
+  ],
+)
+
 // ── ゲーム ──────────────────────────────────────────────────
 export const games = pgTable(
   'games',
@@ -86,6 +120,12 @@ export const games = pgTable(
     mode: text('mode').notNull(),
     /** mode=daily のとき JST 日付 */
     dailyDate: date('daily_date'),
+    /**
+     * mode=room のとき、その手番が属する部屋。
+     * `games_user_daily_uq` は daily_date が NULL だと効かないので、
+     * 1 ユーザーが複数のルーム戦を持てる。これは意図どおり。
+     */
+    roomId: uuid('room_id').references(() => rooms.id, { onDelete: 'set null' }),
     difficulty: text('difficulty').notNull(),
     goal: text('goal').notNull(),
     start: text('start').notNull(),
@@ -128,6 +168,27 @@ export const moves = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [primaryKey({ columns: [t.gameId, t.seq] })],
+)
+
+/**
+ * 部屋の参加者。開始時に 1 人 1 つ `games` を作って `game_id` に持つ。
+ * `finished_at` はサーバーが埋める（**勝敗の権威はここ**）。
+ */
+export const roomPlayers = pgTable(
+  'room_players',
+  {
+    roomId: uuid('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    displayName: text('display_name').notNull(),
+    gameId: uuid('game_id').references(() => games.id, { onDelete: 'set null' }),
+    joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.roomId, t.userId] })],
 )
 
 // ── キャッシュ ──────────────────────────────────────────────
