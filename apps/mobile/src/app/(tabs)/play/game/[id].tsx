@@ -257,10 +257,17 @@ export default function GameScreen() {
     else router.replace(LOBBY_HREF)
   }, [router])
 
+  /**
+   * ギブアップ。**行き先は終局の他の経路と同じ**（`finishMix` / 「結果を見る」）。
+   * ルーム戦で結果画面へ飛ばすと、その端末だけ部屋から外れてしまい、
+   * ホストの「もう一度」が届かなくなる。
+   */
   const giveUp = useCallback(() => {
     setSheet(null)
-    surrender.mutate(undefined, { onSuccess: () => router.replace(resultHref(gameId)) })
-  }, [gameId, router, surrender])
+    surrender.mutate(undefined, {
+      onSuccess: () => router.replace(roomCode !== null ? roomHref(roomCode) : resultHref(gameId)),
+    })
+  }, [gameId, router, surrender, roomCode])
 
   /**
    * 「…」の中身。**確認は 1 段だけ**（以前は Alert の入れ子で 2 段だった）。
