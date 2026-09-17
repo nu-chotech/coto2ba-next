@@ -75,7 +75,7 @@ export const nameParts = pgTable('name_parts', {
   kind: text('kind').notNull(),
 })
 
-// ── 対戦ルーム（マルチプレイ・SPEC §9）──────────────────────
+// ── 対戦ルーム（マルチプレイ・設計 §9）──────────────────────
 /**
  * 部屋。ホストが作り、参加者はコードか QR で入る。
  * **お題（goal / start / forbidden_inputs）は部屋で 1 度だけ抽選して全員に配る。**

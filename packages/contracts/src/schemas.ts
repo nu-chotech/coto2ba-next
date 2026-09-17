@@ -82,7 +82,7 @@ export const patchMeRequestSchema = z
     message: 'at least one field required',
   })
 
-// ── 対戦ルーム（SPEC §9）────────────────────────────────────
+// ── 対戦ルーム（設計 §9）────────────────────────────────────
 /**
  * レース中に見せる 1 人ぶん。
  *
@@ -172,7 +172,7 @@ export const moveResponseSchema = z.object({
   perfect: z.boolean(),
   unlocked_achievements: z.array(unlockedAchievementSchema),
   /**
-   * ルーム戦のときだけ入る、**その手を打った時点の順位**（SPEC §9）。
+   * ルーム戦のときだけ入る、**その手を打った時点の順位**（設計 §9）。
    *
    * これがあると、自分の手はポーリングを待たずに順位へ反映される。
    * ポーリングは「他人の変化の検知」だけを担えばよくなるので、間隔を緩めても

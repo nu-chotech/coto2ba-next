@@ -110,7 +110,7 @@ export default function GameScreen() {
   const { id, room } = useLocalSearchParams<{ id: string; room?: string }>()
   const gameId = typeof id === 'string' ? id : ''
   /**
-   * 対戦ルームから開かれたときの参加コード（SPEC §9）。
+   * 対戦ルームから開かれたときの参加コード（設計 §9）。
    * **付いているときだけ**順位のオーバーレイが載り、終局の行き先が部屋の結果になる。
    * 付いていなければ普段どおりの 1 人用ゲーム画面で、何も変わらない。
    */
@@ -376,7 +376,7 @@ export default function GameScreen() {
           </Pressable>
         </View>
 
-        {/* 0. 対戦ルームの順位（ルームから来たときだけ。SPEC §9.2）。
+        {/* 0. 対戦ルームの順位（ルームから来たときだけ。設計 §9.2）。
          **他人が打った語は出さない** ── サーバーも返してこない。 */}
         {roomCode !== null ? <RoomRace code={roomCode} tier={tier} /> : null}
 

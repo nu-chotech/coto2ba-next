@@ -36,7 +36,7 @@ import { appError } from '../lib/errors'
 import { jstDate } from '../lib/jst'
 import { pickRandom } from '../lib/random'
 import { evaluateAchievements, recordEncounters } from './achievements'
-// 対戦ルーム（SPEC §9）。`rooms.ts` も `game.ts` を使うので相互参照になるが、
+// 対戦ルーム（設計 §9）。`rooms.ts` も `game.ts` を使うので相互参照になるが、
 // **どちらも相手を関数の中でしか呼ばない**（モジュール評価時に触らない）ので安全。
 import { roomStandingsForGame } from './rooms'
 import { applyMove, parseBestFreeMoves, updateBestFreeMoves, validateMove } from './rules'
@@ -482,7 +482,7 @@ export async function playMove(
   })
 
   /**
-   * ルーム戦なら、**その時点の順位をこの手のレスポンスに同梱する**（SPEC §9）。
+   * ルーム戦なら、**その時点の順位をこの手のレスポンスに同梱する**（設計 §9）。
    *
    * 自分の手が即座に順位へ反映されるので、ポーリングは「他人の変化の検知」だけを
    * 担えばよくなる。間隔を緩めても体感が落ちない ＝ invocations が減る。

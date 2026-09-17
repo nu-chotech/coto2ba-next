@@ -49,7 +49,7 @@
 | クライアント | Next.js PWA | React Native（Expo Router）、iOS ネイティブ体験 |
 | ゴール語 | 「100億」固定 | 難易度付きプールから抽選。デイリーは全員共通 |
 | スタート語 | 固定 16 語からランダム | ゴールから見たランクが一定範囲に入る一般語から抽選 |
-| 語彙 | 751,361 語をそのまま | 入力語彙 約 18 万語 / 出力語彙 約 10 万語に刈り込み |
+| 語彙 | 751,361 語をそのまま | 入力語彙 208,707 語 / 出力語彙 102,520 語に刈り込み |
 | ベクトル演算 | FastAPI + gensim（常駐） | pgvector（SQL）。Python はオフラインのみ |
 | ゲーム状態 | クライアント | サーバー（`games` / `moves`） |
 | mix_ratio | 0.0〜1.0 連続 | 0.1〜0.8、8 段階 |
@@ -61,7 +61,12 @@
 
 ### 非スコープ（v1 でやらない）
 
-App Store 公開、パスキー（Tier B）、Android 最適化、X への直接投稿（シェアシートで代替）、リアルタイム対戦、チュートリアル動画。
+App Store 公開、パスキー（Tier B）、Android 最適化、X への直接投稿（シェアシートで代替）、WebSocket によるリアルタイム同期、チュートリアル動画。
+
+> **注記（2026-09-18）**: 対戦（**対戦ルーム**）は 1 秒ポーリングで実装済み。
+> この SPEC には節が無く、仕様は `docs/superpowers/specs/2026-09-17-exhibition-ux-overhaul-design.md` §9 にある
+> （コード中の「設計 §9.x」はそちらを指す。SPEC の §9 は図鑑で別物）。
+> WebSocket を使う同期は採らなかった（理由は `docs/QUESTIONS.md`）。
 
 ---
 
@@ -491,7 +496,7 @@ ALTER TABLE "user" ADD COLUMN booth boolean NOT NULL DEFAULT false;
 CREATE TABLE games (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id      text NOT NULL REFERENCES "user"(id),
-  mode         text NOT NULL CHECK (mode IN ('daily','free')),
+  mode         text NOT NULL CHECK (mode IN ('daily','free','room')),
   daily_date   date,                                -- mode=daily のとき JST 日付
   difficulty   text NOT NULL,
   goal         text NOT NULL,
@@ -506,7 +511,8 @@ CREATE TABLE games (
   cleared_at   timestamptz,
   UNIQUE (user_id, daily_date)                      -- デイリーは 1 日 1 回
 );
-CREATE INDEX games_daily_leaderboard ON games (daily_date, move_count, hint_count, cleared_at) WHERE status = 'cleared';
+-- 並びは ヒント数 → 手数 → クリア時刻（§5.8）。インデックスも同じ順（マイグレーション 0005）。
+CREATE INDEX games_daily_leaderboard ON games (daily_date, hint_count, move_count, cleared_at) WHERE status = 'cleared';
 
 CREATE TABLE moves (
   game_id    uuid NOT NULL REFERENCES games(id),
@@ -527,7 +533,9 @@ CREATE TABLE calc_cache (
 
 CREATE TABLE hint_cache (
   goal text, current text,
-  hints text[] NOT NULL,
+  -- `{ word, ratio }[]`。語だけでは「どう混ぜるか」が落ちるので
+  -- マイグレーション 0004 で text[] から jsonb に変えた（§5.4）。
+  hints jsonb NOT NULL,
   PRIMARY KEY (goal, current)
 );
 
@@ -634,7 +642,10 @@ WHERE v.is_output AND v.word <> $1
 
 ### 7.8 レート制限・保護
 
-- ユーザーごと **5 req/s**（in-memory の token bucket でよい。Vercel のインスタンス跨ぎで甘くなるのは許容）。
+- ユーザーごと **持続 5 req/s**（in-memory の token bucket。Vercel のインスタンス跨ぎで甘くなるのは許容）。
+- **容量（バースト）は持続レートとは別の定数**で、汎用は 20、部屋のポーリングは持続 4 req/s・容量 12。
+  容量を持続レートと同じ 5 にしていたため、起動時の一斉リクエスト（実測 1 秒以内に 7 本）で
+  **アプリを開くたびに 429 が出ていた**。値と根拠は `packages/contracts/src/constants.ts`。
 - `POST /api/games` は 1 ユーザー 10 req/min。
 - すべてのルールはサーバーで判定する。クライアントの値は信用しない。
 
@@ -740,7 +751,7 @@ WHERE v.is_output AND v.word <> $1
 | `achievement` | `notificationAsync(Success)` | バッジ音 |
 
 - `expo-audio` で SE はアプリ起動時にプリロード。サイレントスイッチ ON のときは鳴らさない（ゲームだが展示会場で鳴り続けるのを避ける）。設定で SE を OFF にできる。
-- SE 素材：CC0 のパック（Kenney、freesound）または自作。`assets/sounds/CREDITS.md` に出典を書く。**素材の用意は TBD**（§14）。
+- SE 素材：**自作の合成音 10 本**（`tools/pipeline/scripts/11_sounds.py` がサイン波から合成、`pnpm pipeline:sounds`）。外部素材は使っていないのでライセンス上の制約は無い。内訳は `assets/sounds/CREDITS.md`。
 
 ### 8.7 端末側の語彙判定
 
@@ -970,7 +981,7 @@ Tier A のコードに**足すだけ**で有効になるように書いておく
 | 技育博の正確な日程 | 約 1 か月後（要確認） | Phase 3 / 4 の切り方 |
 | Apple Developer Program | 契約しない前提 | §12 の有無 |
 | NG ワードリストの初期版 | チームで用意 | 出力語彙・ゴールプール |
-| SE 素材 | 未調達 | §8.6 |
+| SE 素材 | 解決済み（自作の合成音 10 本。外部素材ゼロ） | §8.6 |
 | Noto Sans JP の同梱 | 図鑑のラベル用 | §9.2 |
 | Better Auth の Expo Go 動作確認 | 最初に 2 時間で判定 | §7.4 のフォールバック採用可否 |
 | Neon の東京リージョン有無 | DB 作成時に確認 | Vercel Function のリージョン（§7.1） |

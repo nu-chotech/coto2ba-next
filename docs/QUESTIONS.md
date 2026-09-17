@@ -57,7 +57,7 @@ SPEC §6.2 の「Easy 80」を満たすには 17,000 候補が必要だが、候
 ### 4. ゴール近傍の語を禁止したのは SPEC からの逸脱
 SPEC §5.3-4 はゴール語そのものしか禁止していないが、それだと
 「温泉」に対して「温泉旅館」を打つだけで **1 手クリア**でき、
-デイリーのランキング（手数順）が成立しない（実際に起きた）。
+デイリーのランキング（ヒント数 → 手数 → クリア時刻の順、§5.8）が成立しない（実際に起きた）。
 
 ゲーム作成時にゴールの近傍 `GOAL_NEIGHBOR_BAN`(=12) 語を
 `games.forbidden_inputs` に入れて拒否している（`TOO_CLOSE_TO_GOAL`）。
@@ -74,11 +74,13 @@ SPEC §5.3-4 はゴール語そのものしか禁止していないが、それ�
 永久に紐づく**ので、`coto2ba-next.chotech.dev` を rpID として確定させる前に
 Tier B の計画があれば再確認すること。
 
-### 6. SE 音源が未調達
-`apps/mobile/assets/sounds/` は空。`src/lib/feedback.ts` にイベント名 → (haptic, sound) の
-対応表だけ作ってあり、**ファイルが無くても落ちない**（無音になる）。
-CC0 のパック（Kenney / freesound）を置けばそのまま鳴る。出典は
-`assets/sounds/CREDITS.md` に書くこと。
+### 6. SE 音源（解決済み）
+`apps/mobile/assets/sounds/` に **10 本の wav を自作して置いてある**（`detent` / `mix` /
+`closer` / `farther` / `tier_up` / `clear` / `perfect` / `page` / `error` / `badge`）。
+外部素材は使っておらず、`tools/pipeline/scripts/11_sounds.py`（`pnpm pipeline:sounds`）が
+サイン波から合成する。**ライセンス上の制約は無い**（`assets/sounds/CREDITS.md`）。
+イベント名 → (haptic, sound) の対応表は `src/lib/feedback.ts` ただ 1 つ。
+未登録の音があっても落ちない（無音になる）ことは変わらない。
 
 ### 7. 技育博の正確な日程
 **Expo SDK 58 の安定版が出ると App Store の Expo Go は 58 に切り替わり、
@@ -123,7 +125,7 @@ SPEC §4.2 は「MeCab で単一トークン」と書いているが、unidic-li
 ### B. 出力語彙に freq_rank ≤ 180,000 の上限を追加
 SPEC には無い条件。180,000 以降は `曽野木 / 羽ノ浦 / 優弥 / 紫山` のような
 地名・人名の長い尾で、混合結果とヒントの質を落とす。
-この上限で **99,805 語**になり、SPEC の「約10万語」という目標値に一致する。
+この上限で **102,520 語**になり、SPEC の「約10万語」という目標値に一致する。
 
 ### C. 認証を Bearer 運用にした（Cookie を使わない）
 SPEC §7.4 は Better Auth の expo クライアント（SecureStore の cookie jar）を想定しているが、
@@ -161,7 +163,7 @@ SPEC §5.3-2 は「ratio が 8 段階のいずれかであること。違えば 
 ### E. ランクは HNSW を使わず厳密全走査
 pgvector の HNSW は近似なので、同じ盤面で rank が揺れる（実測: 厳密 9 に対し近似 7）。
 **スコアが再現しないとランキングが壊れる**ので、最近傍探索だけ HNSW を使い、
-ランクは 99,805 行のフルスキャンで数える。実測で十分速い。
+ランクは 102,520 行のフルスキャンで数える。実測で十分速い。
 
 ### F. 表示名の NG チェックはしていない
 `isAcceptableDisplayName` は長さと制御文字しか見ない。
