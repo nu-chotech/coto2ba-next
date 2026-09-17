@@ -9,15 +9,10 @@ import {
   type GameDetail,
   type Game as GameDto,
   GOAL_NEIGHBOR_BAN,
-  HINT_CANDIDATE_COUNT,
   HINT_COUNT,
-  HINT_RATIO,
-  type Hint,
   type HintResponse,
-  isMorphologicalVariant,
   type LeaderboardResponse,
   type MoveResponse,
-  RATIO_DEFAULT,
   START_MAX_FREQ_RANK,
   START_RANK_RANGE,
   sharesKanji,
@@ -42,7 +37,7 @@ import { evaluateAchievements, recordEncounters } from './achievements'
 import { applyMove, updateBestFreeMoves, validateMove } from './rules'
 import {
   goalNeighborhood,
-  hintWords,
+  hintCandidates,
   lookupWord,
   mixAndRank,
   rankOf,
@@ -50,8 +45,6 @@ import {
 } from './vector'
 
 const LEADERBOARD_PAGE = 50
-/** ヒントの候補を何倍取ってから表記揺れを落とすか。 */
-const HINT_OVERSAMPLE = 4
 /** スタート語の候補を何件引いてから漢字チェックで絞るか。 */
 const START_SAMPLE_SIZE = 24
 
@@ -437,7 +430,12 @@ export async function playMove(
   }
 }
 
-/** ヒントを開く（SPEC §5.4）。同じ current なら同じ 6 語。カウントは開くたびに増える。 */
+/**
+ * ヒントを開く（SPEC §5.4）。同じ current なら同じヒント。カウントは開くたびに増える。
+ *
+ * ヒントは「語 + 混ぜる比率」。**混ぜると実際にゴールへ近づく手だけ**を返すので、
+ * 6 件に満たないことがある（効かない語で埋めると元の問題に戻る）。
+ */
 export async function openHints(db: Db, userId: string, gameId: string): Promise<HintResponse> {
   const game = await loadGame(db, userId, gameId)
   if (game.status !== 'playing') throw appError('GAME_FINISHED')
@@ -448,48 +446,26 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
     .where(and(eq(hintCache.goal, game.goal), eq(hintCache.current, game.current)))
     .limit(1)
 
-  let words = cached[0]?.hints ?? null
+  let hints = cached[0]?.hints ?? null
 
-  if (!words) {
-    // そのゲームで既に登場した語を除く
+  if (!hints) {
+    // そのゲームで既に登場した語と、ゴールに近すぎて打てない語（forbidden_inputs）を除く。
+    // forbidden_inputs は goal から決まるので、(goal, current) のキャッシュと整合する。
     const history = await db
       .select({ result: moves.result, input: moves.inputWord })
       .from(moves)
       .where(eq(moves.gameId, gameId))
     const exclude = new Set<string>([game.goal, game.current, game.start])
+    for (const w of game.forbiddenInputs) exclude.add(w)
     for (const h of history) {
       exclude.add(h.result)
       exclude.add(h.input)
     }
-    // 候補を多めに取ってから表記揺れを落とす。
-    // 「居住地」に対して「居住 / 定住 / 居住者 / 移住者」ばかりが並ぶと
-    // 混ぜても同じクラスタの中をうろうろするだけでヒントとして機能しない。
-    const raw = await hintWords(
-      db,
-      game.goal,
-      game.current,
-      [...exclude],
-      HINT_RATIO,
-      HINT_CANDIDATE_COUNT * HINT_OVERSAMPLE,
-      HINT_CANDIDATE_COUNT * HINT_OVERSAMPLE,
-    )
-    const kept: string[] = []
-    for (const w of raw) {
-      if (kept.length >= HINT_COUNT) break
-      if (isMorphologicalVariant(w, game.current)) continue
-      if (isMorphologicalVariant(w, game.goal)) continue
-      if (kept.some((k) => isMorphologicalVariant(w, k))) continue
-      kept.push(w)
-    }
-    // 絞りすぎて足りなくなったら素の近傍で埋める（ヒントが 6 語未満にならないように）
-    for (const w of raw) {
-      if (kept.length >= HINT_COUNT) break
-      if (!kept.includes(w)) kept.push(w)
-    }
-    words = kept
+    // 表記揺れの除外は hintCandidates の中で行う。
+    hints = await hintCandidates(db, game.goal, game.current, [...exclude], HINT_COUNT)
     await db
       .insert(hintCache)
-      .values({ goal: game.goal, current: game.current, hints: words })
+      .values({ goal: game.goal, current: game.current, hints })
       .onConflictDoNothing()
   }
 
@@ -499,8 +475,6 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
     .where(eq(games.id, gameId))
     .returning({ hintCount: games.hintCount })
 
-  // 比率はまだ算出していない（Task 3 の外挿で埋まる）。契約を満たす暫定値を入れる。
-  const hints: Hint[] = words.map((word) => ({ word, ratio: RATIO_DEFAULT }))
   return { hints, hint_count: updated[0]?.hintCount ?? game.hintCount + 1 }
 }
 

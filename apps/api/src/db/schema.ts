@@ -1,4 +1,5 @@
 /** ゲーム側のテーブル定義（SPEC §4.3, §6.6, §7.3）。 */
+import type { Hint } from '@coto2ba/contracts'
 import { sql } from 'drizzle-orm'
 import {
   boolean,
@@ -147,7 +148,11 @@ export const hintCache = pgTable(
   {
     goal: text('goal').notNull(),
     current: text('current').notNull(),
-    hints: text('hints').array().notNull(),
+    /**
+     * `{ word, ratio }[]`（`@coto2ba/contracts` の `Hint`）。
+     * 語だけでは「どう混ぜるか」が落ちるので text[] から jsonb に変えた（0004）。
+     */
+    hints: jsonb('hints').$type<Hint[]>().notNull(),
   },
   (t) => [primaryKey({ columns: [t.goal, t.current] })],
 )

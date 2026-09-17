@@ -29,6 +29,13 @@
       "when": 1789588216874,
       "tag": "0003_vocab_is_concrete",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789657973158,
+      "tag": "0004_hint_cache_jsonb",
+      "breakpoints": true
     }
   ]
 }

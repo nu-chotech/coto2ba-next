@@ -13,9 +13,19 @@
  * - halfvec のスカラー倍は演算子が無いので `array_fill(s, ARRAY[dim])::vector` との
  *   要素ごと積で表現する。
  */
-import { NEAREST_CANDIDATES, VECTOR_DIM } from '@coto2ba/contracts'
+import {
+  HINT_EXTRAPOLATION_NEIGHBORS,
+  HINT_MIN_RESULT_RANK,
+  HINT_VERIFY_LIMIT,
+  type Hint,
+  isMorphologicalVariant,
+  NEAREST_CANDIDATES,
+  RATIOS,
+  VECTOR_DIM,
+} from '@coto2ba/contracts'
 import { type SQL, sql } from 'drizzle-orm'
 import type { Db } from '../db/client'
+import { bestRatioForCandidate, extrapolationTarget } from './hint-target'
 import type { MixCandidateScore } from './mix-scoring'
 
 const DIM = sql.raw(String(VECTOR_DIM))
@@ -152,32 +162,226 @@ export async function rankOf(db: Db, goal: string, word: string): Promise<number
 }
 
 /**
- * ヒント語。v_hint = (1 - hintRatio) * v_current + hintRatio * v_goal の近傍から
- * 除外語を抜いた先頭 n 件。
+ * JS のベクトルを halfvec リテラルにする。
+ * `<=>` は余弦距離でスケール不変なので、halfvec(float16) の表現域に収まるよう
+ * **ここで**単位長に直してから渡す（`extrapolationTarget` 側は性質を保つため正規化しない）。
  */
-export async function hintWords(
+function halfvecParam(v: Float32Array): SQL {
+  let sum = 0
+  for (let i = 0; i < v.length; i++) {
+    const x = v[i] as number
+    sum += x * x
+  }
+  const n = Math.sqrt(sum)
+  if (!Number.isFinite(n) || n === 0) throw new TypeError('vector must have a non-zero norm')
+  const parts = new Array<string>(v.length)
+  for (let i = 0; i < v.length; i++) parts[i] = String((v[i] as number) / n)
+  return sql`${`[${parts.join(',')}]`}::halfvec(${DIM})`
+}
+
+/** 語 → ベクトル。DB に無い語は Map に入らない。 */
+export async function wordVectors(
+  db: Db,
+  words: readonly string[],
+): Promise<Map<string, Float32Array>> {
+  const out = new Map<string, Float32Array>()
+  if (words.length === 0) return out
+  const rows = await db.execute<{ word: string; v: string }>(sql`
+    SELECT word, w2v::text AS v FROM vocab WHERE word = ANY(${sql.param([...words])}::text[])
+  `)
+  for (const row of rows.rows) {
+    out.set(row.word, Float32Array.from(JSON.parse(row.v) as number[]))
+  }
+  return out
+}
+
+/**
+ * 外挿点ごとの近傍の**和集合**。比率ごとに往復すると 8 往復になるので 1 本の SQL に畳む。
+ * 順序は使わない（最終的な並びは検証後のゴール類似度で決まる）ので DISTINCT で十分。
+ */
+async function extrapolationNeighbors(
+  db: Db,
+  targets: readonly Float32Array[],
+  perTarget: number,
+): Promise<string[]> {
+  if (targets.length === 0) return []
+  const parts = targets.map(
+    (t) => sql`(
+      SELECT v.word FROM vocab v
+      WHERE v.is_output
+      ORDER BY v.w2v <=> ${halfvecParam(t)}
+      LIMIT ${perTarget}
+    )`,
+  )
+  const rows = await db.execute<{ word: string }>(sql`
+    SELECT DISTINCT t.word FROM (${sql.join(parts, sql` UNION ALL `)}) t
+  `)
+  return rows.rows.map((r) => r.word)
+}
+
+export interface MixVerification {
+  input: string
+  result: string
+  goalSimilarity: number
+  /** current 自身のゴール類似度。これを超えない候補は「効かないヒント」。 */
+  currentGoalSimilarity: number
+  /** rank = HINT_MIN_RESULT_RANK の語のゴール類似度。これ以上なら強すぎる手。 */
+  clearThresholdSimilarity: number
+}
+
+/**
+ * 候補を**実際に混ぜて**結果語とそのゴール類似度を取る。
+ * 1 件ずつだと候補数ぶん往復するので、`mixCandidateMetricsQuery` をそのまま
+ * UNION ALL で束ねて 1 往復にする（混合と類似度の計算自体は再実装しない）。
+ * `blend_similarity` の降順 1 件 = `mixAndRank` が選ぶ結果語と同じ。
+ */
+export async function verifyMixes(
   db: Db,
   goal: string,
   current: string,
-  exclude: string[],
-  hintRatio: number,
-  candidates: number,
-  limit: number,
-): Promise<string[]> {
-  const hint = blend(vectorOf(current), 1 - hintRatio, vectorOf(goal), hintRatio)
-  const rows = await db.execute<{ word: string }>(sql`
-    WITH cand AS (
-      SELECT v.word
-      FROM vocab v
-      WHERE v.is_output
-      ORDER BY v.w2v <=> ${hint}
-      LIMIT ${candidates}
-    )
-    SELECT word FROM cand
-    WHERE word <> ALL(${sql.param(exclude)}::text[])
-    LIMIT ${limit}
+  candidates: readonly Hint[],
+): Promise<MixVerification[]> {
+  if (candidates.length === 0) return []
+  const parts = candidates.map(
+    (c) => sql`(
+      SELECT ${c.word}::text AS input, m.word AS result, m.goal_similarity
+      FROM (${mixCandidateMetricsQuery(goal, current, c.word, c.ratio)}) m
+      ORDER BY m.blend_similarity DESC
+      LIMIT 1
+    )`,
+  )
+  const rows = await db.execute<{
+    input: string
+    result: string
+    goal_similarity: number | null
+    current_goal_similarity: number | null
+    clear_threshold_similarity: number | null
+  }>(sql`
+    SELECT u.input, u.result, u.goal_similarity,
+      (1 - (${vectorOf(current)} <=> ${vectorOf(goal)})) AS current_goal_similarity,
+      (
+        SELECT 1 - (v.w2v <=> ${vectorOf(goal)})
+        FROM vocab v
+        WHERE v.is_output AND v.word <> ${goal}
+        ORDER BY v.w2v <=> ${vectorOf(goal)}
+        LIMIT 1 OFFSET ${HINT_MIN_RESULT_RANK - 1}
+      ) AS clear_threshold_similarity
+    FROM (${sql.join(parts, sql` UNION ALL `)}) u
   `)
-  return rows.rows.map((r) => r.word)
+  return rows.rows.flatMap((row) => {
+    if (row.goal_similarity === null || row.current_goal_similarity === null) return []
+    if (row.clear_threshold_similarity === null) return []
+    return [
+      {
+        input: row.input,
+        result: row.result,
+        goalSimilarity: Number(row.goal_similarity),
+        currentGoalSimilarity: Number(row.current_goal_similarity),
+        clearThresholdSimilarity: Number(row.clear_threshold_similarity),
+      },
+    ]
+  })
+}
+
+/**
+ * ヒント候補（SPEC §3.3）。
+ *
+ * 「混ぜると**実際にゴールへ近づく**語」と、その**混ぜ方**を返す。
+ *
+ * 1. 比率ごとに外挿点 v_W*(r) = (v_goal - (1 - r) * v_current) / r を作り、近傍を集める
+ * 2. 各候補に対して最良の比率を算術で選ぶ（DB を使わない）
+ * 3. 上位だけ実際に混ぜ、結果語のゴール類似度が current を超えるものだけ残す
+ *
+ * 足りなくても**効かない語で埋めない**（埋めると元の「ヒントが効かない」に戻る）。
+ * 出力は (ゴール類似度降順, 語の昇順) で決定論。`hint_cache` がこれを前提にしている。
+ */
+export async function hintCandidates(
+  db: Db,
+  goal: string,
+  current: string,
+  exclude: readonly string[],
+  limit: number,
+): Promise<Hint[]> {
+  if (limit <= 0) return []
+  const anchors = await wordVectors(db, [current, goal])
+  const currentVec = anchors.get(current)
+  const goalVec = anchors.get(goal)
+  if (!currentVec || !goalVec) return []
+
+  const banned = new Set<string>([...exclude, current, goal])
+  const targets = RATIOS.map((r) => extrapolationTarget(currentVec, goalVec, r))
+  const neighbors = (
+    await extrapolationNeighbors(db, targets, HINT_EXTRAPOLATION_NEIGHBORS)
+  ).filter(
+    (w) =>
+      !banned.has(w) && !isMorphologicalVariant(w, current) && !isMorphologicalVariant(w, goal),
+  )
+
+  const vectors = await wordVectors(db, neighbors)
+  const scored: { word: string; ratio: number; cosine: number }[] = []
+  for (const word of neighbors) {
+    const v = vectors.get(word)
+    if (!v) continue
+    const best = bestRatioForCandidate(currentVec, v, goalVec, RATIOS)
+    scored.push({ word, ratio: best.ratio, cosine: best.cosine })
+  }
+  // 検証に回す前の並び。算術上ゴールに近づくものから見る。同値は語の昇順（決定論）。
+  const byArithmetic: Hint[] = scored
+    .sort((a, b) => b.cosine - a.cosine || (a.word < b.word ? -1 : 1))
+    .slice(0, HINT_VERIFY_LIMIT)
+    .map(({ word, ratio }) => ({ word, ratio }))
+
+  const ratioOf = new Map(byArithmetic.map((h) => [h.word, h.ratio]))
+  const verified = await verifyMixes(db, goal, current, byArithmetic)
+  const improving = verified
+    // 効く手であること。かつ強すぎない（HINT_MIN_RESULT_RANK より良い手は渡さない）こと。
+    .filter(
+      (v) =>
+        v.goalSimilarity > v.currentGoalSimilarity && v.goalSimilarity < v.clearThresholdSimilarity,
+    )
+    .sort((a, b) => b.goalSimilarity - a.goalSimilarity || (a.input < b.input ? -1 : 1))
+
+  const hints: Hint[] = []
+  for (const v of improving) {
+    if (hints.length >= limit) break
+    if (hints.some((h) => isMorphologicalVariant(v.input, h.word))) continue
+    const ratio = ratioOf.get(v.input)
+    if (ratio === undefined) continue
+    hints.push({ word: v.input, ratio })
+  }
+  if (hints.length > 0) return hints
+
+  // 最後の手段。1 件も検証を通らなかったときだけ、ゴールの近傍を 1 件返す。
+  const fallback = await goalFallbackHint(db, goal, current, currentVec, goalVec, banned)
+  return fallback ? [fallback] : []
+}
+
+/** 検証が全滅したときの保険。禁止語・表記揺れを除いたゴール近傍の先頭 1 件。 */
+async function goalFallbackHint(
+  db: Db,
+  goal: string,
+  current: string,
+  currentVec: Float32Array,
+  goalVec: Float32Array,
+  banned: ReadonlySet<string>,
+): Promise<Hint | null> {
+  const rows = await db.execute<{ word: string }>(sql`
+    SELECT v.word FROM vocab v
+    WHERE v.is_output AND v.word <> ${goal}
+    ORDER BY v.w2v <=> ${vectorOf(goal)}
+    LIMIT ${HINT_EXTRAPOLATION_NEIGHBORS}
+  `)
+  const words = rows.rows
+    .map((r) => r.word)
+    .filter(
+      (w) =>
+        !banned.has(w) && !isMorphologicalVariant(w, current) && !isMorphologicalVariant(w, goal),
+    )
+  const word = words[0]
+  if (!word) return null
+  const v = (await wordVectors(db, [word])).get(word)
+  if (!v) return null
+  return { word, ratio: bestRatioForCandidate(currentVec, v, goalVec, RATIOS).ratio }
 }
 
 export interface VocabInfo {
