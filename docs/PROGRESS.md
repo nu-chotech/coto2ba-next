@@ -124,7 +124,7 @@ CI は 6 ステップすべて緑（lint / typecheck / test / ruff / pytest / **
 
 ### ⚠️ 対戦ルームのポーリングと Hobby の invocations 枠
 
-対戦ルーム（SPEC §9）は WebSocket を使わず 1 秒ポーリングで同期する
+対戦ルーム（設計 §9）は WebSocket を使わず 1 秒ポーリングで同期する
 （採用しない理由は `docs/QUESTIONS.md` §8）。**Hobby は枠を超えると
 従量課金ではなく API 全体が 30 日停止する**ので、消費を見ておくこと。
 

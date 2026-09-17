@@ -1,5 +1,8 @@
 /**
- * 対戦ルームのオーケストレーション（SPEC §9）。
+ * 対戦ルームのオーケストレーション（設計 §9）。
+ *
+ * **「設計 §9」は `docs/superpowers/specs/2026-09-17-exhibition-ux-overhaul-design.md` §9**
+ * を指す（SPEC.md に対戦ルームの節は無い。SPEC の §9 は図鑑で別物）。
  *
  * ルール判定そのものは `room-rules.ts`（純粋関数）。ここは DB との突き合わせを行う。
  * **クライアントの値は一切信用しない。** 誰がホストか・誰が先にゴールへ着いたかは
@@ -247,7 +250,7 @@ function assertMember(players: readonly { state: RoomPlayerState }[], userId: st
 }
 
 /**
- * 放置された部屋を畳む（SPEC §9 / ブース運用）。
+ * 放置された部屋を畳む（設計 §9 / ブース運用）。
  *
  * **cron は使わない。** Vercel Hobby の枠と運用の複雑さを増やしたくないので、
  * 部屋を作るときと状態を取るときに、ついでに古いものを片付ける。

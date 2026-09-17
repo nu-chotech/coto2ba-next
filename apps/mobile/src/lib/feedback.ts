@@ -5,8 +5,9 @@
  * UI はイベント名だけを呼ぶ（`feedback('tier_up')`）。UI 側で expo-haptics を
  * 直接呼ばないこと。
  *
- * - 効果音の素材はまだ無い。`sounds.ts` の `SOUND_MODULES` が空でも落ちない
- *   （無音、ログも出さない）。ファイルを置けばそのまま鳴る。
+ * - 効果音は `assets/sounds/` に自作の合成音 10 本が入っている
+ *   （`pnpm pipeline:sounds` で生成、外部素材ゼロ）。`sounds.ts` の
+ *   `SOUND_MODULES` に未登録の音があっても落ちない（無音、ログも出さない）。
  * - iOS のサイレントスイッチを尊重する（`playsInSilentMode: false`）。展示会場で
  *   鳴り続けるのを避けるため、これは「ゲームだから鳴らす」より優先する。
  * - 設定（zustand）の soundEnabled / hapticsEnabled と連動する。

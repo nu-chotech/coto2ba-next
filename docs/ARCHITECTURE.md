@@ -31,8 +31,8 @@ Expo Go のバージョンを必ず確認すること。
 | 項目 | 値 |
 | --- | --- |
 | `N_INPUT` | **208,707**（freq_rank ≤ 300,000、日本語文字を含む、記号なし、NG 外） |
-| `N_OUTPUT` | **99,805**（上記のうち freq_rank ≤ **180,000**、2文字以上、数字なし、品詞条件） |
-| 一般名詞 | 65,175（ゴールプール候補） |
+| `N_OUTPUT` | **102,520**（上記のうち freq_rank ≤ **180,000**、2文字以上、数字なし、品詞条件） |
+| 一般名詞 | 67,304（ゴールプール候補） |
 
 SPEC §4.2 からの変更（理由付き）:
 
@@ -153,12 +153,16 @@ SPEC §4.2 からの変更（理由付き）:
 ```
 mix     : v_new = (1 - ratio) * v_current + ratio * v_input        # 生ベクトルで
 nearest : 出力語彙のコサイン上位から {current, input} を除いた先頭
-hint    : v_hint = 0.8 * v_current + 0.2 * v_goal の近傍から
-          {current, input, goal, そのゲームで既出の語} を除いた先頭 6 件
+hint    : v_W*(r) = (v_goal - (1 - ratio) * v_current) / ratio      # 内挿ではなく外挿
+          比率ごとに v_W*(r) の近傍を集め、実際に混ぜて current より
+          ゴールに近づくものだけを残し、{current, goal, 既出語, forbidden_inputs,
+          表記揺れ} を除いた先頭 6 件を (goal, current) 種の決定的シャッフルで返す
 rank    : 1 + |{ w ∈ 出力語彙 : w ≠ goal, cos(w,goal) > cos(result,goal) }|
           result == goal のとき rank = 0（完全錬成）
 ```
 
+- ヒントは **`{ word, ratio }` の組**を返す（語だけでは「どう混ぜるか」が落ちるため）。
+  件数は 6 件に満たないことがあり、0 件もありうる。詳細と理由は SPEC §5.4。
 - 最近傍は N=32 取ってから除外する（参照実装の topn=10 は除外後に枯れる）。
 - **テスト**: `rank(goal の最近傍) == 1` を assert すること（gensim との契約の検証）。
 - 参照実装の 3 つの誤りは踏襲しない:
@@ -174,7 +178,7 @@ rank    : 1 + |{ w ∈ 出力語彙 : w ≠ goal, cos(w,goal) > cos(result,goal)
 | 1 手の応答（単独） | 中央値 **247ms**（日本 → Vercel sin1 → Neon sin1） |
 | 負荷試験 5 req/s × 5 分 | **エラー 0 / 中央値 247ms / p95 338ms / p99 712ms** |
 | 最近傍（HNSW、InitPlan 経由） | 0.7ms |
-| ランク（99,805 行の厳密全走査） | 92ms |
+| ランク（102,520 行の厳密全走査） | 92ms |
 | vocab のロード（208,707 行 + HNSW） | ローカル 30s / Neon 52s |
 
 SPEC §11.4 の負荷試験目標（5 req/s × 5 分、p95 < 500ms、エラー 0）を達成済み。

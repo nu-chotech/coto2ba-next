@@ -5,29 +5,19 @@
  * 2 つが食い違うと「テストは通るのに実際の順位が違う」が起きるので、
  * ここでは実際に DB から引いた順序を検証し、`compareLeaderboard` と一致することも見る。
  *
- * DB が無ければスキップする（CI で落ちないように）。
+ * DB が無ければ skipped として報告する（実行 0 件の passed にしない）。
  */
-import { eq, sql } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { afterAll, describe, expect, it } from 'vitest'
 import { db, pool } from '../src/db/client'
 import { games, user } from '../src/db/schema'
 import { leaderboard } from '../src/services/game'
 import { compareLeaderboard } from '../src/services/rules'
+import { SKIP_WITHOUT_DB } from './db-available'
 
-let hasDb = false
 const createdUserIds: string[] = []
 /** 実データとぶつからないよう、遠い未来の日付を使う。 */
 const DATE = '2099-12-31'
-
-beforeAll(async () => {
-  try {
-    await db.execute(sql`SELECT 1 FROM "user" LIMIT 1`)
-    hasDb = true
-  } catch {
-    hasDb = false
-    console.warn('DB が無いのでランキングの統合テストをスキップします')
-  }
-})
 
 afterAll(async () => {
   for (const id of createdUserIds) {
@@ -78,9 +68,8 @@ async function seed(entries: readonly Entry[]): Promise<void> {
   }
 }
 
-describe.runIf(process.env.SKIP_DB_TESTS !== '1')('デイリーランキングの並び順', () => {
+describe.skipIf(SKIP_WITHOUT_DB)('デイリーランキングの並び順', () => {
   it('ヒント数 → 手数 → クリア時刻 の順に並ぶ', async () => {
-    if (!hasDb) return
     // 投入順は期待と無関係にしておく（挿入順で通ってしまわないように）。
     const entries: Entry[] = [
       { name: 'ヒント1回3手', moveCount: 3, hintCount: 1, clearedAt: '2099-12-31T01:00:00Z' },
@@ -114,7 +103,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('デイリーランキング�
   })
 
   it('SQL の並び順と compareLeaderboard が一致する', async () => {
-    if (!hasDb) return
     const board = await leaderboard(db, 'だれでもない', DATE)
     const fromSql = board.entries.map((e) => e.display_name)
     const sorted = [...board.entries]

@@ -12,6 +12,36 @@ jobs:
   node:
     name: Lint / Typecheck / Test (Node)
     runs-on: ubuntu-latest
+
+    # DB 無しで走らせると、DB を使うテストが **skipped ではなく「実行 0 件で passed」**
+    # になっていた（`if (!hasDb) return` で早期リターンしていたため）。
+    # その結果、看板機能（外挿ヒント / ヒント数優先ランキング / 対戦ルーム）を壊しても
+    # CI が全緑のまま通っていた。postgres を立てて、実際に走らせる。
+    #
+    # vocab（10 万語）と goal_pool は CI には重すぎるので **投入しない**。
+    # それらを要するテストは引き続きスキップされるが、`it.skipIf` / `describe.skipIf`
+    # なので **skipped として数に出る**（下の「スキップの内訳」ステップで要約も出す）。
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: coto2ba
+          POSTGRES_PASSWORD: coto2ba
+          POSTGRES_DB: coto2ba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U coto2ba -d coto2ba"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # service コンテナはホストの 5432 に出ている。localhost なので TLS は切れる
+      # （`src/db/client.ts` の isLocalHost 判定）。
+      DATABASE_URL: postgres://coto2ba:coto2ba@127.0.0.1:5432/coto2ba
+      DATABASE_URL_DIRECT: postgres://coto2ba:coto2ba@127.0.0.1:5432/coto2ba
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,8 +64,30 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # スキーマだけ作る（データは入れない）。これで transfer / ランキング /
+      # レート制限の統合テストが実際に走る。
+      - name: Migrate (schema only)
+        run: pnpm --filter @coto2ba/api db:migrate
+
       - name: Test
-        run: pnpm test
+        run: |
+          set -o pipefail
+          pnpm test 2>&1 | tee test.log
+
+      # 「何件スキップされたか」を必ず目に入るところへ出す。
+      # 0 件で passed に戻っていないか（＝また嘘の緑になっていないか）をここで見る。
+      - name: スキップの内訳
+        if: always()
+        run: |
+          {
+            echo '### テストのスキップ状況'
+            echo ''
+            echo '`vocab` / `goal_pool` のデータは CI に入れていないので、それらを要するテストは skipped になります。'
+            echo ''
+            echo '```'
+            grep -E 'Test Files|Tests  |\[db-available\]' test.log || echo '(要約が見つかりませんでした)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   mobile-bundle:
     name: Bundle (Expo web export)

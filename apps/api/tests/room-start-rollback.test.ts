@@ -1,5 +1,5 @@
 /**
- * 開始の途中で失敗したら、部屋を `waiting` に戻すこと（SPEC §9）。
+ * 開始の途中で失敗したら、部屋を `waiting` に戻すこと（設計 §9）。
  *
  * 戻さないと、**ゲームを持たない参加者がいる `playing` の部屋から誰も抜け出せない**。
  * ホストがもう一度「はじめる」を押しても `ROOM_CLOSED` で弾かれ、
@@ -8,8 +8,9 @@
  * 失敗は自然には起こせないので、**ゲーム作成だけを差し替えて**途中で投げさせる。
  * 差し替えがほかの試験に漏れないよう、この 1 本だけ別ファイルにしてある。
  */
-import { eq, sql } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { afterAll, describe, expect, it, vi } from 'vitest'
+import { SKIP_WITHOUT_GOAL_POOL_ROWS } from './db-available'
 
 /** 2 人目のゲーム作成で失敗させる（1 人目は作れている ＝ 中途半端な状態を作る）。 */
 const created = { count: 0 }
@@ -29,21 +30,10 @@ const { db, pool } = await import('../src/db/client')
 const { roomPlayers, rooms, user } = await import('../src/db/schema')
 const { createRoom, joinRoom, roomState, startRoom } = await import('../src/services/rooms')
 
-let hasDb = false
 const createdUserIds: string[] = []
 
-beforeAll(async () => {
-  try {
-    await db.execute(sql`SELECT 1 FROM goal_pool LIMIT 1`)
-    hasDb = true
-  } catch {
-    hasDb = false
-    console.warn('DB が無いので開始の巻き戻し試験をスキップします')
-  }
-})
-
 afterAll(async () => {
-  if (hasDb) {
+  if (!SKIP_WITHOUT_GOAL_POOL_ROWS) {
     for (const id of createdUserIds) {
       await db
         .delete(user)
@@ -70,9 +60,8 @@ async function createTestUser(): Promise<string> {
   return id
 }
 
-describe('開始の途中で失敗したとき', () => {
+describe.skipIf(SKIP_WITHOUT_GOAL_POOL_ROWS)('開始の途中で失敗したとき', () => {
   it('部屋は waiting に戻り、もう一度はじめられる', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const guest = await createTestUser()
     const room = await createRoom(db, host, 'normal')

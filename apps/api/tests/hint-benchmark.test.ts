@@ -13,7 +13,7 @@
  * 現在の挙動を幅を持たせた範囲で固定する。**下限で落として弱めるための閾値ではない。**
  *
  * 除外語は本番の `openHints` と同じ（ゴール・現在の語・forbidden_inputs）にする。
- * DB が無い環境ではスキップする（vector.test.ts と同じ機構）。
+ * DB が無い環境では skipped として報告する（vector.test.ts と同じ機構）。
  */
 import {
   CLEAR_RANK,
@@ -24,9 +24,10 @@ import {
   sharesKanji,
 } from '@coto2ba/contracts'
 import { sql } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import { db, pool } from '../src/db/client'
 import { goalNeighborhood, hintCandidates, mixAndRank, rankOf } from '../src/services/vector'
+import { SKIP_WITHOUT_VOCAB } from './db-available'
 
 /** 改善率の下限。ここを下げてはいけない（下げるならアルゴリズムを直すこと）。 */
 const REQUIRED_IMPROVEMENT_RATE = 0.9
@@ -41,20 +42,6 @@ const CLEAR_SHARE_RANGE = [0.2, 0.9] as const
 const MIN_WITHIN_100_SHARE = 0.8
 /** 100 局面 × 数クエリ。ローカルの pgvector で 15 秒前後。 */
 const BENCHMARK_TIMEOUT_MS = 600_000
-
-let hasVocab = false
-
-beforeAll(async () => {
-  try {
-    const r = await db.execute<{ n: number }>(
-      sql`SELECT count(*)::int AS n FROM vocab WHERE is_output`,
-    )
-    hasVocab = Number(r.rows[0]?.n ?? 0) > 1000
-  } catch {
-    hasVocab = false
-  }
-  if (!hasVocab) console.warn('vocab が無いのでヒントのベンチマークをスキップします')
-})
 
 afterAll(async () => {
   await pool.end().catch(() => {})
@@ -101,11 +88,10 @@ async function sampleSituations(n: number): Promise<Situation[]> {
   return out
 }
 
-describe.runIf(process.env.SKIP_DB_TESTS !== '1')('ヒントの順位改善率', () => {
+describe.skipIf(SKIP_WITHOUT_VOCAB)('ヒントの順位改善率', () => {
   it(
     'シートの一番上のヒントに従うと 9 割以上の局面で順位が上がる',
     async () => {
-      if (!hasVocab) return
       const started = Date.now()
       const cases = await sampleSituations(SITUATIONS)
       expect(cases.length).toBeGreaterThan(0)

@@ -9,8 +9,11 @@ declare global {
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0'])
 
-/** 接続先がローカルホストか。ホスト名で厳密に判定する。 */
-function isLocalHost(connectionString: string): boolean {
+/**
+ * 接続先がローカルホストか。ホスト名で厳密に判定する。
+ * TLS を切ってよいかの判断に使う（テストの probe 接続も同じ判定を使う）。
+ */
+export function isLocalHost(connectionString: string): boolean {
   try {
     return LOCAL_HOSTS.has(new URL(connectionString).hostname.replace(/^\[|\]$/g, ''))
   } catch {

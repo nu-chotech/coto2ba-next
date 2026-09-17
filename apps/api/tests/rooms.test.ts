@@ -1,6 +1,6 @@
 /**
- * 対戦ルーム（SPEC §9）の統合テスト。DATABASE_URL の DB に直接書き込む。
- * DB が無ければスキップする（CI で落ちないように）。
+ * 対戦ルーム（設計 §9）の統合テスト。DATABASE_URL の DB に直接書き込む。
+ * DB が無ければ skipped として報告する（実行 0 件の passed にしない）。
  *
  * ここで守りたいのは 3 つ。
  * 1. 全員が**同じお題**を解く（部屋で 1 度だけ抽選する）
@@ -8,8 +8,8 @@
  * 3. 勝敗は**サーバーの時刻**で決まる（最初にゴールへ着いた人が勝ち）
  */
 import { ROOM_MIN_PLAYERS, ROOM_TTL_MINUTES } from '@coto2ba/contracts'
-import { eq, sql } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { afterAll, describe, expect, it } from 'vitest'
 import { db, pool } from '../src/db/client'
 import { games, rooms, user } from '../src/db/schema'
 import {
@@ -20,22 +20,12 @@ import {
   roomState,
   startRoom,
 } from '../src/services/rooms'
+import { SKIP_WITHOUT_GOAL_POOL_ROWS } from './db-available'
 
-let hasDb = false
 const createdUserIds: string[] = []
 
-beforeAll(async () => {
-  try {
-    await db.execute(sql`SELECT 1 FROM goal_pool LIMIT 1`)
-    hasDb = true
-  } catch {
-    hasDb = false
-    console.warn('DB が無いので対戦ルームの統合テストをスキップします')
-  }
-})
-
 afterAll(async () => {
-  if (hasDb) {
+  if (!SKIP_WITHOUT_GOAL_POOL_ROWS) {
     for (const id of createdUserIds) {
       // rooms / room_players / games は user の cascade で消える。
       await db
@@ -94,9 +84,8 @@ async function forceClear(gameId: string, clearedAt: Date): Promise<void> {
     .where(eq(games.id, gameId))
 }
 
-describe.runIf(true)('対戦ルーム', () => {
+describe.skipIf(SKIP_WITHOUT_GOAL_POOL_ROWS)('対戦ルーム', () => {
   it('作って、参加して、開始できる', async () => {
-    if (!hasDb) return
     const host = await createTestUser('ホスト')
     const guest = await createTestUser('ゲスト')
     const created = await createRoom(db, host, 'normal')
@@ -107,7 +96,6 @@ describe.runIf(true)('対戦ルーム', () => {
   })
 
   it('ホスト以外は開始できない', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const guest = await createTestUser()
     const created = await createRoom(db, host, 'normal')
@@ -116,14 +104,12 @@ describe.runIf(true)('対戦ルーム', () => {
   })
 
   it('人数が足りなければ開始できない', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const created = await createRoom(db, host, 'normal')
     await expect(startRoom(db, host, created.code)).rejects.toThrow()
   })
 
   it('同じ人が二重に参加しても増えない（冪等）', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const guest = await createTestUser()
     const created = await createRoom(db, host, 'normal')
@@ -133,7 +119,6 @@ describe.runIf(true)('対戦ルーム', () => {
   })
 
   it('ホストが自分の部屋に join しても増えない', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const created = await createRoom(db, host, 'normal')
     const again = await joinRoom(db, host, created.code)
@@ -141,7 +126,6 @@ describe.runIf(true)('対戦ルーム', () => {
   })
 
   it('開始後は参加できない', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const guest = await createTestUser()
     const late = await createTestUser()
@@ -152,7 +136,6 @@ describe.runIf(true)('対戦ルーム', () => {
   })
 
   it('全員が同じお題を解く', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const guest = await createTestUser()
     const created = await createRoom(db, host, 'normal')
@@ -175,7 +158,6 @@ describe.runIf(true)('対戦ルーム', () => {
 
   // 進行中に他人の語が見えると、真似されて競技にならない。
   it('他人が打った語は返さない', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const guest = await createTestUser()
     const created = await createRoom(db, host, 'normal')
@@ -192,7 +174,6 @@ describe.runIf(true)('対戦ルーム', () => {
   })
 
   it('待機中はお題を伏せる', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const created = await createRoom(db, host, 'normal')
     const state = await roomState(db, host, created.code)
@@ -202,7 +183,6 @@ describe.runIf(true)('対戦ルーム', () => {
   })
 
   it('先にクリアした人が 1 位', async () => {
-    if (!hasDb) return
     const host = await createTestUser('先着')
     const guest = await createTestUser('後着')
     const created = await createRoom(db, host, 'normal')
@@ -222,7 +202,6 @@ describe.runIf(true)('対戦ルーム', () => {
   })
 
   it('全員が終わったら部屋が finished になる', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const guest = await createTestUser()
     const created = await createRoom(db, host, 'normal')
@@ -242,7 +221,6 @@ describe.runIf(true)('対戦ルーム', () => {
   // 誰とも当たらない（実際にそうなった）。ホストだけが作り、次のコードを配る。
   describe('もう一度', () => {
     it('ホストが作った次の部屋のコードが、終わった部屋に書き残される', async () => {
-      if (!hasDb) return
       const host = await createTestUser()
       const guest = await createTestUser()
       const first = await createRoom(db, host, 'normal')
@@ -259,7 +237,6 @@ describe.runIf(true)('対戦ルーム', () => {
     })
 
     it('ホスト以外は「もう一度」を作れない', async () => {
-      if (!hasDb) return
       const host = await createTestUser()
       const guest = await createTestUser()
       const first = await createRoom(db, host, 'normal')
@@ -269,7 +246,6 @@ describe.runIf(true)('対戦ルーム', () => {
     })
 
     it('二度押しても部屋は増えない', async () => {
-      if (!hasDb) return
       const host = await createTestUser()
       const first = await createRoom(db, host, 'normal')
       await closeRoom(first.code)
@@ -281,7 +257,6 @@ describe.runIf(true)('対戦ルーム', () => {
     // まだ生きている部屋で作ると、そこで待っている人を置き去りにする
     // （Critical-1 と同じ形の事故）。
     it('終わっていない部屋からは作れない', async () => {
-      if (!hasDb) return
       const host = await createTestUser()
       const guest = await createTestUser()
       const waiting = await createRoom(db, host, 'normal')
@@ -293,7 +268,6 @@ describe.runIf(true)('対戦ルーム', () => {
     })
 
     it('参加していない人は作れない', async () => {
-      if (!hasDb) return
       const host = await createTestUser()
       const stranger = await createTestUser()
       const first = await createRoom(db, host, 'normal')
@@ -307,7 +281,6 @@ describe.runIf(true)('対戦ルーム', () => {
      * 新しい部屋を作りに進むこと。
      */
     it('次のコードが別人の部屋に再利用されていたら、新しく作り直す', async () => {
-      if (!hasDb) return
       const host = await createTestUser()
       const stranger = await createTestUser()
       const first = await createRoom(db, host, 'normal')
@@ -325,7 +298,6 @@ describe.runIf(true)('対戦ルーム', () => {
     })
 
     it('難易度は引き継ぐ', async () => {
-      if (!hasDb) return
       const host = await createTestUser()
       const first = await createRoom(db, host, 'hard')
       await closeRoom(first.code)
@@ -337,7 +309,6 @@ describe.runIf(true)('対戦ルーム', () => {
   describe('部屋を出る', () => {
     // ブースではホストの端末が落ちる・アプリを閉じるのが普通に起きる。
     it('待機中にホストが出たら部屋ごと畳む', async () => {
-      if (!hasDb) return
       const host = await createTestUser()
       const guest = await createTestUser()
       const created = await createRoom(db, host, 'normal')
@@ -351,7 +322,6 @@ describe.runIf(true)('対戦ルーム', () => {
     })
 
     it('待機中に参加者が出たら、その人だけ抜ける', async () => {
-      if (!hasDb) return
       const host = await createTestUser()
       const guest = await createTestUser()
       const created = await createRoom(db, host, 'normal')
@@ -366,7 +336,6 @@ describe.runIf(true)('対戦ルーム', () => {
 
     // 走っている人がいるのに畳むと勝負が消える。
     it('レース中にホストが出ても部屋は畳まない', async () => {
-      if (!hasDb) return
       const host = await createTestUser()
       const guest = await createTestUser()
       const created = await createRoom(db, host, 'normal')
@@ -381,7 +350,6 @@ describe.runIf(true)('対戦ルーム', () => {
   })
 
   it('コードは生きている部屋の中で一意', async () => {
-    if (!hasDb) return
     const a = await createTestUser()
     const b = await createTestUser()
     const first = await createRoom(db, a, 'normal')
@@ -390,13 +358,11 @@ describe.runIf(true)('対戦ルーム', () => {
   })
 
   it('存在しないコードは ROOM_NOT_FOUND', async () => {
-    if (!hasDb) return
     const someone = await createTestUser()
     await expect(roomState(db, someone, 'ZZZZ')).rejects.toThrow()
   })
 
   it('参加していない部屋の状態は見られない', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const stranger = await createTestUser()
     const created = await createRoom(db, host, 'normal')
@@ -405,7 +371,6 @@ describe.runIf(true)('対戦ルーム', () => {
 
   // cron を使わない代わりに、部屋を作るときと状態を取るときに掃除する。
   it('寿命を過ぎた部屋は次の操作のついでに畳まれる', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const other = await createTestUser()
     const stale = await createRoom(db, host, 'normal')
@@ -431,7 +396,6 @@ describe.runIf(true)('対戦ルーム', () => {
    * （「次の人へ」はユーザーを消さない。新しい匿名ユーザーを作るだけ。）
    */
   it('ホストのユーザーを消すと部屋も消える（cascade）', async () => {
-    if (!hasDb) return
     const host = await createTestUser()
     const created = await createRoom(db, host, 'normal')
     expect(await db.select().from(rooms).where(eq(rooms.code, created.code))).toHaveLength(1)
