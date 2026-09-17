@@ -38,7 +38,7 @@ jobs:
         run: pnpm test
 
   pipeline:
-    name: Lint (Python pipeline)
+    name: Lint / Test (Python pipeline)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -55,3 +55,7 @@ jobs:
       - name: ruff check
         working-directory: tools/pipeline
         run: uv run ruff check .
+
+      - name: pytest
+        working-directory: tools/pipeline
+        run: uv run pytest
