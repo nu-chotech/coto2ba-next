@@ -66,15 +66,6 @@ export const HINT_COUNT = 6
 export const HINT_EXTRAPOLATION_NEIGHBORS = 24
 /** 実際の混合まで走らせて検証する最終候補数。 */
 export const HINT_VERIFY_LIMIT = 16
-/**
- * ヒントが提案してよい手の下限ランク。混ぜた結果がこれ以下（＝より良い）になる手は出さない。
- *
- * 外挿の最適解は「ゴールの類義語を比率 0.8 で混ぜる」に収束するため、歯止めが無いと
- * ヒントが 1 タップのクリアボタンになる（実測: 100 局面すべてが即クリアだった）。
- * ゴール近傍を入力から締め出す GOAL_NEIGHBOR_BAN と同じ意図。
- * **ヒントを弱めたいときはここを上げる**（例: 100 にすると「あと 1 手」までは運ばなくなる）。
- */
-export const HINT_MIN_RESULT_RANK = CLEAR_RANK
 
 // ── 演出帯（tier）────────────────────────────────────────────
 export const TIERS = [

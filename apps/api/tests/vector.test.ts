@@ -138,18 +138,10 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
     }
   })
 
-  it('クリアそのものは渡さない', async () => {
-    if (!hasVocab) return
-    const hints = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
-    for (const hint of hints) {
-      const res = await mixAndRank(db, GOAL, CURRENT, hint.word, hint.ratio)
-      expect(res?.rank).toBeGreaterThan(CLEAR_RANK)
-    }
-  })
-
-  // ゴールのすぐ近くに立っていると「効くが強すぎない手」が存在しないことがある。
-  // そのときは 0 件を返す（保険の経路でクリアを渡さないことの確認）。
-  it('ゴールの目前でもクリアを渡さない', async () => {
+  // ゴールのすぐ近く（rank 15 付近）でもヒントが出ること。
+  // ここで空になると、いちばんヒントが欲しい場面で何も出せない。
+  // 強さの上限を設けていないので、結果がクリア圏に入ることもある（それは正しい）。
+  it('ゴールの目前でもヒントが出る', async () => {
     if (!hasVocab) return
     const near = await db.execute<{ word: string }>(sql`
       SELECT v.word FROM vocab v
@@ -159,10 +151,12 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
     `)
     const current = near.rows[0]?.word
     expect(current).toBeTruthy()
+    const before = await rankOf(db, GOAL, current as string)
     const hints = await hintCandidates(db, GOAL, current as string, [], HINT_COUNT)
+    expect(hints.length).toBeGreaterThan(0)
     for (const hint of hints) {
       const res = await mixAndRank(db, GOAL, current as string, hint.word, hint.ratio)
-      expect(res?.rank).toBeGreaterThan(CLEAR_RANK)
+      expect(res?.rank).toBeLessThan(before as number)
     }
   })
 

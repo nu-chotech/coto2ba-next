@@ -15,7 +15,6 @@
  */
 import {
   HINT_EXTRAPOLATION_NEIGHBORS,
-  HINT_MIN_RESULT_RANK,
   HINT_VERIFY_LIMIT,
   type Hint,
   isMorphologicalVariant,
@@ -225,8 +224,6 @@ export interface MixVerification {
   goalSimilarity: number
   /** current 自身のゴール類似度。これを超えない候補は「効かないヒント」。 */
   currentGoalSimilarity: number
-  /** rank = HINT_MIN_RESULT_RANK の語のゴール類似度。これ以上なら強すぎる手。 */
-  clearThresholdSimilarity: number
 }
 
 /**
@@ -255,29 +252,19 @@ export async function verifyMixes(
     result: string
     goal_similarity: number | null
     current_goal_similarity: number | null
-    clear_threshold_similarity: number | null
   }>(sql`
     SELECT u.input, u.result, u.goal_similarity,
-      (1 - (${vectorOf(current)} <=> ${vectorOf(goal)})) AS current_goal_similarity,
-      (
-        SELECT 1 - (v.w2v <=> ${vectorOf(goal)})
-        FROM vocab v
-        WHERE v.is_output AND v.word <> ${goal}
-        ORDER BY v.w2v <=> ${vectorOf(goal)}
-        LIMIT 1 OFFSET ${HINT_MIN_RESULT_RANK - 1}
-      ) AS clear_threshold_similarity
+      (1 - (${vectorOf(current)} <=> ${vectorOf(goal)})) AS current_goal_similarity
     FROM (${sql.join(parts, sql` UNION ALL `)}) u
   `)
   return rows.rows.flatMap((row) => {
     if (row.goal_similarity === null || row.current_goal_similarity === null) return []
-    if (row.clear_threshold_similarity === null) return []
     return [
       {
         input: row.input,
         result: row.result,
         goalSimilarity: Number(row.goal_similarity),
         currentGoalSimilarity: Number(row.current_goal_similarity),
-        clearThresholdSimilarity: Number(row.clear_threshold_similarity),
       },
     ]
   })
@@ -335,14 +322,13 @@ export async function hintCandidates(
   if (hints.length > 0) return hints
 
   // 最後の手段。1 件も検証を通らなかったときだけ、ゴールの近傍を候補にしてもう一度試す。
-  // **ここでも同じ検証を通す。** 素通しすると「ゴールの類義語を 0.8 で混ぜろ」＝
-  // クリアそのものを渡すことになり、歯止めが意味を失う。
+  // **ここでも同じ検証を通す。** 素通しすると「混ぜても順位が下がる語」を返しうる。
   const rescue = await goalNeighborCandidates(db, goal, current, currentVec, goalVec, banned)
   return await keepUsefulHints(db, goal, current, rescue, 1)
 }
 
 /**
- * 候補を実際に混ぜて検証し、「効く」かつ「強すぎない」手だけを残す。
+ * 候補を実際に混ぜて検証し、**ゴールに近づく手だけ**を残す。
  * 並びは (結果のゴール類似度降順, 語の昇順) で決定論。
  */
 async function keepUsefulHints(
@@ -356,11 +342,10 @@ async function keepUsefulHints(
   const ratioOf = new Map(candidates.map((h) => [h.word, h.ratio]))
   const verified = await verifyMixes(db, goal, current, candidates)
   const improving = verified
-    // 効く手であること。かつ強すぎない（HINT_MIN_RESULT_RANK より良い手は渡さない）こと。
-    .filter(
-      (v) =>
-        v.goalSimilarity > v.currentGoalSimilarity && v.goalSimilarity < v.clearThresholdSimilarity,
-    )
+    // 効く手であることだけを見る。強さの上限は設けない。
+    // ヒントの使用はランキングの最優先キー（SPEC §5.8）で課金されるので、
+    // ヒントそのものを弱める必要はない。
+    .filter((v) => v.goalSimilarity > v.currentGoalSimilarity)
     .sort((a, b) => b.goalSimilarity - a.goalSimilarity || (a.input < b.input ? -1 : 1))
 
   const hints: Hint[] = []
