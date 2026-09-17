@@ -29,7 +29,7 @@ import {
   SPACE_PATH_LABEL_MIN_OPACITY,
   SPACE_WORLD_SCALE,
 } from './constants'
-import { stepLabel } from './paths'
+import { stackLabelY, stepLabel } from './paths'
 import { projectAll } from './projection'
 import type { SpaceScene } from './scene'
 
@@ -40,6 +40,14 @@ type CameraSnapshot = {
   targetX: number
   targetY: number
   targetZ: number
+}
+
+/** JS 側の作業領域（毎回確保しない）。 */
+type Scratch = {
+  screen: Float32Array
+  sizeMul: Float32Array
+  alphaMul: Float32Array
+  depth: Float32Array
 }
 
 type PlacedLabel = {
@@ -84,8 +92,7 @@ export function SpaceLabels({
   })
   const lastPushedAt = useSharedValue(0)
 
-  // JS 側の作業領域。毎回確保しない。
-  const scratch = useMemo(
+  const scratch = useMemo<Scratch>(
     () => ({
       screen: new Float32Array(limit * 2),
       sizeMul: new Float32Array(limit),
@@ -141,13 +148,18 @@ export function SpaceLabels({
         if (scratch.sizeMul[index] <= 0) continue
         const node = scene.nodes[index]
         if (node === undefined || node.word.length === 0) continue
+        const x = scratch.screen[index * 2] as number
         placed.push({
           // 同じ語を 2 度通る経路があるので、順番も鍵に混ぜる。
           id: `${k}:${node.word}`,
           word: node.word,
           step: stepLabel(k, activePath.length),
-          x: scratch.screen[index * 2] as number,
-          y: (scratch.screen[index * 2 + 1] as number) + SPACE_LABEL_OFFSET_Y,
+          x,
+          y: stackLabelY(
+            placed,
+            x,
+            (scratch.screen[index * 2 + 1] as number) + SPACE_LABEL_OFFSET_Y,
+          ),
           // 主役なので、奥に回っても読める下限を持たせる。
           opacity: Math.max(scratch.alphaMul[index] as number, SPACE_PATH_LABEL_MIN_OPACITY),
         })
@@ -174,7 +186,7 @@ export function SpaceLabels({
       word: scene.nodes[index]?.word ?? '',
       step: null,
       x: scratch.screen[index * 2] as number,
-      y: (scratch.screen[index * 2 + 1] as number) + SPACE_LABEL_OFFSET_Y,
+      y: labelY(scene, scratch, index),
       opacity: scratch.alphaMul[index] as number,
     }))
   }, [scene, limit, snapshot, width, height, scratch, activePath])
@@ -208,6 +220,15 @@ export function SpaceLabels({
       ))}
     </View>
   )
+}
+
+/**
+ * ラベルの上端。**点の半径ぶん下げる**。
+ * 固定の値だけだと、大きい点（今日のゴール・経路の節）では文字が点に乗る。
+ */
+function labelY(scene: SpaceScene, scratch: Scratch, index: number): number {
+  const radius = ((scene.sizePt[index] as number) * (scratch.sizeMul[index] as number)) / 2
+  return (scratch.screen[index * 2 + 1] as number) + radius + SPACE_LABEL_OFFSET_Y
 }
 
 const styles = StyleSheet.create({

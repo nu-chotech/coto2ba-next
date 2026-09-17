@@ -15,6 +15,9 @@ import {
   SPACE_EMPHASIS_GHOST_IDLE,
   SPACE_EMPHASIS_OFF_PATH_ALPHA,
   SPACE_EMPHASIS_PATH_SIZE,
+  SPACE_LABEL_COLLIDE_WIDTH,
+  SPACE_LABEL_STACK_MAX,
+  SPACE_LABEL_STACK_STEP,
 } from './constants'
 import type { Vec3 } from './framing'
 import type { SpacePath, SpaceScene } from './scene'
@@ -95,6 +98,36 @@ export function stepLabel(step: number, total: number): string {
   if (step <= 0) return 'スタート'
   if (step >= total - 1) return '到達'
   return `${step}手目`
+}
+
+/**
+ * 先に置いたラベルと重なるなら下へずらした y。
+ *
+ * **実データで必要になった**：「広角レンズ → レンズ」のように 2 手が
+ * ほとんど同じ場所に来ると、語も手数も完全に重なって読めない。
+ * **消さずにずらす**（自分が作った語が消えるのがいちばん困る）。
+ */
+export function stackLabelY(
+  placed: readonly { x: number; y: number }[],
+  x: number,
+  y: number,
+): number {
+  let candidate = y
+  for (let guard = 0; guard < SPACE_LABEL_STACK_MAX; guard += 1) {
+    let hit = false
+    for (const label of placed) {
+      if (
+        Math.abs(label.x - x) < SPACE_LABEL_COLLIDE_WIDTH &&
+        Math.abs(label.y - candidate) < SPACE_LABEL_STACK_STEP
+      ) {
+        hit = true
+        break
+      }
+    }
+    if (!hit) break
+    candidate += SPACE_LABEL_STACK_STEP
+  }
+  return candidate
 }
 
 export type SpaceEmphasis = {

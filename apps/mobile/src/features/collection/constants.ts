@@ -181,6 +181,15 @@ export const SPACE_LABEL_MARGIN = 24
  * 主役なので、奥に回っても読めるところで止める。
  */
 export const SPACE_PATH_LABEL_MIN_OPACITY = 0.55
+/**
+ * 節のラベルが重なったときに下へずらす段の高さと、段数の上限。
+ * **実データで必要になった**：「広角レンズ → レンズ」のように 2 手が
+ * ほとんど同じ場所に来ると、語と手数が完全に重なって読めなくなる。
+ */
+export const SPACE_LABEL_STACK_STEP = 34
+export const SPACE_LABEL_STACK_MAX = 3
+/** この横幅より近いラベル同士は重なっていると見なす。 */
+export const SPACE_LABEL_COLLIDE_WIDTH = 72
 
 // ── タップ ──────────────────────────────────────────────────
 /**

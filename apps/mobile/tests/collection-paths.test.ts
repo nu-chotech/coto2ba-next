@@ -7,7 +7,12 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { SPACE_GHOST_ALPHA, SPACE_PATH_LIMIT } from '../src/features/collection/constants'
+import {
+  SPACE_GHOST_ALPHA,
+  SPACE_LABEL_STACK_MAX,
+  SPACE_LABEL_STACK_STEP,
+  SPACE_PATH_LIMIT,
+} from '../src/features/collection/constants'
 import {
   buildEmphasis,
   defaultPathIndex,
@@ -15,6 +20,7 @@ import {
   pathOptions,
   pathPoints,
   recentPaths,
+  stackLabelY,
   stepLabel,
 } from '../src/features/collection/paths'
 import type { SpaceNode, SpacePath, SpaceScene } from '../src/features/collection/scene'
@@ -227,5 +233,29 @@ describe('recentPaths', () => {
   it('上限以下ならそのまま', () => {
     const few = ['a', 'b']
     expect(recentPaths(few, SPACE_PATH_LIMIT)).toEqual(few)
+  })
+})
+
+describe('stackLabelY', () => {
+  it('誰とも重ならなければそのまま', () => {
+    expect(stackLabelY([{ x: 300, y: 100 }], 10, 100)).toBe(100)
+  })
+
+  it('重なったら下へずらす（実データの「広角レンズ → レンズ」）', () => {
+    const first = { x: 100, y: 200 }
+    const y = stackLabelY([first], 102, 201)
+    expect(y).toBeGreaterThan(201)
+  })
+
+  it('何段も重なっても上限で止める（画面外まで落とさない）', () => {
+    const placed = [
+      { x: 100, y: 200 },
+      { x: 100, y: 234 },
+      { x: 100, y: 268 },
+      { x: 100, y: 302 },
+      { x: 100, y: 336 },
+    ]
+    const y = stackLabelY(placed, 100, 200)
+    expect(y).toBeLessThanOrEqual(200 + SPACE_LABEL_STACK_STEP * SPACE_LABEL_STACK_MAX)
   })
 })
