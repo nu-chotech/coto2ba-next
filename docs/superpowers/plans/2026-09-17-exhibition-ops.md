@@ -20,6 +20,116 @@
 
 ---
 
+### Task 0: Neon を Launch tier に上げる（最優先・コードを1行も書かない）
+
+**2026-09-18 の本番実測で、開場直後の 1 秒の犯人が Neon で確定した。**
+`/api/health`（DB に触らない）が 161ms で返る**関数がウォームな状態**で、
+最初に DB へ到達するリクエストだけが **1,175ms → 162ms**。
+Vercel のコールドスタートではない。
+
+**Vercel Cron では解けない**: Hobby は最小 1 日 1 回・精度 ±59 分。5 分の休止に対しカバー率 0.35%。
+**常時 keepalive も不可**: Neon Free の月 100 CU-hours に対し 182.5 CU-hours 必要で、
+**月の 16 日目に DB が止まる**。
+
+同時に**容量の問題も消える**。Neon Free は 0.5GB を超えると INSERT/UPDATE だけでなく
+**DELETE も失敗する**。現在 318/512MB で、展示当日は `calc_cache`・`games`・`moves`・
+`word_encounters` が伸び続ける。**当日踏んだら自力復旧の手段がない。**
+
+- [ ] **Step 1: 着手前に今の消費を見る**
+
+Neon コンソールで今月の CU-hours 消費とストレージの内訳を確認し、数値を控える。
+（13 分放置で休止が観測されなかったという報告があり、想定より食っている可能性がある）
+
+- [ ] **Step 2: Launch tier に上げ、autosuspend を無効化する**
+
+Vercel Marketplace 経由の統合なので、**接続文字列や環境変数の再設定が要る可能性がある**。
+見積もりは展示期間で 1 桁ドル（0.25 CU × 240h × $0.106 ≒ $6.4 + ストレージ従量）。
+
+- [ ] **Step 3: 変更後に疎通を確認する**
+
+```bash
+curl -s -o /dev/null -w '%{http_code} %{time_total}s\n' \
+  -H "Authorization: Bearer x" https://coto2ba-next-api.chotech.dev/api/daily
+```
+Expected: `401` が返る（= DB に到達している）。連続で叩いて**1 本目も 200ms 台**なら成功。
+
+- [ ] **Step 4: スモークテストを流す**
+
+Run: `python3 apps/api/tests/smoke.py https://coto2ba-next-api.chotech.dev`
+Expected: 20 項目すべて PASS
+
+- [ ] **Step 5: 戻す日をカレンダーに入れる**
+
+**scale-to-zero を切ると常時課金になる。展示後に戻し忘れると毎月請求が続く。**
+展示翌日に戻す予定を今すぐ入れること。`docs/PROGRESS.md` にも書く。
+
+- [ ] **Step 6: 展示週はパイプラインを流さない**
+
+ストレージが従量になると、パイプライン再実行の WAL で青天井に増えうる。
+
+**注意: 今週やること。展示直前にやる作業ではない。**
+
+---
+
+### Task 0.5: 未認証リクエストが Neon を叩ける穴を塞ぐ
+
+**2026-09-18 の調査で発見。** `gamesRoutes.use('*', requireAuth, rateLimit)` の順序のせいで、
+**レート制限が認証の後ろにある**。デタラメな Bearer を投げると、401 が返る前に
+Neon に 1〜2 クエリ飛ぶ。**外から叩くだけで DB の枠を削れる。**
+
+既知の「レート制限がインスタンスを跨ぐと甘い」という懸念より、こちらのほうが深刻。
+なお `rateLimit` は IP ではなく**ユーザー単位**なので、会場 Wi-Fi の NAT で
+3 台が同一 IP になっても締め出されない。そこは今のままで正しい。
+
+- [ ] **Step 1: DB の前に形だけ弾く**
+
+`DEVICE_TOKEN_LENGTH` は既に contracts にある。長さ・文字種が合わない Bearer は
+`fromDeviceToken` を呼ばずに 401 を返す。ゴミトークンの洪水が Neon に 1 クエリも投げなくなる。
+
+**Better Auth のセッション経路には適用しないこと**（適用するとログインが壊れる）。
+端末トークンの経路にだけ効かせる。
+
+- [ ] **Step 2: IP 単位のバケットを最前段に置く**
+
+`requireAuth` より**前**に置く。閾値は「明らかな異常だけ」を切る緩い値にする。
+
+**ここが唯一の自爆リスク**: 厳しくすると会場 Wi-Fi の NAT で 3 台の iPad が
+同一 IP になり、**自分のブースを締め出す**。既存のユーザー単位 5 req/s とは別物として緩く置く。
+
+- [ ] **Step 3: ブースの 3 台で同時プレイして通ることを確認する**
+
+これを確認せずに展示に持ち込まないこと。
+
+- [ ] **Step 4: Vercel Firewall を保険として 1 つ入れる**
+
+ダッシュボードで IP レート制限を設定する（コード 0 行、いつでも切れる）。
+
+---
+
+### Task 0.6: 認証不要のはずのエンドポイントが 401 を返す
+
+`/api/words/check` と `/api/words/ghosts` は、コードのコメントに「認証不要」と書いてあるのに
+**本番で 401**（2026-09-18 に実測確認）。`gamesRoutes` が `/api/*` 全体に掛かり、
+後から登録される `wordsRoutes` を飲み込んでいる。
+
+- [ ] **Step 1: 登録順を入れ替える**
+
+`apps/api/src/app.ts` の `app.route('/api', wordsRoutes)` を `gamesRoutes` の**前**に移す。
+`meRoutes` が先に登録されているから `/api/devices` が無事なのと同じ仕組みで直る。
+`wordsRoutes` 自身の `use('/words/:word/*', requireAuth, rateLimit)` は残るので保護は変わらない。
+
+- [ ] **Step 2: 手で 5 本叩いて確認する**
+
+ルーティングの網羅テストが存在しないので、`/api/devices`・`/api/daily`・`/api/words/check`・
+`/api/words/ghosts`・`/api/collection` を叩き、**期待どおりの認証要否**になっているか確かめる。
+
+- [ ] **Step 3: 回帰テストを足す**
+
+同じ事故が再発しないよう、**各エンドポイントの認証要否を固定するテスト**を書く。
+コメントと実態が食い違っていたのが原因なので、テストで縛る。
+
+---
+
 ### Task 1: EAS Update に publish して配布経路を作る
 
 **Files:**
