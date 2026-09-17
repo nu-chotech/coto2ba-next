@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import wave
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 
@@ -140,77 +141,100 @@ def _ms_to_samples(ms: float, sample_rate: int) -> int:
     return round(ms / 1000.0 * sample_rate)
 
 
+class Note(NamedTuple):
+    """1 音ぶんの設計パラメータ（`SOUND_DESIGN` の中でだけ使う）。"""
+
+    freq: float
+    dur_ms: float
+    attack_ms: float
+    release_ms: float
+    gain: float
+    start_ms: float = 0.0  # 全体（SoundDesign.total_ms）の先頭からの遅延。
+
+
+class SoundDesign(NamedTuple):
+    """1 効果音ぶんの設計（複数ノートの重ね合わせ）。"""
+
+    total_ms: float
+    notes: tuple[Note, ...]
+
+
+# 全音のパラメータをここに集約する。実機で聴いて音量・長さ・音高を調整するときは
+# この表だけ触ればよく、`render()` のロジックには触れない（レビュー対応: マジック
+# ナンバーの散在を解消）。
+SOUND_DESIGN: dict[str, SoundDesign] = {
+    # ホイールの段。極小・クリック感だけ（気配レベル）。
+    "detent": SoundDesign(30, (Note(NOTE_HZ["D5"], 30, 3, 20, 0.16),)),
+    # 画面遷移。ほぼ気配。detent よりさらに柔らかい包絡線。
+    "page": SoundDesign(60, (Note(NOTE_HZ["A4"], 60, 12, 42, 0.13),)),
+    # 混ぜる。短い立ち上がりで軽く弾む。
+    "mix": SoundDesign(120, (Note(NOTE_HZ["C5"], 120, 8, 95, 0.34),)),
+    # 近づいた。上行（長 3 度）。2 音をわずかに重ねてレガート気味に。
+    "closer": SoundDesign(
+        200,
+        (
+            Note(NOTE_HZ["C5"], 110, 6, 90, 0.38, start_ms=0),
+            Note(NOTE_HZ["E5"], 110, 8, 95, 0.36, start_ms=90),
+        ),
+    ),
+    # 遠ざかった。下行（長 3 度、closer の逆）。責めない協和音程・低めの音量。
+    "farther": SoundDesign(
+        200,
+        (
+            Note(NOTE_HZ["E5"], 110, 10, 95, 0.28, start_ms=0),
+            Note(NOTE_HZ["C5"], 110, 12, 95, 0.26, start_ms=90),
+        ),
+    ),
+    # 帯が上がった。上行 2 音（完全 5 度）でしっかりめに。
+    "tier_up": SoundDesign(
+        300,
+        (
+            Note(NOTE_HZ["C5"], 150, 6, 130, 0.44, start_ms=0),
+            Note(NOTE_HZ["G5"], 160, 8, 140, 0.46, start_ms=130),
+        ),
+    ),
+    # 弾かれた。低め・短い。不快にしないため協和的な低音を柔らかい包絡線で。
+    "error": SoundDesign(120, (Note(NOTE_HZ["C4"], 120, 10, 95, 0.3),)),
+    # 実績。澄んだ 1 音。ゆったりしたリリースで余韻を残す。
+    "badge": SoundDesign(300, (Note(NOTE_HZ["G5"], 300, 15, 250, 0.42),)),
+    # クリア。ここだけ厚い。C メジャーの分散和音（アルペジオ）。
+    "clear": SoundDesign(
+        800,
+        (
+            Note(NOTE_HZ["C5"], 620, 6, 560, 0.7, start_ms=0),
+            Note(NOTE_HZ["E5"], 560, 8, 500, 0.66, start_ms=60),
+            Note(NOTE_HZ["G5"], 500, 10, 440, 0.62, start_ms=120),
+        ),
+    ),
+    # 完全錬成。clear の上位。オクターブ上を足してさらに長く厚く。
+    "perfect": SoundDesign(
+        1000,
+        (
+            Note(NOTE_HZ["C5"], 780, 6, 700, 0.78, start_ms=0),
+            Note(NOTE_HZ["E5"], 720, 8, 640, 0.74, start_ms=70),
+            Note(NOTE_HZ["G5"], 660, 10, 580, 0.7, start_ms=140),
+            Note(NOTE_HZ["C6"], 560, 10, 500, 0.5, start_ms=210),
+        ),
+    ),
+}
+
+
 def render(sound_id: str, sample_rate: int) -> np.ndarray:
-    """`sound_id` の波形を生成する（決定的、副作用なし）。"""
-    if sound_id == "detent":
-        # ホイールの段。極小・クリック感だけ（気配レベル）。
-        return _note(NOTE_HZ["D5"], dur_ms=30, attack_ms=3, release_ms=20, sample_rate=sample_rate, gain=0.16)
+    """`sound_id` の波形を生成する（決定的、副作用なし）。`SOUND_DESIGN` を引くだけ。"""
+    design = SOUND_DESIGN.get(sound_id)
+    if design is None:
+        msg = f"未知の sound_id: {sound_id!r}"
+        raise ValueError(msg)
 
-    if sound_id == "page":
-        # 画面遷移。ほぼ気配。detent よりさらに柔らかい包絡線。
-        return _note(NOTE_HZ["A4"], dur_ms=60, attack_ms=12, release_ms=42, sample_rate=sample_rate, gain=0.13)
-
-    if sound_id == "mix":
-        # 混ぜる。短い立ち上がりで軽く弾む。
-        return _note(NOTE_HZ["C5"], dur_ms=120, attack_ms=8, release_ms=95, sample_rate=sample_rate, gain=0.34)
-
-    if sound_id == "closer":
-        # 近づいた。上行（長 3 度）。2 音をわずかに重ねてレガート気味に。
-        total_ms = 200
-        total_samples = _ms_to_samples(total_ms, sample_rate)
-        n1 = _note(NOTE_HZ["C5"], dur_ms=110, attack_ms=6, release_ms=90, sample_rate=sample_rate, gain=0.38)
-        n2 = _note(NOTE_HZ["E5"], dur_ms=110, attack_ms=8, release_ms=95, sample_rate=sample_rate, gain=0.36)
-        return _mix([(n1, 0), (n2, _ms_to_samples(90, sample_rate))], total_samples)
-
-    if sound_id == "farther":
-        # 遠ざかった。下行（長 3 度、closer の逆）。責めない協和音程・低めの音量。
-        total_ms = 200
-        total_samples = _ms_to_samples(total_ms, sample_rate)
-        n1 = _note(NOTE_HZ["E5"], dur_ms=110, attack_ms=10, release_ms=95, sample_rate=sample_rate, gain=0.28)
-        n2 = _note(NOTE_HZ["C5"], dur_ms=110, attack_ms=12, release_ms=95, sample_rate=sample_rate, gain=0.26)
-        return _mix([(n1, 0), (n2, _ms_to_samples(90, sample_rate))], total_samples)
-
-    if sound_id == "tier_up":
-        # 帯が上がった。上行 2 音（完全 5 度）でしっかりめに。
-        total_ms = 300
-        total_samples = _ms_to_samples(total_ms, sample_rate)
-        n1 = _note(NOTE_HZ["C5"], dur_ms=150, attack_ms=6, release_ms=130, sample_rate=sample_rate, gain=0.44)
-        n2 = _note(NOTE_HZ["G5"], dur_ms=160, attack_ms=8, release_ms=140, sample_rate=sample_rate, gain=0.46)
-        return _mix([(n1, 0), (n2, _ms_to_samples(130, sample_rate))], total_samples)
-
-    if sound_id == "error":
-        # 弾かれた。低め・短い。不快にしないため協和的な低音を柔らかい包絡線で。
-        return _note(NOTE_HZ["C4"], dur_ms=120, attack_ms=10, release_ms=95, sample_rate=sample_rate, gain=0.3)
-
-    if sound_id == "badge":
-        # 実績。澄んだ 1 音。ゆったりしたリリースで余韻を残す。
-        return _note(NOTE_HZ["G5"], dur_ms=300, attack_ms=15, release_ms=250, sample_rate=sample_rate, gain=0.42)
-
-    if sound_id == "clear":
-        # クリア。ここだけ厚い。C メジャーの分散和音（アルペジオ）。
-        total_ms = 800
-        total_samples = _ms_to_samples(total_ms, sample_rate)
-        notes = [
-            (_note(NOTE_HZ["C5"], 620, 6, 560, sample_rate, 0.7), 0),
-            (_note(NOTE_HZ["E5"], 560, 8, 500, sample_rate, 0.66), _ms_to_samples(60, sample_rate)),
-            (_note(NOTE_HZ["G5"], 500, 10, 440, sample_rate, 0.62), _ms_to_samples(120, sample_rate)),
-        ]
-        return _mix(notes, total_samples)
-
-    if sound_id == "perfect":
-        # 完全錬成。clear の上位。オクターブ上を足してさらに長く厚く。
-        total_ms = 1000
-        total_samples = _ms_to_samples(total_ms, sample_rate)
-        notes = [
-            (_note(NOTE_HZ["C5"], 780, 6, 700, sample_rate, 0.78), 0),
-            (_note(NOTE_HZ["E5"], 720, 8, 640, sample_rate, 0.74), _ms_to_samples(70, sample_rate)),
-            (_note(NOTE_HZ["G5"], 660, 10, 580, sample_rate, 0.7), _ms_to_samples(140, sample_rate)),
-            (_note(NOTE_HZ["C6"], 560, 10, 500, sample_rate, 0.5), _ms_to_samples(210, sample_rate)),
-        ]
-        return _mix(notes, total_samples)
-
-    msg = f"未知の sound_id: {sound_id!r}"
-    raise ValueError(msg)
+    total_samples = _ms_to_samples(design.total_ms, sample_rate)
+    notes = [
+        (
+            _note(note.freq, note.dur_ms, note.attack_ms, note.release_ms, sample_rate, note.gain),
+            _ms_to_samples(note.start_ms, sample_rate),
+        )
+        for note in design.notes
+    ]
+    return _mix(notes, total_samples)
 
 
 def write_wav(path: Path, samples: np.ndarray, sample_rate: int) -> None:
