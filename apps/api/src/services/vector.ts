@@ -87,7 +87,12 @@ export async function mixAndRank(
 
 /** 既存の正規化済み語彙と混合式を再利用し、craft 用候補を返す。 */
 export async function craftCandidateWords(
-  db: Db, a: string, b: string, goal: string, alpha: number, beta: number,
+  db: Db,
+  a: string,
+  b: string,
+  goal: string,
+  alpha: number,
+  beta: number,
 ): Promise<{ word: string; score: number }[]> {
   const mixed = blend(vectorOf(a), alpha, vectorOf(b), 1 - alpha)
   const rows = await db.execute<{ word: string; score: number }>(sql`
@@ -113,6 +118,39 @@ export async function similarityToGoal(db: Db, word: string, goal: string): Prom
     FROM vocab WHERE word = ${word}
   `)
   return Number(rows.rows[0]?.similarity ?? 0)
+}
+
+/** 実験演算だけで使う。既存の 1 SQL / HNSW 最適化経路は変更しない。 */
+export async function experimentalVectors(db: Db, words: string[]): Promise<Map<string, number[]>> {
+  const rows = await db.execute<{ word: string; vector: string }>(sql`
+    SELECT word, w2v::text AS vector FROM vocab
+    WHERE word = ANY(${sql.param(words)}::text[])
+  `)
+  return new Map(rows.rows.map((row) => [row.word, JSON.parse(row.vector) as number[]]))
+}
+
+function vectorLiteral(vector: readonly number[]): string {
+  if (vector.length !== VECTOR_DIM || vector.some((value) => !Number.isFinite(value))) {
+    throw new Error('invalid experimental vector')
+  }
+  return `[${vector.join(',')}]`
+}
+
+export async function experimentalNeighbors(
+  db: Db,
+  vector: readonly number[],
+  exclude: string[],
+  limit: number,
+): Promise<{ word: string; similarity: number }[]> {
+  const literal = vectorLiteral(vector)
+  const rows = await db.execute<{ word: string; similarity: number }>(sql`
+    SELECT v.word, (1 - (v.w2v <=> ${literal}::halfvec(${DIM})))::real AS similarity
+    FROM vocab v
+    WHERE v.is_output AND v.word <> ALL(${sql.param(exclude)}::text[])
+    ORDER BY v.w2v <=> ${literal}::halfvec(${DIM})
+    LIMIT ${limit}
+  `)
+  return rows.rows.map((row) => ({ word: row.word, similarity: Number(row.similarity) }))
 }
 
 /**

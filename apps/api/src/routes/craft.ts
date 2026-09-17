@@ -1,5 +1,8 @@
 import {
-  createCraftRequestSchema, craftCandidatesRequestSchema, craftConfirmRequestSchema,
+  craftCandidatesRequestSchema,
+  craftConfirmRequestSchema,
+  createCraftRequestSchema,
+  experimentMoveRequestSchema,
 } from '@coto2ba/contracts'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -7,7 +10,13 @@ import { appError } from '../lib/errors'
 import type { AuthVariables } from '../middleware/auth'
 import { requireAuth } from '../middleware/auth'
 import { rateLimit, rateLimitGameCreate } from '../middleware/rateLimit'
-import { confirmCraft, createCraft, getCraft, makeCraftCandidates } from '../services/craft'
+import {
+  confirmCraft,
+  createCraft,
+  getCraft,
+  makeCraftCandidates,
+  playExperimentalMove,
+} from '../services/craft'
 
 export const craftRoutes = new Hono<{ Variables: AuthVariables }>()
 craftRoutes.use('*', requireAuth, rateLimit)
@@ -25,18 +34,34 @@ craftRoutes.post('/craft/games', rateLimitGameCreate, async (c) => {
 })
 
 craftRoutes.get('/craft/games/:id', async (c) =>
-  c.json(await getCraft(c.get('authUser').id, gameId(c.req.param('id')))))
+  c.json(await getCraft(c.get('authUser').id, gameId(c.req.param('id')))),
+)
 
 craftRoutes.post('/craft/games/:id/candidates', async (c) => {
   const parsed = craftCandidatesRequestSchema.safeParse(await c.req.json().catch(() => ({})))
   if (!parsed.success) throw appError('VALIDATION', parsed.error.message)
-  return c.json(await makeCraftCandidates(c.get('authUser').id, gameId(c.req.param('id')), parsed.data))
+  return c.json(
+    await makeCraftCandidates(c.get('authUser').id, gameId(c.req.param('id')), parsed.data),
+  )
 })
 
 craftRoutes.post('/craft/games/:id/confirm', async (c) => {
   const parsed = craftConfirmRequestSchema.safeParse(await c.req.json().catch(() => ({})))
   if (!parsed.success) throw appError('VALIDATION', parsed.error.message)
-  return c.json(await confirmCraft(
-    c.get('authUser').id, gameId(c.req.param('id')), parsed.data.candidate_set_id, parsed.data.candidate_id,
-  ))
+  return c.json(
+    await confirmCraft(
+      c.get('authUser').id,
+      gameId(c.req.param('id')),
+      parsed.data.candidate_set_id,
+      parsed.data.candidate_id,
+    ),
+  )
+})
+
+craftRoutes.post('/craft/games/:id/experiment', async (c) => {
+  const parsed = experimentMoveRequestSchema.safeParse(await c.req.json().catch(() => ({})))
+  if (!parsed.success) throw appError('VALIDATION', parsed.error.message)
+  return c.json(
+    await playExperimentalMove(c.get('authUser').id, gameId(c.req.param('id')), parsed.data),
+  )
 })

@@ -9,8 +9,10 @@ export const CRAFT_CONFIG = {
 } as const
 
 export function craftBeta(
-  difficulty: 'easy' | 'normal' | 'hard', combo: number,
-  comboEnabled: boolean, goalBiasEnabled: boolean,
+  difficulty: 'easy' | 'normal' | 'hard',
+  combo: number,
+  comboEnabled: boolean,
+  goalBiasEnabled: boolean,
 ): number {
   if (!goalBiasEnabled) return 0
   const base = difficulty === 'easy' ? CRAFT_CONFIG.betaEasy : CRAFT_CONFIG.betaNormal

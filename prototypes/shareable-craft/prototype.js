@@ -1,15 +1,26 @@
 // DESIGN.md の候補選択を、模擬語彙だけで体験する独立した画面。
 // 本番では候補生成・確定・状態更新をサーバーが担当する。
 const vectors = {
-  りんご: [0.95, 0.05, 0.02], 果実: [0.9, 0.12, 0.04], 森: [0.7, 0.1, 0.3],
-  金: [0.1, 0.9, 0.06], 宝石: [0.18, 0.83, 0.13], 市場: [0.22, 0.76, 0.18],
-  ロケット: [0.08, 0.1, 0.94], 星: [0.1, 0.08, 0.92], 銀河: [0.03, 0.05, 0.99],
-  宇宙: [0, 0, 1], 夢: [0.38, 0.22, 0.76], 発明: [0.32, 0.45, 0.68],
+  りんご: [0.95, 0.05, 0.02],
+  果実: [0.9, 0.12, 0.04],
+  森: [0.7, 0.1, 0.3],
+  金: [0.1, 0.9, 0.06],
+  宝石: [0.18, 0.83, 0.13],
+  市場: [0.22, 0.76, 0.18],
+  ロケット: [0.08, 0.1, 0.94],
+  星: [0.1, 0.08, 0.92],
+  銀河: [0.03, 0.05, 0.99],
+  宇宙: [0, 0, 1],
+  夢: [0.38, 0.22, 0.76],
+  発明: [0.32, 0.45, 0.68],
 }
 const goal = '宇宙'
 const words = Object.keys(vectors)
 const byId = (id) => document.getElementById(id)
-const normalize = (v) => { const n = Math.hypot(...v); return v.map((x) => x / n) }
+const normalize = (v) => {
+  const n = Math.hypot(...v)
+  return v.map((x) => x / n)
+}
 const cosine = (a, b) => normalize(a).reduce((sum, x, i) => sum + x * normalize(b)[i], 0)
 const targetSimilarity = (word) => cosine(vectors[word], vectors[goal])
 let state
@@ -28,23 +39,29 @@ function renderState() {
   byId('current').textContent = state.current
   byId('turn').textContent = state.turn
   byId('combo').textContent = state.combo
-  byId('history').replaceChildren(...state.history.map((word) => {
-    const li = document.createElement('li')
-    li.textContent = word
-    return li
-  }))
+  byId('history').replaceChildren(
+    ...state.history.map((word) => {
+      const li = document.createElement('li')
+      li.textContent = word
+      return li
+    }),
+  )
 }
 
 function candidates(a, b, alpha, combo) {
   const normalizedA = normalize(vectors[a])
   const normalizedB = normalize(vectors[b])
-  const query = normalize(normalizedA.map((value, i) => alpha * value + (1 - alpha) * normalizedB[i]))
+  const query = normalize(
+    normalizedA.map((value, i) => alpha * value + (1 - alpha) * normalizedB[i]),
+  )
   const beta = Math.min(0.22, 0.03 + combo * 0.025)
-  const pool = words.filter((word) => word !== a && word !== b)
+  const pool = words
+    .filter((word) => word !== a && word !== b)
     .map((word) => ({ word, blend: cosine(vectors[word], query) }))
     .sort((left, right) => right.blend - left.blend || left.word.localeCompare(right.word))
     .slice(0, 24)
-  return pool.map(({ word, blend }) => ({ word, score: (1 - beta) * blend + beta * targetSimilarity(word) }))
+  return pool
+    .map(({ word, blend }) => ({ word, score: (1 - beta) * blend + beta * targetSimilarity(word) }))
     .sort((left, right) => right.score - left.score || left.word.localeCompare(right.word))
     .slice(0, 3)
 }
@@ -79,14 +96,17 @@ function confirm(setId, word) {
   state.turn += 1
   pending = null
   byId('material-a').value = word
-  byId('candidates').textContent = word === goal ? '目標語に到達しました。' : '確定しました。次の候補を作れます。'
+  byId('candidates').textContent =
+    word === goal ? '目標語に到達しました。' : '確定しました。次の候補を作れます。'
   renderState()
 }
 
 for (const id of ['material-a', 'material-b']) {
   for (const word of words) byId(id).add(new Option(word, word))
 }
-byId('alpha').addEventListener('input', (event) => { byId('alpha-value').textContent = `${event.target.value}%` })
+byId('alpha').addEventListener('input', (event) => {
+  byId('alpha-value').textContent = `${event.target.value}%`
+})
 byId('generate').addEventListener('click', generate)
 byId('reset').addEventListener('click', reset)
 reset()

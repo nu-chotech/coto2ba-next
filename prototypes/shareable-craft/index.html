@@ -22,6 +22,7 @@
   </head>
   <body>
     <h1>ことば錬成：候補選択の試作</h1>
+    <p><a href="./experimental.html">5種類のベクトル演算を比べる試作へ</a></p>
     <p class="muted">固定の小さな模擬語彙で動く画面です。既存のゲーム API やランキングには接続しません。</p>
     <section class="panel">
       <p>目標 <strong id="goal">宇宙</strong> ／ 現在語 <strong id="current">りんご</strong> ／ 確定手数 <strong id="turn">0</strong> ／ コンボ <strong id="combo">0</strong></p>
@@ -30,8 +31,8 @@
         <label>素材 B<select id="material-b"></select></label>
       </div>
       <label>素材 A の割合 <output id="alpha-value">50%</output><input id="alpha" type="range" min="0" max="100" step="10" value="50" /></label>
-      <button id="generate">候補を見る</button>
-      <button id="reset">最初から</button>
+      <button type="button" id="generate">候補を見る</button>
+      <button type="button" id="reset">最初から</button>
     </section>
     <section aria-live="polite"><h2>候補</h2><div id="candidates" class="muted">素材を選んで候補を表示してください。</div></section>
     <section class="panel"><h2>確定した語の履歴</h2><ol id="history"></ol></section>

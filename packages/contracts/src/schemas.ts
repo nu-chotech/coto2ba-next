@@ -5,6 +5,7 @@ import {
   DISPLAY_NAME_MAX_LENGTH,
   DISPLAY_NAME_MIN_LENGTH,
   ENCOUNTER_SOURCES,
+  EXPERIMENT_OPERATIONS,
   GAME_MODES,
   GAME_STATUSES,
   normalizeRatio,
@@ -141,6 +142,12 @@ export const craftConfirmRequestSchema = z.object({
   candidate_set_id: z.string().uuid(),
   candidate_id: z.string().uuid(),
 })
+export const experimentMoveRequestSchema = z.object({
+  input_word: wordSchema,
+  ratio: ratioSchema,
+  operation: z.enum(EXPERIMENT_OPERATIONS),
+  expected_turn: z.number().int().nonnegative(),
+})
 export const craftStateSchema = z.object({
   id: z.string().uuid(),
   goal: wordSchema,
@@ -155,13 +162,30 @@ export const craftStateSchema = z.object({
   move_count: z.number().int().nonnegative(),
   combo: z.number().int().nonnegative(),
   history: z.array(wordSchema),
-  status: z.enum(['playing', 'cleared']),
+  status: gameStatusSchema,
+  perfect: z.boolean(),
 })
 export const craftConfirmResponseSchema = craftStateSchema.extend({
   result: wordSchema,
   rank: z.number().int().nonnegative(),
   tier: tierSchema,
-  perfect: z.boolean(),
+  prev_rank: z.number().int().nonnegative(),
+  prev_tier: tierSchema,
+})
+export const experimentMoveResponseSchema = craftConfirmResponseSchema.extend({
+  operation: z.enum(EXPERIMENT_OPERATIONS),
+  ratio: ratioSchema,
+  experimental_score: z.number().nonnegative(),
+  multiplier: z.number().positive(),
+  target_similarity: z.number(),
+  delta_similarity: z.number(),
+  breakdown: z.object({
+    target: z.number(),
+    coherence: z.number(),
+    rarity: z.number(),
+    novelty: z.number(),
+    risk: z.number(),
+  }),
 })
 export const craftCandidatesResponseSchema = z.object({
   candidate_set_id: z.string().uuid(),

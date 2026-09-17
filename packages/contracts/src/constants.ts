@@ -15,6 +15,10 @@ export const RATIOS: readonly number[] = Array.from(
 export const RATIO_STEP_COUNT = RATIOS.length
 export const RATIO_DEFAULT = 0.5
 
+/** 実験モードで比較する Python 由来の演算。既存の daily/free には適用しない。 */
+export const EXPERIMENT_OPERATIONS = ['mix', 'slerp', 'subtract', 'repel', 'purify'] as const
+export type ExperimentOperation = (typeof EXPERIMENT_OPERATIONS)[number]
+
 /** 浮動小数の表現誤差（0.30000000000000004 のような値）を吸収する許容差。 */
 const RATIO_EPSILON = 1e-6
 
