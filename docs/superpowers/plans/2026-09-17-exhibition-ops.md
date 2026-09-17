@@ -130,6 +130,50 @@ Neon に 1〜2 クエリ飛ぶ。**外から叩くだけで DB の枠を削れ�
 
 ---
 
+### Task 0.7: デプロイ順序（破壊的変更があるので必読）
+
+**2026-09-18 の改修で、サーバーとクライアントの契約が破壊的に変わった。**
+
+| 契約 | 旧 | 新 |
+| --- | --- | --- |
+| `hints` | `string[]` | `{ word, ratio }[]` |
+| `best_free_moves` の値 | `number`（手数） | `{ moves, hints }` |
+
+**新旧は相互に互換性がない。** 古いクライアントは新 API のレスポンスを zod で弾き、
+新しいクライアントは旧 API のレスポンスを弾く。モバイルは全レスポンスを厳格に parse している。
+
+- [ ] **Step 1: 現在 production チャンネルに配布済みのバンドルがあるか確認する**
+
+```bash
+cd apps/mobile && npx eas-cli update:list --branch production --limit 5
+```
+
+ランディングの導線は `exp://u.expo.dev/<projectId>?channel-name=production` を指しているので、
+**ここに何か publish されていれば、それを開いている端末が存在しうる**。
+
+- [ ] **Step 2: API とモバイルを同じ作業として連続で出す**
+
+順序はどちらが先でも一時的な不整合の窓が開く。**窓を短くすることが目的**なので、
+2 つのデプロイを**続けて実行**し、間に他の作業を挟まないこと。
+
+```bash
+# API（deploy-api.yml が main への push で自動実行される）
+# その直後に
+cd apps/mobile && npx eas-cli update --channel production --message "<内容>"
+```
+
+- [ ] **Step 3: 直後に実機で確認する**
+
+デプロイ後、実機の Expo Go でアプリを開き直して（EAS Update が降ってくる）、
+**ヒントを開いて語と比率が出ること**、**設定画面がエラーにならないこと**を確認する。
+
+- [ ] **Step 4: デプロイ直後は必ずウォームアップし直す**
+
+**デプロイすると Vercel の関数も Neon もウォーム状態がリセットされる。**
+Task 0 の warm-up 手順をもう一度実行すること。
+
+---
+
 ### Task 1: EAS Update に publish して配布経路を作る
 
 **Files:**
