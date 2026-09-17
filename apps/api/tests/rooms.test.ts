@@ -210,7 +210,6 @@ describe.skipIf(SKIP_WITHOUT_GOAL_POOL_ROWS)('対戦ルーム', () => {
    * どれか 1 つでも欠けると、対戦でヒントが完全に無料になる。
    */
   it('同じ手数・同じランクなら、ヒントを使っていない人が上に出る', async () => {
-    if (!hasDb) return
     const host = await createTestUser('ヒントを押した人')
     const guest = await createTestUser('自力の人')
     const created = await createRoom(db, host, 'normal')
@@ -232,7 +231,6 @@ describe.skipIf(SKIP_WITHOUT_GOAL_POOL_ROWS)('対戦ルーム', () => {
 
   // 主ルールは「最初にゴールへ着いた人が勝ち」。ヒントで着順は覆らない。
   it('ヒントを使っても、先にゴールへ着いた人が 1 位のまま', async () => {
-    if (!hasDb) return
     const host = await createTestUser('ヒント先着')
     const guest = await createTestUser('自力後着')
     const created = await createRoom(db, host, 'normal')
