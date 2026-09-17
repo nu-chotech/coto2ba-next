@@ -8,12 +8,13 @@ import { auth } from '../auth'
 import { db } from '../db/client'
 import { deviceTokens, user } from '../db/schema'
 import { appError } from '../lib/errors'
+import { type BestFreeMoves, parseBestFreeMoves } from '../services/rules'
 
 export interface AuthUser {
   id: string
   displayName: string | null
   booth: boolean
-  bestFreeMoves: Record<string, number>
+  bestFreeMoves: BestFreeMoves
 }
 
 export type AuthVariables = { authUser: AuthUser }
@@ -42,7 +43,7 @@ async function fromDeviceToken(token: string): Promise<AuthUser | null> {
     id: row.id,
     displayName: row.displayName,
     booth: row.booth,
-    bestFreeMoves: (row.bestFreeMoves ?? {}) as Record<string, number>,
+    bestFreeMoves: parseBestFreeMoves(row.bestFreeMoves),
   }
 }
 
@@ -65,7 +66,7 @@ async function fromBetterAuth(headers: Headers): Promise<AuthUser | null> {
     id: row.id,
     displayName: row.displayName,
     booth: row.booth,
-    bestFreeMoves: (row.bestFreeMoves ?? {}) as Record<string, number>,
+    bestFreeMoves: parseBestFreeMoves(row.bestFreeMoves),
   }
 }
 

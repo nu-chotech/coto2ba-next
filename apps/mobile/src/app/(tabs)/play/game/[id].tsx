@@ -13,6 +13,7 @@
 
 import {
   DIFFICULTY_LABELS_JA,
+  type Hint,
   isTierDown,
   isTierUp,
   MAX_MOVES,
@@ -83,7 +84,7 @@ export default function GameScreen() {
   const [pending, setPending] = useState<Pending | null>(null)
   const [revealed, setRevealed] = useState<MoveResponse | null>(null)
   const [inputError, setInputError] = useState<string | null>(null)
-  const [hints, setHints] = useState<string[]>([])
+  const [hints, setHints] = useState<Hint[]>([])
 
   const detail = game.data ?? null
   const tier = detail === null ? 'mono' : currentTier(detail)
@@ -171,13 +172,15 @@ export default function GameScreen() {
     hint.mutate(undefined, { onSuccess: (data) => setHints([...data.hints]) })
   }, [hint, setHintOpen])
 
+  /** ヒントは「語 + 混ぜ方」で 1 つの提案なので、比率も一緒に入力に載せる。 */
   const pickHint = useCallback(
-    (word: string) => {
-      inputRef.current?.setWord(word)
+    (hint: Hint) => {
+      inputRef.current?.setWord(hint.word)
+      setRatio(hint.ratio)
       setInputError(null)
       setHintOpen(false)
     },
-    [setHintOpen],
+    [setHintOpen, setRatio],
   )
 
   const confirmGiveUp = useCallback(() => {
@@ -335,7 +338,7 @@ export default function GameScreen() {
       <HintSheet
         visible={isHintOpen}
         tier={tier}
-        words={hints}
+        hints={hints}
         loading={hint.isPending}
         errorMessage={hint.isError ? toMessageJa(hint.error) : null}
         hintCount={detail.hint_count}

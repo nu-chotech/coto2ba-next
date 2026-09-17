@@ -46,6 +46,18 @@ export const userStatsSchema = z.object({
   perfect_count: z.number().int().nonnegative(),
 })
 
+/**
+ * フリーモードの自己ベスト 1 件。
+ *
+ * **手数だけでは記録にならない。** ヒント 1 回で出した「1 手」が永久に残り、
+ * 以後どれだけ真面目に遊んでも更新できなくなるため。良さの基準はランキングと同じ
+ * **(ヒント数, 手数) の辞書順**（SPEC §5.7 / §5.8）。
+ */
+export const freeBestSchema = z.object({
+  moves: z.number().int().positive(),
+  hints: z.number().int().nonnegative(),
+})
+
 export const meResponseSchema = z.object({
   id: z.string(),
   display_name: z.string(),
@@ -53,7 +65,7 @@ export const meResponseSchema = z.object({
   // Zod 4 の z.record(enum, …) は **列挙キーの網羅を要求する**。
   // best_free_moves は新規ユーザーだと {} なので、partialRecord でないと
   // /api/me のレスポンスが常に検証に落ちる（実際に起きた）。
-  best_free_moves: z.partialRecord(difficultySchema, z.number().int().positive()),
+  best_free_moves: z.partialRecord(difficultySchema, freeBestSchema),
   stats: userStatsSchema,
 })
 
@@ -129,8 +141,18 @@ export const createGameRequestSchema = z.object({
   difficulty: difficultySchema.optional(),
 })
 
+/**
+ * ヒントは「語」ではなく「**その語をどの比率で混ぜるか**」まで含めた 1 つの提案。
+ * 比率が無いとプレイヤーは自分で探すことになり、提案どおりの結果にならない。
+ */
+export const hintSchema = z.object({
+  word: wordSchema,
+  ratio: ratioSchema,
+})
+
 export const hintResponseSchema = z.object({
-  hints: z.array(wordSchema),
+  // 検証を通った候補が無ければ空になりうる。効かない語で埋めない（SPEC §3.3）。
+  hints: z.array(hintSchema),
   hint_count: z.number().int().nonnegative(),
 })
 
@@ -241,6 +263,7 @@ export const deviceRegisterResponseSchema = z.object({
 // ── 型 ──────────────────────────────────────────────────────
 export type ApiError = z.infer<typeof apiErrorSchema>
 export type UserStats = z.infer<typeof userStatsSchema>
+export type FreeBest = z.infer<typeof freeBestSchema>
 export type MeResponse = z.infer<typeof meResponseSchema>
 export type PatchMeRequest = z.infer<typeof patchMeRequestSchema>
 export type Move = z.infer<typeof moveSchema>
@@ -250,6 +273,7 @@ export type UnlockedAchievement = z.infer<typeof unlockedAchievementSchema>
 export type Game = z.infer<typeof gameSchema>
 export type GameDetail = z.infer<typeof gameDetailSchema>
 export type CreateGameRequest = z.infer<typeof createGameRequestSchema>
+export type Hint = z.infer<typeof hintSchema>
 export type HintResponse = z.infer<typeof hintResponseSchema>
 export type DailyResponse = z.infer<typeof dailyResponseSchema>
 export type LeaderboardEntry = z.infer<typeof leaderboardEntrySchema>

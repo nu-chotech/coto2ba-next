@@ -1,4 +1,5 @@
 /** ゲーム側のテーブル定義（SPEC §4.3, §6.6, §7.3）。 */
+import type { Hint } from '@coto2ba/contracts'
 import { sql } from 'drizzle-orm'
 import {
   boolean,
@@ -105,8 +106,9 @@ export const games = pgTable(
   (t) => [
     // デイリーは 1 ユーザー 1 日 1 回
     uniqueIndex('games_user_daily_uq').on(t.userId, t.dailyDate),
+    // 並び順（SPEC §5.8: ヒント数 → 手数 → クリア時刻）に合わせる。
     index('games_daily_leaderboard')
-      .on(t.dailyDate, t.moveCount, t.hintCount, t.clearedAt)
+      .on(t.dailyDate, t.hintCount, t.moveCount, t.clearedAt)
       .where(sql`${t.status} = 'cleared'`),
     index('games_user_created').on(t.userId, t.createdAt),
   ],
@@ -147,7 +149,11 @@ export const hintCache = pgTable(
   {
     goal: text('goal').notNull(),
     current: text('current').notNull(),
-    hints: text('hints').array().notNull(),
+    /**
+     * `{ word, ratio }[]`（`@coto2ba/contracts` の `Hint`）。
+     * 語だけでは「どう混ぜるか」が落ちるので text[] から jsonb に変えた（0004）。
+     */
+    hints: jsonb('hints').$type<Hint[]>().notNull(),
   },
   (t) => [primaryKey({ columns: [t.goal, t.current] })],
 )

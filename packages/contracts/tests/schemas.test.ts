@@ -7,6 +7,7 @@ import { DISPLAY_NAME_MAX_LENGTH, DISPLAY_NAME_MIN_LENGTH, RATIOS } from '../src
 import {
   createGameRequestSchema,
   dateStringSchema,
+  hintResponseSchema,
   meResponseSchema,
   moveRequestSchema,
   patchMeRequestSchema,
@@ -124,27 +125,77 @@ describe('meResponseSchema の best_free_moves', () => {
   })
 
   it('一部の難易度だけでも受け付ける', () => {
-    expect(meResponseSchema.safeParse({ ...base, best_free_moves: { easy: 3 } }).success).toBe(true)
+    expect(
+      meResponseSchema.safeParse({ ...base, best_free_moves: { easy: { moves: 3, hints: 0 } } })
+        .success,
+    ).toBe(true)
   })
 
   it('全難易度が揃っていても受け付ける', () => {
     expect(
       meResponseSchema.safeParse({
         ...base,
-        best_free_moves: { easy: 3, normal: 5, hard: 9 },
+        best_free_moves: {
+          easy: { moves: 3, hints: 0 },
+          normal: { moves: 5, hints: 2 },
+          hard: { moves: 9, hints: 1 },
+        },
       }).success,
     ).toBe(true)
   })
 
   it('知らない難易度キーは弾く', () => {
-    expect(meResponseSchema.safeParse({ ...base, best_free_moves: { lunatic: 3 } }).success).toBe(
-      false,
-    )
+    expect(
+      meResponseSchema.safeParse({ ...base, best_free_moves: { lunatic: { moves: 3, hints: 0 } } })
+        .success,
+    ).toBe(false)
   })
 
   it('手数が 0 以下なら弾く', () => {
-    expect(meResponseSchema.safeParse({ ...base, best_free_moves: { easy: 0 } }).success).toBe(
+    expect(
+      meResponseSchema.safeParse({ ...base, best_free_moves: { easy: { moves: 0, hints: 0 } } })
+        .success,
+    ).toBe(false)
+  })
+
+  it('ヒント数が負なら弾く', () => {
+    expect(
+      meResponseSchema.safeParse({ ...base, best_free_moves: { easy: { moves: 3, hints: -1 } } })
+        .success,
+    ).toBe(false)
+  })
+
+  // 自己ベストは (ヒント数, 手数) の辞書順で比べるので、手数だけの旧形式では比較できない。
+  it('手数だけの旧形式は弾く', () => {
+    expect(meResponseSchema.safeParse({ ...base, best_free_moves: { easy: 3 } }).success).toBe(
       false,
     )
+  })
+})
+
+describe('hintResponseSchema', () => {
+  it('語と比率の組を受け付ける', () => {
+    const parsed = hintResponseSchema.safeParse({
+      hints: [{ word: '琥珀', ratio: 0.4 }],
+      hint_count: 1,
+    })
+    expect(parsed.success).toBe(true)
+  })
+
+  // ヒントが提案する比率も 8 段階でなければ、そのまま打てない。
+  it('8 段階にない比率は弾く', () => {
+    expect(
+      hintResponseSchema.safeParse({ hints: [{ word: '琥珀', ratio: 0.35 }], hint_count: 1 })
+        .success,
+    ).toBe(false)
+  })
+
+  it('語だけの旧形式は弾く', () => {
+    expect(hintResponseSchema.safeParse({ hints: ['琥珀'], hint_count: 1 }).success).toBe(false)
+  })
+
+  // 候補が全滅したら「効かないヒント」で埋めずに件数を減らす設計なので、空も正当。
+  it('空のヒントを受け付ける', () => {
+    expect(hintResponseSchema.safeParse({ hints: [], hint_count: 3 }).success).toBe(true)
   })
 })

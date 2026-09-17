@@ -4,8 +4,10 @@
  */
 import {
   CLEAR_RANK,
+  DIFFICULTIES,
   type Difficulty,
   type ErrorCode,
+  type FreeBest,
   type GameStatus,
   MAX_MOVES,
   normalizeRatio,
@@ -86,25 +88,76 @@ export function movesLeft(moveCount: number): number {
   return Math.max(0, MAX_MOVES - moveCount)
 }
 
-/** ランキングの並び順（SPEC §5.8）。同値なら 0。 */
+/**
+ * ランキングの並び順（SPEC §5.8）。**ヒント数 → 手数 → クリア時刻。** 同値なら 0。
+ *
+ * ヒント数が一番外側にあるので、**ヒントを 1 回でも使った人はノーヒントの全員より下**になる。
+ * ヒントを外挿にしたらゴールの目前まで運べる強さになったため、ヒントを人工的に弱めるのではなく
+ * ランキングで課金する形にした（docs/QUESTIONS.md）。
+ *
+ * **ここを変えたら `game.ts` の leaderboard の ORDER BY も変えること。**
+ * 実際の順位は SQL 側が決めており、この関数はその JS 版（両者は tests/leaderboard.test.ts で
+ * 一致を検証している）。
+ */
 export function compareLeaderboard(
   a: { moveCount: number; hintCount: number; clearedAt: string },
   b: { moveCount: number; hintCount: number; clearedAt: string },
 ): number {
-  if (a.moveCount !== b.moveCount) return a.moveCount - b.moveCount
   if (a.hintCount !== b.hintCount) return a.hintCount - b.hintCount
+  if (a.moveCount !== b.moveCount) return a.moveCount - b.moveCount
   return a.clearedAt < b.clearedAt ? -1 : a.clearedAt > b.clearedAt ? 1 : 0
 }
 
-/** フリーモードの自己ベスト更新。 */
+export type BestFreeMoves = Partial<Record<Difficulty, FreeBest>>
+
+/**
+ * 自己ベストの良さ。ランキングと同じ **(ヒント数, 手数) の辞書順**（SPEC §5.7 / §5.8）。
+ * 負なら a のほうが良い記録。
+ */
+function compareFreeBest(a: FreeBest, b: FreeBest): number {
+  if (a.hints !== b.hints) return a.hints - b.hints
+  return a.moves - b.moves
+}
+
+/**
+ * フリーモードの自己ベスト更新。
+ *
+ * 手数だけで比べていたころは、**ヒント 1 回で出した「1 手」が永久に残り**、
+ * 以後どれだけ真面目に遊んでも更新できなくなっていた（自己ベスト機能そのものが死ぬ）。
+ * ノーヒント 15 手はヒント 1 回 3 手より良い記録、という基準に揃えた。
+ */
 export function updateBestFreeMoves(
-  current: Record<string, number>,
+  current: BestFreeMoves,
   difficulty: Difficulty,
-  moveCount: number,
-): Record<string, number> {
+  record: FreeBest,
+): BestFreeMoves {
   const best = current[difficulty]
-  if (best === undefined || moveCount < best) {
-    return { ...current, [difficulty]: moveCount }
+  if (best === undefined || compareFreeBest(record, best) < 0) {
+    return { ...current, [difficulty]: record }
   }
   return current
+}
+
+/**
+ * jsonb から読んだ自己ベストを型の形に均す。壊れた値は**記録なし**として落とす。
+ *
+ * 旧形式は手数だけの数値（`{ normal: 8 }`）で、**ヒントを何回使ったか分からない**。
+ * 「ヒント 0 回」と見なすとヒント込みの記録が最良として居座り続け（まさに直したかった不具合）、
+ * 適当な回数をでっち上げれば嘘になる。どちらも避けるため捨てる。
+ * フリーモードはランキング対象外で、次にクリアすれば新形式で記録し直されるので実害は小さい。
+ * この関数があるおかげで旧データのためのマイグレーションは要らない。
+ */
+export function parseBestFreeMoves(value: unknown): BestFreeMoves {
+  if (typeof value !== 'object' || value === null) return {}
+  const source = value as Record<string, unknown>
+  const out: BestFreeMoves = {}
+  for (const difficulty of DIFFICULTIES) {
+    const entry = source[difficulty]
+    if (typeof entry !== 'object' || entry === null) continue
+    const { moves, hints } = entry as { moves?: unknown; hints?: unknown }
+    if (!Number.isInteger(moves) || !Number.isInteger(hints)) continue
+    if ((moves as number) <= 0 || (hints as number) < 0) continue
+    out[difficulty] = { moves: moves as number, hints: hints as number }
+  }
+  return out
 }

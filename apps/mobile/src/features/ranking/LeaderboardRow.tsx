@@ -1,7 +1,7 @@
 /**
  * ランキングの 1 行（SPEC §5.8）。
  *
- * 並び順は **サーバーが返した順のまま**（`move_count ASC, hint_count ASC, cleared_at ASC`）。
+ * 並び順は **サーバーが返した順のまま**（`hint_count ASC, move_count ASC, cleared_at ASC`）。
  * 端末側で並べ替えない。`entry.rank` もサーバーの値をそのまま出す。
  *
  * - 自分の行は枠と地でハイライトする。

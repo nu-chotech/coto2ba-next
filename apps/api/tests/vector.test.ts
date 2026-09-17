@@ -2,11 +2,17 @@
  * ベクトル演算の統合テスト。DATABASE_URL が指す DB に vocab が入っている必要がある。
  * 入っていなければスキップする（CI で DB が無くても落ちないように）。
  */
-import { HINT_CANDIDATE_COUNT, HINT_COUNT, HINT_RATIO } from '@coto2ba/contracts'
+import { CLEAR_RANK, HINT_COUNT, RATIOS } from '@coto2ba/contracts'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { db, pool } from '../src/db/client'
-import { hintWords, lookupWord, mixAndRank, rankOf, sampleStartWord } from '../src/services/vector'
+import {
+  hintCandidates,
+  lookupWord,
+  mixAndRank,
+  rankOf,
+  sampleStartWord,
+} from '../src/services/vector'
 
 let hasVocab = false
 
@@ -96,42 +102,6 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('ベクトル演算', () => {
     expect(await rankOf(db, '銀河', res?.result as string)).toBe(res?.rank)
   })
 
-  it(`ヒントは ${HINT_COUNT} 語で、除外語を含まない`, async () => {
-    if (!hasVocab) return
-    const exclude = ['銀河', '宇宙']
-    const hints = await hintWords(
-      db,
-      '銀河',
-      '宇宙',
-      exclude,
-      HINT_RATIO,
-      HINT_CANDIDATE_COUNT,
-      HINT_COUNT,
-    )
-    expect(hints).toHaveLength(HINT_COUNT)
-    for (const h of hints) expect(exclude).not.toContain(h)
-    expect(new Set(hints).size).toBe(hints.length)
-  })
-
-  it('ヒントはゴールに近づく方向にある（current より平均ランクが小さい）', async () => {
-    if (!hasVocab) return
-    const goal = '銀河'
-    const current = '味噌汁'
-    const currentRank = await rankOf(db, goal, current)
-    const hints = await hintWords(
-      db,
-      goal,
-      current,
-      [goal, current],
-      HINT_RATIO,
-      HINT_CANDIDATE_COUNT,
-      HINT_COUNT,
-    )
-    const ranks = await Promise.all(hints.map((h) => rankOf(db, goal, h)))
-    const avg = ranks.reduce<number>((a, b) => a + (b ?? 0), 0) / ranks.length
-    expect(avg).toBeLessThan(currentRank as number)
-  })
-
   it('語彙の引き当て', async () => {
     if (!hasVocab) return
     expect((await lookupWord(db, '銀河'))?.isInput).toBe(true)
@@ -147,5 +117,102 @@ describe.runIf(process.env.SKIP_DB_TESTS !== '1')('ベクトル演算', () => {
       expect(r).toBeGreaterThanOrEqual(3000)
       expect(r).toBeLessThanOrEqual(30001)
     }
+  })
+})
+
+describe.runIf(process.env.SKIP_DB_TESTS !== '1')('hintCandidates', () => {
+  const GOAL = '温泉'
+  const CURRENT = '味噌汁'
+
+  it('提案どおりに混ぜるとゴールに近づく', async () => {
+    if (!hasVocab) return
+    const hints = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
+
+    expect(hints.length).toBeGreaterThan(0)
+    const before = await rankOf(db, GOAL, CURRENT)
+    for (const hint of hints) {
+      const res = await mixAndRank(db, GOAL, CURRENT, hint.word, hint.ratio)
+      expect(res).toBeTruthy()
+      // ヒントは「順位が上がる手」でなければ意味がない。これが契約。
+      expect(res?.rank).toBeLessThan(before as number)
+    }
+  })
+
+  // ゴールのすぐ近く（rank 15 付近）でもヒントが出ること。
+  // ここで空になると、いちばんヒントが欲しい場面で何も出せない。
+  // 強さの上限を設けていないので、結果がクリア圏に入ることもある（それは正しい）。
+  it('ゴールの目前でもヒントが出る', async () => {
+    if (!hasVocab) return
+    const near = await db.execute<{ word: string }>(sql`
+      SELECT v.word FROM vocab v
+      WHERE v.is_output AND v.word <> ${GOAL}
+      ORDER BY v.w2v <=> (SELECT w2v FROM vocab WHERE word = ${GOAL})
+      LIMIT 1 OFFSET ${CLEAR_RANK + 4}
+    `)
+    const current = near.rows[0]?.word
+    expect(current).toBeTruthy()
+    const before = await rankOf(db, GOAL, current as string)
+    const hints = await hintCandidates(db, GOAL, current as string, [], HINT_COUNT)
+    expect(hints.length).toBeGreaterThan(0)
+    for (const hint of hints) {
+      const res = await mixAndRank(db, GOAL, current as string, hint.word, hint.ratio)
+      expect(res?.rank).toBeLessThan(before as number)
+    }
+  })
+
+  it('比率は 8 段階のいずれか', async () => {
+    if (!hasVocab) return
+    const hints = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
+    for (const hint of hints) expect(RATIOS).toContain(hint.ratio)
+  })
+
+  it('除外語を返さない', async () => {
+    if (!hasVocab) return
+    const first = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
+    const banned = [GOAL, CURRENT, ...first.map((h) => h.word)]
+    const hints = await hintCandidates(db, GOAL, CURRENT, banned, HINT_COUNT)
+    for (const hint of hints) expect(banned).not.toContain(hint.word)
+  })
+
+  // 並びは盤面から決まる（ゴールに近い順ではない）。hint_cache は (goal, current) で
+  // キャッシュされるので、**並びまで含めて**同じでなければならない。
+  it('同じ入力なら並びまで含めて同じ結果（キャッシュが決定論であるため）', async () => {
+    if (!hasVocab) return
+    const a = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
+    for (let i = 0; i < 5; i++) {
+      expect(await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)).toEqual(a)
+    }
+  })
+
+  it('盤面が違えば並びも違いうる', async () => {
+    if (!hasVocab) return
+    // 同じゴールに対して current を変えると、語も並びも変わる。
+    // 「並びがゴール類似度の降順に固定されていない」ことの確認。
+    const orders = new Set<string>()
+    for (const current of [CURRENT, '宇宙', '自転車', '会議']) {
+      const hints = await hintCandidates(db, GOAL, current, [], HINT_COUNT)
+      orders.add(hints.map((h) => h.word).join(','))
+    }
+    expect(orders.size).toBeGreaterThan(1)
+  })
+
+  // 並べ替えるのは表示順だけ。選ぶところまではゴールに近い順なので、
+  // 「効く手だけ」「limit 件」という性質は崩れていない。
+  it('並べ替えても件数と中身の性質は変わらない', async () => {
+    if (!hasVocab) return
+    const hints = await hintCandidates(db, GOAL, CURRENT, [], HINT_COUNT)
+    expect(hints).toHaveLength(HINT_COUNT)
+    expect(new Set(hints.map((h) => h.word)).size).toBe(hints.length)
+    const before = await rankOf(db, GOAL, CURRENT)
+    for (const hint of hints) {
+      const res = await mixAndRank(db, GOAL, CURRENT, hint.word, hint.ratio)
+      expect(res?.rank).toBeLessThan(before as number)
+    }
+  })
+
+  it('limit を超えない', async () => {
+    if (!hasVocab) return
+    const hints = await hintCandidates(db, GOAL, CURRENT, [], 2)
+    expect(hints.length).toBeLessThanOrEqual(2)
   })
 })

@@ -59,10 +59,13 @@ export const GOAL_NEIGHBOR_BAN = 12
 
 // ── ヒント ──────────────────────────────────────────────────
 export const HINT_COUNT = 6
-/** v_hint = (1 - HINT_RATIO) * v_current + HINT_RATIO * v_goal */
-export const HINT_RATIO = 0.2
-/** ヒント候補を取る近傍数（ここから除外して先頭 HINT_COUNT 件）。 */
-export const HINT_CANDIDATE_COUNT = 30
+/**
+ * 外挿点ごとに HNSW で集める近傍数。
+ * v_W*(r) = (v_goal - (1 - r) * v_current) / r の近傍を比率ごとに集める。
+ */
+export const HINT_EXTRAPOLATION_NEIGHBORS = 24
+/** 実際の混合まで走らせて検証する最終候補数。 */
+export const HINT_VERIFY_LIMIT = 16
 
 // ── 演出帯（tier）────────────────────────────────────────────
 export const TIERS = [
@@ -173,6 +176,15 @@ export const SPACE_FOCAL = 1.5
 export const SUGGEST_LIMIT = 5
 
 // ── 表示 ────────────────────────────────────────────────────
+/**
+ * 比率の表示（「今の語 : 混ぜる語」）。0.4 なら "6 : 4"。
+ * 生の 0.4 より混ぜ具合として読める。**表記はここ 1 箇所に集約する。**
+ */
+export function ratioMixLabel(ratio: number): string {
+  const input = Math.round(ratio * 10)
+  return `${10 - input} : ${input}`
+}
+
 /** rank → 温度（0〜1）。rank 0（完全錬成）は 1。 */
 export function rankToHeat(rank: number, nOutput: number = N_OUTPUT): number {
   if (rank <= 0) return 1

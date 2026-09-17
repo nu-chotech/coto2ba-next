@@ -9,11 +9,8 @@ import {
   type GameDetail,
   type Game as GameDto,
   GOAL_NEIGHBOR_BAN,
-  HINT_CANDIDATE_COUNT,
   HINT_COUNT,
-  HINT_RATIO,
   type HintResponse,
-  isMorphologicalVariant,
   type LeaderboardResponse,
   type MoveResponse,
   START_MAX_FREQ_RANK,
@@ -37,10 +34,10 @@ import { appError } from '../lib/errors'
 import { jstDate } from '../lib/jst'
 import { pickRandom } from '../lib/random'
 import { evaluateAchievements, recordEncounters } from './achievements'
-import { applyMove, updateBestFreeMoves, validateMove } from './rules'
+import { applyMove, parseBestFreeMoves, updateBestFreeMoves, validateMove } from './rules'
 import {
   goalNeighborhood,
-  hintWords,
+  hintCandidates,
   lookupWord,
   mixAndRank,
   rankOf,
@@ -48,8 +45,6 @@ import {
 } from './vector'
 
 const LEADERBOARD_PAGE = 50
-/** ヒントの候補を何倍取ってから表記揺れを落とすか。 */
-const HINT_OVERSAMPLE = 4
 /** スタート語の候補を何件引いてから漢字チェックで絞るか。 */
 const START_SAMPLE_SIZE = 24
 
@@ -396,14 +391,15 @@ export async function playMove(
   if (outcome.status === 'cleared' && next.mode === 'free') {
     const current = (
       await db.select({ best: user.bestFreeMoves }).from(user).where(eq(user.id, userId)).limit(1)
-    )[0]?.best as Record<string, number> | undefined
+    )[0]?.best
     await db
       .update(user)
       .set({
+        // ヒント数込みで記録する。手数だけだと「ヒント 1 回で 1 手」が永久に残る（SPEC §5.7）。
         bestFreeMoves: updateBestFreeMoves(
-          current ?? {},
+          parseBestFreeMoves(current),
           next.difficulty as Difficulty,
-          outcome.moveCount,
+          { moves: outcome.moveCount, hints: next.hintCount },
         ),
       })
       .where(eq(user.id, userId))
@@ -435,7 +431,12 @@ export async function playMove(
   }
 }
 
-/** ヒントを開く（SPEC §5.4）。同じ current なら同じ 6 語。カウントは開くたびに増える。 */
+/**
+ * ヒントを開く（SPEC §5.4）。同じ current なら同じヒント。カウントは開くたびに増える。
+ *
+ * ヒントは「語 + 混ぜる比率」。**混ぜると実際にゴールへ近づく手だけ**を返すので、
+ * 6 件に満たないことがある（効かない語で埋めると元の問題に戻る）。
+ */
 export async function openHints(db: Db, userId: string, gameId: string): Promise<HintResponse> {
   const game = await loadGame(db, userId, gameId)
   if (game.status !== 'playing') throw appError('GAME_FINISHED')
@@ -449,42 +450,20 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
   let hints = cached[0]?.hints ?? null
 
   if (!hints) {
-    // そのゲームで既に登場した語を除く
+    // そのゲームで既に登場した語と、ゴールに近すぎて打てない語（forbidden_inputs）を除く。
+    // forbidden_inputs は goal から決まるので、(goal, current) のキャッシュと整合する。
     const history = await db
       .select({ result: moves.result, input: moves.inputWord })
       .from(moves)
       .where(eq(moves.gameId, gameId))
     const exclude = new Set<string>([game.goal, game.current, game.start])
+    for (const w of game.forbiddenInputs) exclude.add(w)
     for (const h of history) {
       exclude.add(h.result)
       exclude.add(h.input)
     }
-    // 候補を多めに取ってから表記揺れを落とす。
-    // 「居住地」に対して「居住 / 定住 / 居住者 / 移住者」ばかりが並ぶと
-    // 混ぜても同じクラスタの中をうろうろするだけでヒントとして機能しない。
-    const raw = await hintWords(
-      db,
-      game.goal,
-      game.current,
-      [...exclude],
-      HINT_RATIO,
-      HINT_CANDIDATE_COUNT * HINT_OVERSAMPLE,
-      HINT_CANDIDATE_COUNT * HINT_OVERSAMPLE,
-    )
-    const kept: string[] = []
-    for (const w of raw) {
-      if (kept.length >= HINT_COUNT) break
-      if (isMorphologicalVariant(w, game.current)) continue
-      if (isMorphologicalVariant(w, game.goal)) continue
-      if (kept.some((k) => isMorphologicalVariant(w, k))) continue
-      kept.push(w)
-    }
-    // 絞りすぎて足りなくなったら素の近傍で埋める（ヒントが 6 語未満にならないように）
-    for (const w of raw) {
-      if (kept.length >= HINT_COUNT) break
-      if (!kept.includes(w)) kept.push(w)
-    }
-    hints = kept
+    // 表記揺れの除外は hintCandidates の中で行う。
+    hints = await hintCandidates(db, game.goal, game.current, [...exclude], HINT_COUNT)
     await db
       .insert(hintCache)
       .values({ goal: game.goal, current: game.current, hints })
@@ -531,7 +510,8 @@ export async function leaderboard(
     .from(games)
     .innerJoin(user, eq(user.id, games.userId))
     .where(and(eq(games.dailyDate, date), eq(games.status, 'cleared')))
-    .orderBy(asc(games.moveCount), asc(games.hintCount), asc(games.clearedAt))
+    // ヒント数が最優先（SPEC §5.8）。rules.ts の compareLeaderboard と同じ規則にすること。
+    .orderBy(asc(games.hintCount), asc(games.moveCount), asc(games.clearedAt))
     .limit(1000)
 
   const entries = rows.map((r, i) => ({

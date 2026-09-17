@@ -3,7 +3,7 @@
  *
  * - 日付切替（前日 / 翌日）。**未来の日付には進めない。**
  * - 上位 `LEADERBOARD_LIMIT`（50）+ 自分の順位。
- * - 並びは `move_count ASC, hint_count ASC, cleared_at ASC`。
+ * - 並びは `hint_count ASC, move_count ASC, cleared_at ASC`（ヒント数が最優先）。
  *   **サーバーが返した順のまま出す**（端末で並べ替えない）。
  * - 自分の行はハイライト、完全錬成には印。
  * - 誰もクリアしていない日・サーバーが落ちている日でも画面は壊れない。
@@ -90,7 +90,7 @@ export default function RankingScreen() {
       >
         <Text style={[typography.title, { color: colors.text }]}>ランキング</Text>
         <Text style={[typography.caption, { color: colors.sub }]}>
-          その日のデイリーをクリアした人。手数 → ヒント数 → クリア時刻の順。
+          その日のデイリーをクリアした人。ヒント数 → 手数 → クリア時刻の順。
         </Text>
 
         {/* ── 日付切替 ── */}
