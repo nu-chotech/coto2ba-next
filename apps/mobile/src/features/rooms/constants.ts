@@ -3,7 +3,7 @@
  *
  * ゲームのルールに関わる値（人数・コード長・ポーリング間隔）は
  * **packages/contracts**（`ROOM_MAX_PLAYERS` / `ROOM_CODE_LENGTH` /
- * `ROOM_POLL_INTERVAL_MS`）。ここに置くのは描画の都合だけ。
+ * `ROOM_POLL_INTERVAL_RACE_MS`）。ここに置くのは描画の都合だけ。
  */
 
 /** 参加コードを読み上げやすい大きさで出すときの文字サイズ（pt）。 */

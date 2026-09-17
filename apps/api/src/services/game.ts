@@ -36,6 +36,9 @@ import { appError } from '../lib/errors'
 import { jstDate } from '../lib/jst'
 import { pickRandom } from '../lib/random'
 import { evaluateAchievements, recordEncounters } from './achievements'
+// 対戦ルーム（SPEC §9）。`rooms.ts` も `game.ts` を使うので相互参照になるが、
+// **どちらも相手を関数の中でしか呼ばない**（モジュール評価時に触らない）ので安全。
+import { roomStandingsForGame } from './rooms'
 import { applyMove, parseBestFreeMoves, updateBestFreeMoves, validateMove } from './rules'
 import {
   goalNeighborhood,
@@ -478,6 +481,17 @@ export async function playMove(
     hintCount: next.hintCount,
   })
 
+  /**
+   * ルーム戦なら、**その時点の順位をこの手のレスポンスに同梱する**（SPEC §9）。
+   *
+   * 自分の手が即座に順位へ反映されるので、ポーリングは「他人の変化の検知」だけを
+   * 担えばよくなる。間隔を緩めても体感が落ちない ＝ invocations が減る。
+   *
+   * ルーム戦でなければ 1 クエリも撃たない（`roomId` が null ならそこで返る）。
+   * **`services/rooms.ts` を消しても、この 1 か所を外すだけで戻せる。**
+   */
+  const roomStandings = await roomStandingsForGame(db, userId, next.roomId)
+
   return {
     result,
     rank,
@@ -489,6 +503,7 @@ export async function playMove(
     status: outcome.status,
     perfect: next.perfect,
     unlocked_achievements: unlocked,
+    room_standings: roomStandings,
   }
 }
 

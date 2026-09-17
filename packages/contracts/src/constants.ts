@@ -172,8 +172,20 @@ export const ROOM_MAX_PLAYERS = 8
 export const ROOM_MIN_PLAYERS = 2
 /** 参加コードの長さ。読み上げと手入力ができる長さにする。 */
 export const ROOM_CODE_LENGTH = 4
-/** 部屋の状態をポーリングする間隔（ms）。 */
-export const ROOM_POLL_INTERVAL_MS = 1_000
+/**
+ * ロビー（参加者を待っている間）のポーリング間隔（ms）。
+ * 人の出入りは秒単位で見えれば十分なので、レース中より緩める。
+ */
+export const ROOM_POLL_INTERVAL_LOBBY_MS = 2_500
+/**
+ * レース中のポーリング間隔（ms）。他人の順位の動きを追う。
+ *
+ * **ここを上げると invocations が線形に減る。** 8 人 × 1 req/s を 8 時間動かすと
+ * 1 日 230,000 invocations で、3 日なら約 69 万。Hobby の月 100 万枠に対して
+ * タイトなので、実測して余裕が無ければ 1,500 にする
+ * （体験への影響は「順位バーの追従が 0.5 秒遅くなる」だけ）。
+ */
+export const ROOM_POLL_INTERVAL_RACE_MS = 1_000
 /** 部屋の寿命（分）。放置された部屋を掃除する基準。 */
 export const ROOM_TTL_MINUTES = 60
 /**

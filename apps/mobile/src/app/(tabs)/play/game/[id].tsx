@@ -55,7 +55,12 @@ import {
   useMoveMutation,
   useWordDescriptionQuery,
 } from '../../../../features/game'
-import { normalizeRoomCode, RoomRace, roomHref } from '../../../../features/rooms'
+import {
+  normalizeRoomCode,
+  RoomRace,
+  roomHref,
+  useApplyRoomStandings,
+} from '../../../../features/rooms'
 import { feedback, feedbackForRankChange } from '../../../../lib/feedback'
 import { isKnownWord, isVocabReady } from '../../../../lib/vocab'
 import { useUiStore } from '../../../../store/ui'
@@ -87,6 +92,9 @@ export default function GameScreen() {
   const setMixing = useUiStore((s) => s.setMixing)
   const setActiveTier = useUiStore((s) => s.setActiveTier)
   const resetGameUi = useUiStore((s) => s.resetGameUi)
+
+  /** ルーム戦のときだけ効く（`roomCode` が null なら何もしない）。 */
+  const applyRoomStandings = useApplyRoomStandings(roomCode)
 
   const inputRef = useRef<WordInputHandle | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
@@ -139,7 +147,12 @@ export default function GameScreen() {
     move.mutate(
       { input_word: word, ratio },
       {
-        onSuccess: ({ response }) => setRevealed(response),
+        onSuccess: ({ response }) => {
+          setRevealed(response)
+          // ルーム戦なら、この手の順位がレスポンスに入っている。
+          // ポーリングを待たずに上の順位バーへ反映する。
+          applyRoomStandings(response.room_standings)
+        },
         onError: (error) => {
           setPending(null)
           setMixing(false)
@@ -148,7 +161,7 @@ export default function GameScreen() {
         },
       },
     )
-  }, [detail, move, ratio, setHintOpen, setMixing])
+  }, [detail, move, ratio, setHintOpen, setMixing, applyRoomStandings])
 
   /** 演出が終わった瞬間。ここでフィードバックを鳴らし、終局なら結果画面へ。 */
   const finishMix = useCallback(() => {

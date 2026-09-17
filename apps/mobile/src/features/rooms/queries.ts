@@ -14,10 +14,13 @@
 
 import {
   type CreateRoomRequest,
-  ROOM_POLL_INTERVAL_MS,
+  ROOM_POLL_INTERVAL_LOBBY_MS,
+  ROOM_POLL_INTERVAL_RACE_MS,
+  type RoomPlayer,
   type RoomResponse,
 } from '@coto2ba/contracts'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback } from 'react'
 import { createRoom, getRoom, isApiError, joinRoom, startRoom } from '../../lib/api'
 import { queryKeys } from '../../lib/queryClient'
 import { ROOM_JOIN_RETRY_COUNT, ROOM_JOIN_RETRY_DELAY_MS } from './constants'
@@ -28,9 +31,17 @@ export function useRoomQuery(code: string | null) {
     queryKey: queryKeys.room(code),
     queryFn: ({ signal }) => getRoom(code ?? '', signal),
     enabled: code !== null && code.length > 0,
-    // 部屋が終わったら止める。展示中に無駄な通信を残さない。
-    refetchInterval: (query) =>
-      query.state.data?.status === 'finished' ? false : ROOM_POLL_INTERVAL_MS,
+    /**
+     * **状態で間隔を変える。** ロビーの人の出入りは秒単位で見えれば十分だが、
+     * レース中は他人の順位の動きを追う必要がある。終わったら止める
+     * （展示中に無駄な通信を残さない）。
+     */
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      if (status === 'finished') return false
+      if (status === 'playing') return ROOM_POLL_INTERVAL_RACE_MS
+      return ROOM_POLL_INTERVAL_LOBBY_MS
+    },
     refetchIntervalInBackground: false,
     // 会場の Wi-Fi は不安定な前提。**取り直しの失敗で画面を覆わない**ので、
     // 前の値を出したまま次のポーリングで追いつかせる。
@@ -81,6 +92,26 @@ export function useStartRoomMutation(code: string) {
 
 function cacheRoom(queryClient: ReturnType<typeof useQueryClient>, room: RoomResponse): void {
   queryClient.setQueryData<RoomResponse>(queryKeys.room(room.code), room)
+}
+
+/**
+ * 手のレスポンスに同梱された順位（`room_standings`）をキャッシュに入れる。
+ *
+ * **自分の手はポーリングを待たずに順位へ反映される。** ポーリングは
+ * 「他人の変化の検知」だけを担えばよくなるので、間隔を緩めても体感が落ちない。
+ * ルーム戦でない手では `standings` が来ないので、何もしない。
+ */
+export function useApplyRoomStandings(code: string | null) {
+  const queryClient = useQueryClient()
+  return useCallback(
+    (standings: readonly RoomPlayer[] | null | undefined) => {
+      if (code === null || standings === null || standings === undefined) return
+      queryClient.setQueryData<RoomResponse>(queryKeys.room(code), (previous) =>
+        previous === undefined ? previous : { ...previous, players: [...standings] },
+      )
+    },
+    [queryClient, code],
+  )
 }
 
 // ── 表示用のちいさな導出 ────────────────────────────────────
