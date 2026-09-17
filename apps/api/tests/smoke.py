@@ -133,9 +133,16 @@ def main() -> int:
     status, hints, hint_ms = timed(
         "POST /hints", lambda: call("POST", f"/api/games/{gid}/hints")
     )
-    check(status == 200 and len(hints.get("hints", [])) == 6, f"ヒントが 6 語でない: {hints}")
+    # ヒントは 2026-09-18 に「語」から「語 + 混ぜる比率」になった（SPEC §5.4）。
+    # 件数は **最大 6 で、0 件もありうる**（ゴールに近づく候補が残らないとき）。
+    hint_list = hints.get("hints", [])
+    check(status == 200 and len(hint_list) <= 6, f"ヒントが 6 件を超える: {hints}")
+    check(
+        all(isinstance(h, dict) and "word" in h and "ratio" in h for h in hint_list),
+        f"ヒントが {{word, ratio}} の形でない: {hint_list[:2]}",
+    )
     check(hints.get("hint_count") == 1, "hint_count が増えない")
-    print(f"    hints = {' / '.join(hints.get('hints', []))}")
+    print(f"    hints = {' / '.join(f'{h["word"]}×{h["ratio"]}' for h in hint_list)}")
 
     status, hints2, _ = timed(
         "POST /hints（2回目・同じ語）", lambda: call("POST", f"/api/games/{gid}/hints")
