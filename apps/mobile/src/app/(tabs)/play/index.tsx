@@ -24,6 +24,8 @@ import {
   GlassButton,
   GlassCard,
   HERO_LINE_HEIGHT_RATIO,
+  LOGO_HEIGHT_HEADER,
+  Logo,
   Segmented,
   Skeleton,
   SkeletonCard,
@@ -132,8 +134,9 @@ export default function LobbyScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.sub} />
         }
       >
+        {/* ロゴを出すのでタイトル文字は出さない（同じ情報を二重に出さない）。 */}
         <View style={styles.header}>
-          <Text style={[typography.largeTitle, { color: colors.text }]}>コトコトバ</Text>
+          <Logo height={LOGO_HEIGHT_HEADER} />
           <Text style={[typography.caption, { color: colors.sub }]}>
             言葉を混ぜて、ゴールの語に近づける
           </Text>
@@ -243,8 +246,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.screenPaddingHorizontal,
     gap: layout.sectionGap,
   },
-  // 見出しと一行説明は同じ塊なので近づける。
-  header: { gap: spacing.xs },
+  // ロゴと一行説明は同じ塊なので近づける。
+  header: { gap: spacing.sm, alignItems: 'flex-start' },
   card: { gap: layout.cardGap, borderRadius: radius.lg },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   goal: { textAlign: 'center', paddingVertical: spacing.sm },
