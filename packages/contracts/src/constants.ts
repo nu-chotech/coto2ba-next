@@ -132,8 +132,16 @@ export const DIFFICULTY_LABELS_JA = {
 } as const satisfies Record<Difficulty, string>
 
 // ── ゲームのモード・状態 ────────────────────────────────────
-export const GAME_MODES = ['daily', 'free'] as const
+/**
+ * ゲームの種類。`room` は対戦ルームの 1 戦（SPEC §9）。
+ * **`room` はクライアントから直接作れない**（部屋の開始時にサーバーが作る）ので、
+ * 作成リクエストの列挙は `CREATABLE_GAME_MODES` のほう。
+ */
+export const GAME_MODES = ['daily', 'free', 'room'] as const
 export type GameMode = (typeof GAME_MODES)[number]
+/** `POST /api/games` で指定できるモード。 */
+export const CREATABLE_GAME_MODES = ['daily', 'free'] as const
+export type CreatableGameMode = (typeof CREATABLE_GAME_MODES)[number]
 export const GAME_STATUSES = ['playing', 'cleared', 'gave_up'] as const
 export type GameStatus = (typeof GAME_STATUSES)[number]
 export const ENCOUNTER_SOURCES = ['start', 'result', 'input'] as const
@@ -152,6 +160,12 @@ export const DEVICE_TOKEN_LENGTH = 48
 export const LEADERBOARD_LIMIT = 50
 
 // ── 対戦ルーム（マルチプレイ・SPEC §9）──────────────────────
+/**
+ * 部屋の状態。`waiting` は参加者待ち、`playing` はレース中、`finished` は決着。
+ * **`playing` になったら途中参加は許さない**（後から入ると短い時間で勝ててしまう）。
+ */
+export const ROOM_STATUSES = ['waiting', 'playing', 'finished'] as const
+export type RoomStatus = (typeof ROOM_STATUSES)[number]
 /** 1 部屋の最大人数。ブースの回転を考えるとこれ以上は待ち時間が長い。 */
 export const ROOM_MAX_PLAYERS = 8
 /** 開始に必要な最小人数。 */
@@ -162,6 +176,14 @@ export const ROOM_CODE_LENGTH = 4
 export const ROOM_POLL_INTERVAL_MS = 1_000
 /** 部屋の寿命（分）。放置された部屋を掃除する基準。 */
 export const ROOM_TTL_MINUTES = 60
+/**
+ * 最初のクリアから部屋を畳むまでの猶予（秒）。
+ *
+ * 勝者は最初にゴールへ着いた人で決まるが、そこで全員の画面を止めると
+ * 「あと 1 手だったのに」が残る。逆に長すぎるとブースの行列が進まない。
+ * 全員が終わればこの猶予を待たずに畳む。
+ */
+export const ROOM_FINISH_GRACE_SECONDS = 30
 
 // ── レート制限（SPEC §7.8）──────────────────────────────────
 export const RATE_LIMIT_PER_USER_PER_SECOND = 5

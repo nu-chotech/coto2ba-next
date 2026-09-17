@@ -3,6 +3,7 @@ import {
   ACHIEVEMENT_BY_ID,
   type AchievementId,
   CLEAR_RANK,
+  type GameMode,
   MEET_THRESHOLDS,
   STREAK_THRESHOLDS,
   type UnlockedAchievement,
@@ -20,7 +21,7 @@ const QUICK_CLEAR_MOVES = 5
 export interface AchievementContext {
   userId: string
   gameId: string
-  mode: 'daily' | 'free'
+  mode: GameMode
   dailyDate: string | null
   status: 'playing' | 'cleared' | 'gave_up'
   rank: number

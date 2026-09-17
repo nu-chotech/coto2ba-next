@@ -1,0 +1,260 @@
+/**
+ * 対戦ルーム（SPEC §9）の統合テスト。DATABASE_URL の DB に直接書き込む。
+ * DB が無ければスキップする（CI で落ちないように）。
+ *
+ * ここで守りたいのは 3 つ。
+ * 1. 全員が**同じお題**を解く（部屋で 1 度だけ抽選する）
+ * 2. **進行中に他人が打った語が漏れない**（漏れると真似で解かれて競技にならない）
+ * 3. 勝敗は**サーバーの時刻**で決まる（最初にゴールへ着いた人が勝ち）
+ */
+import { CLEAR_RANK, ROOM_MIN_PLAYERS } from '@coto2ba/contracts'
+import { eq, sql } from 'drizzle-orm'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { db, pool } from '../src/db/client'
+import { games, rooms, user } from '../src/db/schema'
+import { createRoom, joinRoom, roomState, startRoom } from '../src/services/rooms'
+
+let hasDb = false
+const createdUserIds: string[] = []
+
+beforeAll(async () => {
+  try {
+    await db.execute(sql`SELECT 1 FROM goal_pool LIMIT 1`)
+    hasDb = true
+  } catch {
+    hasDb = false
+    console.warn('DB が無いので対戦ルームの統合テストをスキップします')
+  }
+})
+
+afterAll(async () => {
+  if (hasDb) {
+    for (const id of createdUserIds) {
+      // rooms / room_players / games は user の cascade で消える。
+      await db
+        .delete(user)
+        .where(eq(user.id, id))
+        .catch(() => {})
+    }
+  }
+  await pool.end().catch(() => {})
+})
+
+async function createTestUser(displayName = '静かな蚕'): Promise<string> {
+  const id = crypto.randomUUID()
+  await db.insert(user).values({
+    id,
+    name: displayName,
+    email: `${id}@test.coto2ba.invalid`,
+    emailVerified: false,
+    isAnonymous: true,
+    displayName,
+    bestFreeMoves: {},
+    booth: false,
+  })
+  createdUserIds.push(id)
+  return id
+}
+
+/** そのユーザーのルーム戦のゲーム行（他人の語が漏れていないかを見るのに使う）。 */
+async function myRoomGame(userId: string, code: string) {
+  const state = await roomState(db, userId, code)
+  const gameId = state.my_game_id
+  expect(gameId).not.toBeNull()
+  const rows = await db
+    .select()
+    .from(games)
+    .where(eq(games.id, gameId as string))
+    .limit(1)
+  const row = rows[0]
+  if (row === undefined) throw new Error('ルーム戦のゲームが見つかりません')
+  return row
+}
+
+/** サーバーと同じ経路でクリアさせる（時刻はサーバーが持つ）。 */
+async function forceClear(gameId: string, clearedAt: Date): Promise<void> {
+  await db
+    .update(games)
+    .set({ status: 'cleared', currentRank: 0, moveCount: 3, clearedAt })
+    .where(eq(games.id, gameId))
+}
+
+describe.runIf(true)('対戦ルーム', () => {
+  it('作って、参加して、開始できる', async () => {
+    if (!hasDb) return
+    const host = await createTestUser('ホスト')
+    const guest = await createTestUser('ゲスト')
+    const created = await createRoom(db, host, 'normal')
+    await joinRoom(db, guest, created.code)
+    const started = await startRoom(db, host, created.code)
+    expect(started.status).toBe('playing')
+    expect(started.players).toHaveLength(ROOM_MIN_PLAYERS)
+  })
+
+  it('ホスト以外は開始できない', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const guest = await createTestUser()
+    const created = await createRoom(db, host, 'normal')
+    await joinRoom(db, guest, created.code)
+    await expect(startRoom(db, guest, created.code)).rejects.toThrow()
+  })
+
+  it('人数が足りなければ開始できない', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const created = await createRoom(db, host, 'normal')
+    await expect(startRoom(db, host, created.code)).rejects.toThrow()
+  })
+
+  it('同じ人が二重に参加しても増えない（冪等）', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const guest = await createTestUser()
+    const created = await createRoom(db, host, 'normal')
+    await joinRoom(db, guest, created.code)
+    const again = await joinRoom(db, guest, created.code)
+    expect(again.players).toHaveLength(2)
+  })
+
+  it('ホストが自分の部屋に join しても増えない', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const created = await createRoom(db, host, 'normal')
+    const again = await joinRoom(db, host, created.code)
+    expect(again.players).toHaveLength(1)
+  })
+
+  it('開始後は参加できない', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const guest = await createTestUser()
+    const late = await createTestUser()
+    const created = await createRoom(db, host, 'normal')
+    await joinRoom(db, guest, created.code)
+    await startRoom(db, host, created.code)
+    await expect(joinRoom(db, late, created.code)).rejects.toThrow()
+  })
+
+  it('全員が同じお題を解く', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const guest = await createTestUser()
+    const created = await createRoom(db, host, 'normal')
+    await joinRoom(db, guest, created.code)
+    await startRoom(db, host, created.code)
+    const a = await roomState(db, host, created.code)
+    const b = await roomState(db, guest, created.code)
+    expect(a.goal).toBe(b.goal)
+    expect(a.start).toBe(b.start)
+    expect(a.goal).not.toBeNull()
+
+    // ゲーム行も同じ盤面であること（forbidden_inputs まで揃っているか）。
+    const hostGame = await myRoomGame(host, created.code)
+    const guestGame = await myRoomGame(guest, created.code)
+    expect(hostGame.goal).toBe(guestGame.goal)
+    expect(hostGame.start).toBe(guestGame.start)
+    expect(hostGame.forbiddenInputs).toEqual(guestGame.forbiddenInputs)
+    expect(hostGame.mode).toBe('room')
+  })
+
+  // 進行中に他人の語が見えると、真似されて競技にならない。
+  it('他人が打った語は返さない', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const guest = await createTestUser()
+    const created = await createRoom(db, host, 'normal')
+    await joinRoom(db, guest, created.code)
+    await startRoom(db, host, created.code)
+
+    // ホストだけが誰にも当てられない語に進んだことにする。
+    const hostGame = await myRoomGame(host, created.code)
+    const secret = 'ホストだけの秘密の語'
+    await db.update(games).set({ current: secret }).where(eq(games.id, hostGame.id))
+
+    const state = await roomState(db, guest, created.code)
+    expect(JSON.stringify(state)).not.toContain(secret)
+  })
+
+  it('待機中はお題を伏せる', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const created = await createRoom(db, host, 'normal')
+    const state = await roomState(db, host, created.code)
+    expect(state.status).toBe('waiting')
+    expect(state.goal).toBeNull()
+    expect(state.start).toBeNull()
+  })
+
+  it('先にクリアした人が 1 位', async () => {
+    if (!hasDb) return
+    const host = await createTestUser('先着')
+    const guest = await createTestUser('後着')
+    const created = await createRoom(db, host, 'normal')
+    await joinRoom(db, guest, created.code)
+    await startRoom(db, host, created.code)
+
+    const hostGame = await myRoomGame(host, created.code)
+    const guestGame = await myRoomGame(guest, created.code)
+    const now = Date.now()
+    await forceClear(guestGame.id, new Date(now + 20_000))
+    await forceClear(hostGame.id, new Date(now + 10_000))
+
+    const state = await roomState(db, guest, created.code)
+    expect(state.players[0]?.finished_at).not.toBeNull()
+    expect(state.players[0]?.user_id).toBe(host)
+    expect(state.players[0]?.display_name).toBe('先着')
+  })
+
+  it('全員が終わったら部屋が finished になる', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const guest = await createTestUser()
+    const created = await createRoom(db, host, 'normal')
+    await joinRoom(db, guest, created.code)
+    await startRoom(db, host, created.code)
+
+    const hostGame = await myRoomGame(host, created.code)
+    const guestGame = await myRoomGame(guest, created.code)
+    await forceClear(hostGame.id, new Date())
+    await db.update(games).set({ status: 'gave_up' }).where(eq(games.id, guestGame.id))
+
+    const state = await roomState(db, host, created.code)
+    expect(state.status).toBe('finished')
+  })
+
+  it('コードは生きている部屋の中で一意', async () => {
+    if (!hasDb) return
+    const a = await createTestUser()
+    const b = await createTestUser()
+    const first = await createRoom(db, a, 'normal')
+    const second = await createRoom(db, b, 'normal')
+    expect(second.code).not.toBe(first.code)
+  })
+
+  it('存在しないコードは ROOM_NOT_FOUND', async () => {
+    if (!hasDb) return
+    const someone = await createTestUser()
+    await expect(roomState(db, someone, 'ZZZZ')).rejects.toThrow()
+  })
+
+  it('参加していない部屋の状態は見られない', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const stranger = await createTestUser()
+    const created = await createRoom(db, host, 'normal')
+    await expect(roomState(db, stranger, created.code)).rejects.toThrow()
+  })
+
+  it('クリア圏のランクは CLEAR_RANK 以下（順位付けの前提）', () => {
+    expect(CLEAR_RANK).toBeGreaterThan(0)
+  })
+
+  it('部屋の行が残る（cascade の確認のため作った部屋が引ける）', async () => {
+    if (!hasDb) return
+    const host = await createTestUser()
+    const created = await createRoom(db, host, 'normal')
+    const rows = await db.select().from(rooms).where(eq(rooms.code, created.code)).limit(1)
+    expect(rows).toHaveLength(1)
+  })
+})

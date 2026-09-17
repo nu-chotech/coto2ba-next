@@ -6,15 +6,14 @@
  * デイリーランキング（ヒント数 → 手数 → クリア時刻）とは並び順が違う。
  * 同じに揃えてはいけない ── レースの勝者が後から入れ替わってしまう。
  */
-import { ROOM_MAX_PLAYERS, ROOM_MIN_PLAYERS } from '@coto2ba/contracts'
+import {
+  ROOM_MAX_PLAYERS,
+  ROOM_MIN_PLAYERS,
+  ROOM_STATUSES,
+  type RoomStatus,
+} from '@coto2ba/contracts'
 
-export type RoomStatus = 'waiting' | 'playing' | 'finished'
-
-export const ROOM_STATUSES = ['waiting', 'playing', 'finished'] as const satisfies readonly [
-  RoomStatus,
-  ...RoomStatus[],
-]
-
+/** DB の text 列から読んだ値を状態として扱ってよいか。 */
 export function isRoomStatus(value: string): value is RoomStatus {
   return (ROOM_STATUSES as readonly string[]).includes(value)
 }

@@ -6,6 +6,7 @@ import { AppError } from './lib/errors'
 import type { AuthVariables } from './middleware/auth'
 import { gamesRoutes } from './routes/games'
 import { meRoutes } from './routes/me'
+import { roomsRoutes } from './routes/rooms'
 import { wordsRoutes } from './routes/words'
 
 export const app = new Hono<{ Variables: AuthVariables }>()
@@ -35,6 +36,8 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw))
 app.route('/api', meRoutes)
 app.route('/api', gamesRoutes)
 app.route('/api', wordsRoutes)
+// 対戦ルーム（SPEC §9）。**この 1 行を消すと機能ごと外れる**（落とせる形にするための境界）。
+app.route('/api', roomsRoutes)
 
 app.notFound((c) => c.json({ code: 'GAME_NOT_FOUND', message: 'そのパスはありません' }, 404))
 
