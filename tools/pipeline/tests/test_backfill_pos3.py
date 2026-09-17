@@ -116,7 +116,22 @@ def _total_count(url: str) -> int:
         return int(row[0])
 
 
-# ── 1. 空 / 存在しない vocab は非ゼロ終了で弾く ──────────────────
+def _exit_status(code: object) -> int:
+    """`SystemExit.code` を実際のプロセス終了コード相当に変換する。
+
+    `SystemExit("文字列")` の `.code` は文字列そのものになるため、
+    `code != 0` は文字列と int の比較で常に True になってしまい、ほぼ恒真な
+    アサーションだった（Round 2 レビュー指摘）。Python の `sys.exit()` の実際の
+    挙動（None→0 / int→その値 / それ以外→1）を再現して、意味のある比較にする。
+    """
+    if code is None:
+        return 0
+    if isinstance(code, int):
+        return code
+    return 1
+
+
+# ── 1. 空 / 存在しない vocab、および word が 1 件も一致しない vocab は非ゼロ終了で弾く ──
 
 @requires_local_pg
 def test_missing_vocab_table_fails_loudly(make_db, monkeypatch):
@@ -130,56 +145,72 @@ def test_missing_vocab_table_fails_loudly(make_db, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         module.main(["--target", target_url, "--dry-run"])
 
-    assert exc.value.code != 0
+    assert _exit_status(exc.value.code) != 0
     assert "vocab" in str(exc.value)
     # vocab を新規作成していないこと（以前の実装はここで空の vocab を作ってしまっていた）。
     assert "vocab" not in _table_names(target_url)
 
 
 @requires_local_pg
-def test_undersized_vocab_table_fails_loudly(make_db, monkeypatch):
+def test_no_overlapping_words_fails_loudly_dry_run(make_db, monkeypatch):
+    """行数は十分にあるが word が 1 件も一致しない target（Round 2 レビュー指摘の核心）。
+
+    Round 1 の実装は vocab の総行数（ソースの語数以上か）しか見ておらず、この
+    状態でも素通りして「対象 0 件 = 完了」と exit 0 で誤報告していた
+    （レビュアーが使い捨て DB で実際に再現）。dry-run 経路で確認する。
+    """
     source_url = make_db("pos3_src")
     words = [(f"word{i}", [0.1, 0.2, 0.3]) for i in range(10)]
     _seed_source(source_url, words)
 
-    target_url = make_db("pos3_tgt_small")
-    # vocab はあるが、ソースの語数よりずっと少ない（別プロジェクトを指した疑い）。
-    _seed_target_all_null(target_url, ["only_one_word"])
+    target_url = make_db("pos3_tgt_no_overlap")
+    # target の行数はソース（10 語）よりずっと多い（500 行）が、word が 1 つも重ならない。
+    _seed_target_all_null(target_url, [f"other{i}" for i in range(500)])
 
     monkeypatch.setattr(module, "database_url", lambda: source_url)
+
+    null_before = _null_count(target_url)
 
     with pytest.raises(SystemExit) as exc:
         module.main(["--target", target_url, "--dry-run"])
 
-    assert exc.value.code != 0
-    message = str(exc.value)
-    assert "vocab" in message
-    assert "1" in message  # target の行数（1 行）が文言に出ていること
+    assert _exit_status(exc.value.code) != 0
+    assert "一致" in str(exc.value)
+    assert _null_count(target_url) == null_before  # 何も変更されていない
 
 
 @requires_local_pg
-def test_real_run_also_refuses_undersized_target(make_db, monkeypatch):
+def test_no_overlapping_words_fails_loudly_real_run(make_db, monkeypatch):
     """dry-run だけでなく本実行でも同じガードが効くこと。"""
     source_url = make_db("pos3_src")
     words = [(f"word{i}", [0.1, 0.2, 0.3]) for i in range(10)]
     _seed_source(source_url, words)
 
-    target_url = make_db("pos3_tgt_small2")
-    _seed_target_all_null(target_url, ["only_one_word"])
+    target_url = make_db("pos3_tgt_no_overlap2")
+    _seed_target_all_null(target_url, [f"other{i}" for i in range(500)])
 
     monkeypatch.setattr(module, "database_url", lambda: source_url)
 
     with pytest.raises(SystemExit) as exc:
         module.main(["--target", target_url])  # dry-run 無し
 
-    assert exc.value.code != 0
-    assert _total_count(target_url) == 1  # 何も変更されていない
+    assert _exit_status(exc.value.code) != 0
+    assert _total_count(target_url) == 500  # 行数は変わらず
+    assert _null_count(target_url) == 500  # pos3 も一切更新されていない
 
 
 # ── 2. --dry-run は target に一切書き込まない ───────────────────
 
 @requires_local_pg
 def test_dry_run_does_not_write(make_db, monkeypatch):
+    """dry-run が一時テーブル・COPY に一切触れないことを直接検証する。
+
+    `pg_tables WHERE schemaname = 'public'` の前後比較だけでは、一時テーブルは
+    `pg_temp_N` スキーマに作られてセッション終了で消えるため**構造的に検出できず**、
+    `load_source_into_temp()` が dry-run で呼ばれる回帰があってもこのテストは
+    green のままだった（Round 2 レビュー指摘）。`load_source_into_temp` を
+    「呼ばれたら失敗させる」フェイクに差し替えて直接検証する。
+    """
     source_url = make_db("pos3_src")
     words = [(f"word{i}", [0.1 * i, 0.2 * i, 0.3 * i]) for i in range(20)]
     _seed_source(source_url, words)
@@ -188,6 +219,14 @@ def test_dry_run_does_not_write(make_db, monkeypatch):
     _seed_target_all_null(target_url, [w for w, _ in words] + ["extra_word_not_in_source"])
 
     monkeypatch.setattr(module, "database_url", lambda: source_url)
+
+    def _forbidden(*_args, **_kwargs):
+        raise AssertionError(
+            "load_source_into_temp は dry-run で呼ばれてはいけない"
+            "（一時テーブル作成・COPY が発生してしまう）"
+        )
+
+    monkeypatch.setattr(module, "load_source_into_temp", _forbidden)
 
     tables_before = _table_names(target_url)
     null_before = _null_count(target_url)
@@ -232,6 +271,14 @@ def test_is_pooled_host_detects_pooler_hostname():
         "postgresql://u:p@ep-restless-frog-azaph0s6.c-3.aws.neon.tech/db"
     )
     assert not module.is_pooled_host("postgres://coto2ba:coto2ba@127.0.0.1:55432/coto2ba")
+    # ホスト名だけを見る。パスワードや DB 名に -pooler が含まれても誤検知しない
+    # （Round 2 レビュー指摘: 以前は URL 文字列全体の部分一致だったので誤検知していた）。
+    assert not module.is_pooled_host(
+        "postgresql://user:my-pooler-secret@ep-plain-host.c-3.aws.neon.tech/mydb"
+    )
+    assert not module.is_pooled_host(
+        "postgresql://user:pw@ep-plain-host.c-3.aws.neon.tech/my-pooler-db"
+    )
 
 
 def test_main_rejects_pooled_target_without_connecting(monkeypatch):
@@ -246,7 +293,7 @@ def test_main_rejects_pooled_target_without_connecting(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         module.main(["--target", pooled_url, "--dry-run"])
 
-    assert exc.value.code != 0
+    assert _exit_status(exc.value.code) != 0
     assert "pooled" in str(exc.value) or "pooler" in str(exc.value)
 
 
@@ -310,7 +357,7 @@ def test_max_bytes_interrupts_and_resume_completes(make_db, monkeypatch):
     # --max-bytes をほぼ 0 にして、実データがあれば必ず 1 バッチ目で超過させる。
     with pytest.raises(SystemExit) as exc:
         module.main(["--target", target_url, "--batch-size", "10", "--max-bytes", "1"])
-    assert exc.value.code != 0
+    assert _exit_status(exc.value.code) != 0
 
     remaining_after_interrupt = _null_count(target_url)
     assert 0 < remaining_after_interrupt < len(words)
