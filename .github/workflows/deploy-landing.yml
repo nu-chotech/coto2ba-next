@@ -59,20 +59,21 @@ jobs:
         working-directory: apps/landing
         run: npx vercel@59 pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
-      # pnpm / setup-node を **あえて置いていない**。
-      # apps/landing は index.html 1 枚で、vercel.json で installCommand と
-      # buildCommand を空文字にしてあるのでパッケージマネージャは要らない。
+      # apps/landing は index.html 1 枚。**`vercel build` + `--prebuilt` を使わない。**
       #
-      # 逆に言うと、vercel.json のこの 2 つを空文字から戻すと
-      # `vercel build` がモノレポ全体の install を始めて
-      # `spawn pnpm ENOENT` で落ちる（null は「未設定＝既定で install する」の意味で、
-      # 「何もしない」ではない）。触るときはここも一緒に直すこと。
-      - name: Vercel build
+      # 理由が 2 つある。
+      # 1. ローカルビルドさせると `vercel build` がルートの pnpm-lock.yaml を検出して
+      #    `pnpm install` を始める。このジョブには pnpm を入れていないので
+      #    `spawn pnpm ENOENT` で落ちる（vercel.json の installCommand は `null`。
+      #    Vercel では null は「未設定＝既定で install する」であって「何もしない」ではない）。
+      # 2. それ以前に、`cleanUrls: true` + `outputDirectory: "."` の組み合わせで
+      #    `vercel build` が吐く output は index.html をパス `index` に登録し、
+      #    `/` を誰も配信しない状態になる（`/index` は `/` に 308 で戻されるだけ）。
+      #    実際にこれで本番が 404 になった。Vercel 側でビルドさせれば正しく `/` が出る。
+      #
+      # apps/api と違ってこちらは Vercel の zero-config ビルドで問題ないので、
+      # 素直に転送してビルドしてもらう。
+      - name: Vercel deploy (production)
         if: steps.guard.outputs.configured == 'true'
         working-directory: apps/landing
-        run: npx vercel@59 build --prod --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Vercel deploy (prebuilt, production)
-        if: steps.guard.outputs.configured == 'true'
-        working-directory: apps/landing
-        run: npx vercel@59 deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel@59 deploy --prod --token=${{ secrets.VERCEL_TOKEN }}

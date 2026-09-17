@@ -1,8 +1,8 @@
 package.json
 README.md
 node_modules/
-# ビルドの副産物を公開しない。outputDirectory が "." なので、
-# ここに書かないと apps/landing 直下のものが全部そのまま配信される。
+# ビルドの副産物を配信しない。outputDirectory が "." なので、
+# ここに書かないと apps/landing 直下のものがそのまま配信される。
+# .vercel/ は書かないこと（アップロード対象そのものなので除外すると空になる）。
 .turbo/
-.vercel/
 *.log
