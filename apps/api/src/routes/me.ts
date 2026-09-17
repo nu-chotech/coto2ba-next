@@ -48,10 +48,15 @@ meRoutes.post('/devices', async (c) => {
   return c.json({ token, user_id: id, display_name: displayName })
 })
 
-meRoutes.use('/me', requireAuth, rateLimit)
+/**
+ * **`/x` と `/x/*` を両方書かないこと。** Hono では `/x/*` が `/x` 自身にも一致するので、
+ * 両方登録すると 1 リクエストで `rateLimit` が 2 回走り、**トークンを 2 つ食う**。
+ * 実際に `/api/me` と `POST /api/transfer` が枠を倍に使っていて、
+ * アプリの起動時（必ず `/api/me` を呼ぶ）に 429 が出やすくなっていた。
+ * `/x/*` だけ書けば `/x` も子パスも覆える。
+ */
 meRoutes.use('/me/*', requireAuth, rateLimit)
 meRoutes.use('/achievements', requireAuth, rateLimit)
-meRoutes.use('/transfer', requireAuth, rateLimit)
 meRoutes.use('/transfer/*', requireAuth, rateLimit)
 
 meRoutes.get('/me', async (c) => {

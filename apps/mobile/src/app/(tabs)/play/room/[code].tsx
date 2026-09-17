@@ -29,6 +29,7 @@ import {
 import { LOBBY_HREF, resultHref, useMeQuery } from '../../../../features/game'
 import {
   hasAttemptedRoomJoin,
+  hasJoinedRoom,
   isHost,
   normalizeRoomCode,
   ROOM_ENTRY_HREF,
@@ -56,10 +57,23 @@ export default function RoomScreen() {
   const colors = paletteForTier(ROOM_TIER)
 
   const me = useMeQuery()
-  const room = useRoomQuery(code.length > 0 ? code : null)
   const join = useJoinRoomMutation()
   const start = useStartRoomMutation(code)
   const rematch = useCreateRoomMutation()
+
+  /**
+   * **参加が通るまでポーリングを始めない。**
+   *
+   * 部屋の状態は参加者にしか返さない（コードを総当たりされても中身が漏れないように）ので、
+   * 参加と同時に取りに行くと **先に着いた取得が 403 になる**
+   * （QR で入るたびに 1 本無駄になり、コンソールにもエラーが出ていた）。
+   *
+   * 判断は**「投げたか」ではなく「通ったか」**（`hasJoinedRoom`）で行う。
+   * Web は hydrate 直後にルート木が 1 度作り直される（`app/_layout.tsx` の
+   * `useWebHydrationKey`）ため、「投げたか」で見ると**作り直された側が
+   * 参加の完了を待たずに取りに行って 403 になる**（実際になった）。
+   */
+  const [readyToPoll, setReadyToPoll] = useState(() => hasJoinedRoom(code))
 
   /**
    * 開いたら 1 回だけ join を投げる（サーバー側は冪等）。
@@ -74,6 +88,17 @@ export default function RoomScreen() {
     if (hasAttemptedRoomJoin(code)) return
     joinRoom(code)
   }, [code, joinRoom])
+
+  /**
+   * ポーリングは止めていても**キャッシュは購読している**ので、
+   * 参加のレスポンスが書き込まれた瞬間にここへ届く。
+   * 作り直された側の画面も、これで参加の完了を知って動き出す。
+   */
+  const room = useRoomQuery(code.length > 0 ? code : null, { enabled: readyToPoll })
+  const hasRoomData = room.data !== undefined
+  useEffect(() => {
+    if (hasRoomData) setReadyToPoll(true)
+  }, [hasRoomData])
 
   /**
    * レースが始まったら自分のゲームへ。**戻るで待機に戻らない**よう replace。

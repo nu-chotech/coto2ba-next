@@ -25,12 +25,19 @@ import { createRoom, getRoom, isApiError, joinRoom, startRoom } from '../../lib/
 import { queryKeys } from '../../lib/queryClient'
 import { ROOM_JOIN_RETRY_COUNT, ROOM_JOIN_RETRY_DELAY_MS } from './constants'
 
-/** `code` が null のあいだは走らせない。 */
-export function useRoomQuery(code: string | null) {
+/**
+ * `code` が null のあいだは走らせない。
+ *
+ * `enabled` を渡すとさらに絞れる。部屋の画面は**参加が済むまで止める**のに使う
+ * （状態は参加者にしか返さないので、参加より先に着いた取得は 403 になる）。
+ * `enabled: false` でもキャッシュは購読し続けるので、参加のレスポンスが
+ * `queryKeys.room(code)` に書かれた瞬間に呼び出し側へ届く。
+ */
+export function useRoomQuery(code: string | null, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.room(code),
     queryFn: ({ signal }) => getRoom(code ?? '', signal),
-    enabled: code !== null && code.length > 0,
+    enabled: code !== null && code.length > 0 && (options?.enabled ?? true),
     /**
      * **状態で間隔を変える。** ロビーの人の出入りは秒単位で見えれば十分だが、
      * レース中は他人の順位の動きを追う必要がある。終わったら止める
@@ -57,6 +64,7 @@ export function useCreateRoomMutation() {
       cacheRoom(queryClient, room)
       // 作った人は既に参加者。部屋の画面が着地で join を投げ直さないように印を付ける。
       markRoomJoinAttempted(room.code)
+      joinedRooms.add(room.code)
     },
   })
 }
@@ -65,10 +73,15 @@ export function useCreateRoomMutation() {
  * 参加。サーバー側は**冪等**なので、QR で開き直しても、コードを打ち直しても増えない。
  *
  * **一過性の失敗では諦めない。** ブースでは 8 人が一斉に QR を読む。
- * 参加は汎用のレート制限バケツ（5 req/s）を使うので、
- * 画面を開いた瞬間に走る他のクエリ（図鑑・デイリー・語の説明）と重なると
- * 429 を踏む（実際に踏んだ）。429 と通信断だけは少し待って投げ直す。
+ * 429 と通信断だけは少し待って投げ直す。
  * 満員・開始済み・存在しないコードは投げ直さない（結果が変わらない）。
+ *
+ * **この retry は起動時 429 の根本修正ではない。** 根本は
+ * 「汎用バケツの容量が持続レートと同じ 5 に縛られていて、アプリを開いた瞬間の
+ * バーストが必ず溢れる」ことで、そちらは `RATE_LIMIT_BURST_PER_USER` を
+ * 分けて直してある（`apps/api/src/middleware/rateLimit.ts`）。
+ * ここに残しているのは、会場の Wi-Fi が切れたときと、
+ * 想定外の混み方をしたときの**最後の保険**として。
  */
 export function useJoinRoomMutation() {
   const queryClient = useQueryClient()
@@ -77,8 +90,19 @@ export function useJoinRoomMutation() {
     onMutate: (code) => markRoomJoinAttempted(code),
     retry: (failureCount, error) => failureCount < ROOM_JOIN_RETRY_COUNT && isTransient(error),
     retryDelay: (failureCount) => ROOM_JOIN_RETRY_DELAY_MS * (failureCount + 1),
-    onSuccess: (room) => cacheRoom(queryClient, room),
+    onSuccess: (room) => {
+      joinedRooms.add(room.code)
+      cacheRoom(queryClient, room)
+    },
   })
+}
+
+/** 参加が通った部屋。**画面の作り直しを跨いで**覚えておく（下の解説を参照）。 */
+const joinedRooms = new Set<string>()
+
+/** その部屋の参加者だと分かっているか。ポーリングを始めてよいかの判断に使う。 */
+export function hasJoinedRoom(code: string): boolean {
+  return joinedRooms.has(code)
 }
 
 /**
