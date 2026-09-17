@@ -12,7 +12,14 @@ import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { db, pool } from '../src/db/client'
 import { games, rooms, user } from '../src/db/schema'
-import { createRoom, joinRoom, roomState, startRoom } from '../src/services/rooms'
+import {
+  createRoom,
+  joinRoom,
+  leaveRoom,
+  rematchRoom,
+  roomState,
+  startRoom,
+} from '../src/services/rooms'
 
 let hasDb = false
 const createdUserIds: string[] = []
@@ -69,6 +76,14 @@ async function myRoomGame(userId: string, code: string) {
   const row = rows[0]
   if (row === undefined) throw new Error('ルーム戦のゲームが見つかりません')
   return row
+}
+
+/** 決着した状態にする（「もう一度」は終わった部屋から始まるので、その前提を作る）。 */
+async function closeRoom(code: string): Promise<void> {
+  await db
+    .update(rooms)
+    .set({ status: 'finished', finishedAt: new Date() })
+    .where(eq(rooms.code, code))
 }
 
 /** サーバーと同じ経路でクリアさせる（時刻はサーバーが持つ）。 */
@@ -221,6 +236,102 @@ describe.runIf(true)('対戦ルーム', () => {
 
     const state = await roomState(db, host, created.code)
     expect(state.status).toBe('finished')
+  })
+
+  // **ブース運用の核心。** 各自が「もう一度」で部屋を作ると全員が別々の部屋で待ち、
+  // 誰とも当たらない（実際にそうなった）。ホストだけが作り、次のコードを配る。
+  describe('もう一度', () => {
+    it('ホストが作った次の部屋のコードが、終わった部屋に書き残される', async () => {
+      if (!hasDb) return
+      const host = await createTestUser()
+      const guest = await createTestUser()
+      const first = await createRoom(db, host, 'normal')
+      await joinRoom(db, guest, first.code)
+      await startRoom(db, host, first.code)
+      await closeRoom(first.code)
+
+      const next = await rematchRoom(db, host, first.code)
+      expect(next.code).not.toBe(first.code)
+
+      // 参加者は終わった部屋を見るだけで次のコードに辿り着ける。
+      const seenByGuest = await roomState(db, guest, first.code)
+      expect(seenByGuest.next_code).toBe(next.code)
+    })
+
+    it('ホスト以外は「もう一度」を作れない', async () => {
+      if (!hasDb) return
+      const host = await createTestUser()
+      const guest = await createTestUser()
+      const first = await createRoom(db, host, 'normal')
+      await joinRoom(db, guest, first.code)
+      await closeRoom(first.code)
+      await expect(rematchRoom(db, guest, first.code)).rejects.toThrow()
+    })
+
+    it('二度押しても部屋は増えない', async () => {
+      if (!hasDb) return
+      const host = await createTestUser()
+      const first = await createRoom(db, host, 'normal')
+      await closeRoom(first.code)
+      const a = await rematchRoom(db, host, first.code)
+      const b = await rematchRoom(db, host, first.code)
+      expect(b.code).toBe(a.code)
+    })
+
+    it('難易度は引き継ぐ', async () => {
+      if (!hasDb) return
+      const host = await createTestUser()
+      const first = await createRoom(db, host, 'hard')
+      await closeRoom(first.code)
+      const next = await rematchRoom(db, host, first.code)
+      expect(next.difficulty).toBe('hard')
+    })
+  })
+
+  describe('部屋を出る', () => {
+    // ブースではホストの端末が落ちる・アプリを閉じるのが普通に起きる。
+    it('待機中にホストが出たら部屋ごと畳む', async () => {
+      if (!hasDb) return
+      const host = await createTestUser()
+      const guest = await createTestUser()
+      const created = await createRoom(db, host, 'normal')
+      await joinRoom(db, guest, created.code)
+
+      const left = await leaveRoom(db, host, created.code)
+      expect(left.status).toBe('finished')
+
+      const rows = await db.select().from(rooms).where(eq(rooms.code, created.code)).limit(1)
+      expect(rows[0]?.status).toBe('finished')
+    })
+
+    it('待機中に参加者が出たら、その人だけ抜ける', async () => {
+      if (!hasDb) return
+      const host = await createTestUser()
+      const guest = await createTestUser()
+      const created = await createRoom(db, host, 'normal')
+      await joinRoom(db, guest, created.code)
+
+      await leaveRoom(db, guest, created.code)
+
+      const state = await roomState(db, host, created.code)
+      expect(state.status).toBe('waiting')
+      expect(state.players).toHaveLength(1)
+    })
+
+    // 走っている人がいるのに畳むと勝負が消える。
+    it('レース中にホストが出ても部屋は畳まない', async () => {
+      if (!hasDb) return
+      const host = await createTestUser()
+      const guest = await createTestUser()
+      const created = await createRoom(db, host, 'normal')
+      await joinRoom(db, guest, created.code)
+      await startRoom(db, host, created.code)
+
+      await leaveRoom(db, host, created.code)
+
+      const state = await roomState(db, guest, created.code)
+      expect(state.status).toBe('playing')
+    })
   })
 
   it('コードは生きている部屋の中で一意', async () => {

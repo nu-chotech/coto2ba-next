@@ -21,7 +21,15 @@ import {
 } from '@coto2ba/contracts'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
-import { createRoom, getRoom, isApiError, joinRoom, startRoom } from '../../lib/api'
+import {
+  createRoom,
+  getRoom,
+  isApiError,
+  joinRoom,
+  leaveRoom,
+  rematchRoom,
+  startRoom,
+} from '../../lib/api'
 import { queryKeys } from '../../lib/queryClient'
 import { ROOM_JOIN_RETRY_COUNT, ROOM_JOIN_RETRY_DELAY_MS } from './constants'
 
@@ -33,7 +41,10 @@ import { ROOM_JOIN_RETRY_COUNT, ROOM_JOIN_RETRY_DELAY_MS } from './constants'
  * `enabled: false` でもキャッシュは購読し続けるので、参加のレスポンスが
  * `queryKeys.room(code)` に書かれた瞬間に呼び出し側へ届く。
  */
-export function useRoomQuery(code: string | null, options?: { enabled?: boolean }) {
+export function useRoomQuery(
+  code: string | null,
+  options?: { enabled?: boolean; watchForRematch?: boolean },
+) {
   return useQuery({
     queryKey: queryKeys.room(code),
     queryFn: ({ signal }) => getRoom(code ?? '', signal),
@@ -42,11 +53,20 @@ export function useRoomQuery(code: string | null, options?: { enabled?: boolean 
      * **状態で間隔を変える。** ロビーの人の出入りは秒単位で見えれば十分だが、
      * レース中は他人の順位の動きを追う必要がある。終わったら止める
      * （展示中に無駄な通信を残さない）。
+     *
+     * 例外は結果画面（`watchForRematch`）。ホストが「もう一度」を押したときの
+     * 次の部屋のコードは**終わった部屋のポーリングで届く**ので、
+     * そこだけはロビーと同じ間隔で見張り続ける。止め時は呼び出し側が
+     * `enabled` で決める（`ROOM_REMATCH_WATCH_MS`）。
      */
     refetchInterval: (query) => {
-      const status = query.state.data?.status
-      if (status === 'finished') return false
-      if (status === 'playing') return ROOM_POLL_INTERVAL_RACE_MS
+      const data = query.state.data
+      if (data?.status === 'finished') {
+        if (options?.watchForRematch !== true) return false
+        // 次の部屋が分かったらもう見張らなくてよい。
+        return data.next_code === null ? ROOM_POLL_INTERVAL_LOBBY_MS : false
+      }
+      if (data?.status === 'playing') return ROOM_POLL_INTERVAL_RACE_MS
       return ROOM_POLL_INTERVAL_LOBBY_MS
     },
     refetchIntervalInBackground: false,
@@ -136,6 +156,32 @@ export function useStartRoomMutation(code: string) {
   return useMutation({
     mutationFn: () => startRoom(code),
     onSuccess: (room) => cacheRoom(queryClient, room),
+  })
+}
+
+/**
+ * 「もう一度」（ホストのみ）。**ホストだけが次の部屋を作る。**
+ *
+ * 以前は各自が `createRoom` を呼んでいたので、ホストと参加者が別々の部屋を作り、
+ * **2 人が別々の部屋で待ち続けて誰も対戦が始まらなかった**（レビューで実測）。
+ * いまはサーバーが終わった部屋に次のコードを書き残し、参加者はそれを見て移る。
+ */
+export function useRematchRoomMutation(code: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => rematchRoom(code),
+    onSuccess: (room) => {
+      joinedRooms.add(room.code)
+      markRoomJoinAttempted(room.code)
+      cacheRoom(queryClient, room)
+    },
+  })
+}
+
+/** 部屋を出る。待機中にホストが出ると部屋ごと畳まれる（ブースでの離脱対策）。 */
+export function useLeaveRoomMutation(code: string) {
+  return useMutation({
+    mutationFn: () => leaveRoom(code),
   })
 }
 

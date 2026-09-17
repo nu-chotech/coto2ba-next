@@ -5,6 +5,9 @@
  * **「もう一度」で同じ難易度の新しい部屋を 1 タップで作れる**ようにする
  * （行列ができている前提で、ホストが同じ操作を何度も繰り返せることが要件）。
  *
+ * **作るのはホストだけ。** 参加者は終わった部屋のポーリングで次のコードを受け取り、
+ * この画面のまま次の部屋へ移る。各自が作ると全員が別々の部屋で待つことになる。
+ *
  * 自分のゲームそのものの結果（経路・実績・シェア）は既存の結果画面に任せる。
  * ここで作り直さない。
  */
@@ -20,7 +23,9 @@ const RESULT_TIER = 'mono'
 
 export type RoomResultProps = {
   room: RoomResponse
-  /** 同じ難易度で新しい部屋を作る。 */
+  /** 自分がホストか。**次の部屋を作れるのはホストだけ。** */
+  isHost: boolean
+  /** 同じ難易度で新しい部屋を作る（ホストのみ）。 */
   onRematch: () => void
   rematching: boolean
   /** 自分のゲームの結果画面へ。`my_game_id` が無ければ出さない。 */
@@ -32,6 +37,7 @@ export type RoomResultProps = {
 
 export function RoomResult({
   room,
+  isHost,
   onRematch,
   rematching,
   onOpenMyResult,
@@ -84,13 +90,20 @@ export function RoomResult({
       </GlassCard>
 
       <View style={styles.actions}>
-        <GlassButton
-          title="もう一度"
-          onPress={onRematch}
-          tier={RESULT_TIER}
-          loading={rematching}
-          subtitle="同じ難易度で新しい部屋を作ります"
-        />
+        {/* **次の部屋を作るのはホストだけ。** 各自が作ると全員が別々の部屋で待つ。 */}
+        {isHost ? (
+          <GlassButton
+            title="もう一度"
+            onPress={onRematch}
+            tier={RESULT_TIER}
+            loading={rematching}
+            subtitle="同じ面子のまま、同じ難易度で次の部屋を作ります"
+          />
+        ) : (
+          <Text style={[typography.caption, styles.center, { color: colors.sub }]}>
+            ホストが「もう一度」を押すと、この画面のまま次の部屋に移ります
+          </Text>
+        )}
         {onOpenMyResult !== null ? (
           <GlassButton
             title="自分の結果を見る"

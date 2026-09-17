@@ -14,6 +14,7 @@
  * ときだけ、入口へ戻す案内を出す。
  */
 
+import { ROOM_REMATCH_WATCH_MS } from '@coto2ba/contracts'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
@@ -38,8 +39,9 @@ import {
   RoomStandings,
   roomGameHref,
   roomHref,
-  useCreateRoomMutation,
   useJoinRoomMutation,
+  useLeaveRoomMutation,
+  useRematchRoomMutation,
   useRoomQuery,
   useStartRoomMutation,
 } from '../../../../features/rooms'
@@ -59,7 +61,8 @@ export default function RoomScreen() {
   const me = useMeQuery()
   const join = useJoinRoomMutation()
   const start = useStartRoomMutation(code)
-  const rematch = useCreateRoomMutation()
+  const rematch = useRematchRoomMutation(code)
+  const leave = useLeaveRoomMutation(code)
 
   /**
    * **参加が通るまでポーリングを始めない。**
@@ -94,7 +97,21 @@ export default function RoomScreen() {
    * 参加のレスポンスが書き込まれた瞬間にここへ届く。
    * 作り直された側の画面も、これで参加の完了を知って動き出す。
    */
-  const room = useRoomQuery(code.length > 0 ? code : null, { enabled: readyToPoll })
+  /**
+   * 決着したあとも、**次の部屋（「もう一度」）のコードが来るまでは見張る**。
+   * 見張るのは `ROOM_REMATCH_WATCH_MS` まで（結果画面を開いたまま放置された端末が
+   * 枠を食い続けないように）。
+   */
+  const [watchingRematch, setWatchingRematch] = useState(true)
+  useEffect(() => {
+    const timer = setTimeout(() => setWatchingRematch(false), ROOM_REMATCH_WATCH_MS)
+    return () => clearTimeout(timer)
+  }, [])
+
+  const room = useRoomQuery(code.length > 0 ? code : null, {
+    enabled: readyToPoll,
+    watchForRematch: watchingRematch,
+  })
   const hasRoomData = room.data !== undefined
   useEffect(() => {
     if (hasRoomData) setReadyToPoll(true)
@@ -117,17 +134,33 @@ export default function RoomScreen() {
     router.replace(roomGameHref(myGameId, code))
   }, [stillPlaying, myGameId, sentToGame, router, code])
 
+  /**
+   * **ホストが「もう一度」を押したら、全員がその部屋へ移る。**
+   *
+   * 押した本人はレスポンスで、ほかの参加者は終わった部屋のポーリングで届く
+   * `next_code` で移る。各自が新しい部屋を作ると全員が別々の部屋で待つことになり、
+   * ブースで誰も対戦を始められない（レビューで実測された）。
+   */
+  const nextCode = data?.next_code ?? null
+  useEffect(() => {
+    if (nextCode === null || nextCode === code) return
+    router.replace(roomHref(nextCode))
+  }, [nextCode, code, router])
+
   const onStart = useCallback(() => start.mutate(), [start])
 
-  const onRematch = useCallback(() => {
-    if (data === null) return
-    rematch.mutate(
-      { difficulty: data.difficulty },
-      { onSuccess: (next) => router.replace(roomHref(next.code)) },
-    )
-  }, [data, rematch, router])
+  // 遷移は上の `next_code` の効果に任せる（ホストも参加者も同じ 1 本の経路を通る）。
+  const onRematch = useCallback(() => rematch.mutate(), [rematch])
 
-  const onLeave = useCallback(() => router.replace(LOBBY_HREF), [router])
+  /**
+   * 部屋を出る。**待機中にホストが出たらサーバーが部屋ごと畳む**ので、
+   * 残された人が 10 分待たされない。失敗しても画面はロビーへ戻す
+   * （出るのを通信の成否に縛らない）。
+   */
+  const leaveRoom = leave.mutate
+  const onLeave = useCallback(() => {
+    leaveRoom(undefined, { onSettled: () => router.replace(LOBBY_HREF) })
+  }, [leaveRoom, router])
 
   // 参加すらできなかった（満員・開始済み・存在しない）。ここだけは画面を覆う。
   if (data === null && join.isError) {
@@ -161,6 +194,7 @@ export default function RoomScreen() {
         {data.status === 'finished' ? (
           <RoomResult
             room={data}
+            isHost={isHost(data, me.data?.id ?? null)}
             onRematch={onRematch}
             rematching={rematch.isPending}
             onOpenMyResult={

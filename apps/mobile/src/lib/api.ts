@@ -392,6 +392,24 @@ export function startRoom(code: string, signal?: AbortSignal) {
   })
 }
 
+/** 「もう一度」（ホストのみ）。**次の部屋を作れるのはホストだけ。** */
+export function rematchRoom(code: string, signal?: AbortSignal) {
+  return request(roomPath(code, '/rematch'), {
+    method: 'POST',
+    schema: roomResponseSchema,
+    signal,
+  })
+}
+
+/** 部屋を出る。待機中にホストが出ると部屋ごと畳まれる。 */
+export function leaveRoom(code: string, signal?: AbortSignal) {
+  return request(roomPath(code, '/leave'), {
+    method: 'POST',
+    schema: roomResponseSchema,
+    signal,
+  })
+}
+
 /** 1 秒ポーリングの取得先。**サーバー側は専用のレート制限バケツ。** */
 export function getRoom(code: string, signal?: AbortSignal) {
   return request(roomPath(code), { schema: roomResponseSchema, signal })

@@ -98,6 +98,15 @@ export const rooms = pgTable(
     /** ゴールに近すぎる語。games と同じものを部屋で 1 度だけ計算して配る。 */
     forbiddenInputs: text('forbidden_inputs').array().notNull().default(sql`ARRAY[]::text[]`),
     status: text('status').notNull().default('waiting'),
+    /**
+     * 「もう一度」で作った次の部屋のコード。**ホストだけが作り、参加者はこれを見て移る。**
+     * これが無いと全員が別々の部屋を作ってしまい、誰とも当たらない（実際になった）。
+     *
+     * id ではなくコードを直接持つ（ポーリングの度に join したくないため）。
+     * 次の部屋も終わってコードが再利用されるとズレうるが、
+     * 結果画面を見張るのは決着の直後の短い間だけなので実害が無い。
+     */
+    nextCode: text('next_code'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     finishedAt: timestamp('finished_at', { withTimezone: true }),

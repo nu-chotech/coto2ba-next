@@ -16,7 +16,16 @@ export const ROOM_QR_MAX_SIZE = 240
 export const ROOM_STANDING_ROW_MIN_HEIGHT = 34
 /** 順位バッジの直径。 */
 export const ROOM_RANK_BADGE_SIZE = 24
-/** レース中の順位オーバーレイに出す最大人数（画面を埋めない）。 */
+/**
+ * レース中の順位オーバーレイを**畳まずに全員出せる人数の上限**。
+ *
+ * **8 人を全部出すとゲームの入力欄と「混ぜる」が画面外に落ちる**
+ * （390×844 で input の top が 987 になっていた。満員に近いほど遊べなくなるという本末転倒）。
+ * この人数までは全員出しても操作系を押し下げないので、そのまま出す。
+ * 超えたら自分の 1 行だけにして、広げたいときだけ広げてもらう（`collapsedRowsFor`）。
+ */
+export const ROOM_STANDING_COLLAPSED_ROWS = 3
+/** 広げたときに出す最大人数（＝ 1 部屋の上限）。 */
 export const ROOM_STANDING_VISIBLE_LIMIT = 8
 /** 自分の行の枠の太さ。 */
 export const ROOM_ME_BORDER_WIDTH = 2

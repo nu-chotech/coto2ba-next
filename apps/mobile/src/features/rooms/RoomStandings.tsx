@@ -26,6 +26,7 @@ import {
   ROOM_STANDING_ROW_MIN_HEIGHT,
   ROOM_STANDING_VISIBLE_LIMIT,
 } from './constants'
+import { pickImportantRows } from './standings'
 
 /** ゴールに着いた人だけに付ける印。上位 3 位の色分けはしない（勝者は 1 人）。 */
 const WINNER_RANK = 1
@@ -35,17 +36,20 @@ export type RoomStandingsProps = {
   tier: TierId
   /** レース中のオーバーレイ用。名前と順位だけの詰めた行にする。 */
   compact?: boolean
+  /** 何行に畳むか。渡さなければ全員出す。 */
+  maxRows?: number
 }
 
-export function RoomStandings({ players, tier, compact = false }: RoomStandingsProps) {
-  const visible = compact ? players.slice(0, ROOM_STANDING_VISIBLE_LIMIT) : players
+export function RoomStandings({ players, tier, compact = false, maxRows }: RoomStandingsProps) {
+  const capped = players.slice(0, ROOM_STANDING_VISIBLE_LIMIT)
+  const visible = pickImportantRows(capped, maxRows ?? capped.length)
   return (
     <View style={styles.list}>
-      {visible.map((player, index) => (
+      {visible.map((entry) => (
         <RoomStandingRow
-          key={player.user_id}
-          player={player}
-          rank={index + 1}
+          key={entry.player.user_id}
+          player={entry.player}
+          rank={entry.rank}
           tier={tier}
           compact={compact}
         />

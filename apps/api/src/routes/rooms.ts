@@ -6,6 +6,8 @@
  * | POST | `/api/rooms`             | 部屋を作る（ホスト） |
  * | POST | `/api/rooms/:code/join`  | 参加する |
  * | POST | `/api/rooms/:code/start` | 開始（ホストのみ） |
+ * | POST | `/api/rooms/:code/rematch` | もう一度（ホストのみ・次の部屋を作る） |
+ * | POST | `/api/rooms/:code/leave`  | 部屋を出る |
  * | GET  | `/api/rooms/:code`       | 状態の取得（**1 秒ポーリング先**） |
  *
  * **`GET /api/rooms/:code` だけ専用のレート制限バケツを使う。** 汎用の `rateLimit`
@@ -22,7 +24,14 @@ import { appError } from '../lib/errors'
 import type { AuthVariables } from '../middleware/auth'
 import { requireAuth } from '../middleware/auth'
 import { rateLimit, rateLimitGameCreate, rateLimitRoomPoll } from '../middleware/rateLimit'
-import { createRoom, joinRoom, roomState, startRoom } from '../services/rooms'
+import {
+  createRoom,
+  joinRoom,
+  leaveRoom,
+  rematchRoom,
+  roomState,
+  startRoom,
+} from '../services/rooms'
 
 export const roomsRoutes = new Hono<{ Variables: AuthVariables }>()
 
@@ -50,6 +59,21 @@ roomsRoutes.post('/rooms/:code/join', rateLimit, async (c) => {
 
 roomsRoutes.post('/rooms/:code/start', rateLimit, async (c) => {
   const room = await startRoom(db, c.get('authUser').id, codeOf(c.req.param('code')))
+  return c.json(room)
+})
+
+/**
+ * 「もう一度」（ホストのみ）。**ホストだけが次の部屋を作る。**
+ * 参加者は終わった部屋のポーリングで `next_code` を受け取って移る。
+ */
+roomsRoutes.post('/rooms/:code/rematch', rateLimit, rateLimitGameCreate, async (c) => {
+  const room = await rematchRoom(db, c.get('authUser').id, codeOf(c.req.param('code')))
+  return c.json(room)
+})
+
+/** 部屋を出る。待機中にホストが出たら部屋ごと畳む（ブースでの離脱対策）。 */
+roomsRoutes.post('/rooms/:code/leave', rateLimit, async (c) => {
+  const room = await leaveRoom(db, c.get('authUser').id, codeOf(c.req.param('code')))
   return c.json(room)
 })
 

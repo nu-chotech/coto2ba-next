@@ -50,6 +50,13 @@
       "when": 1789663637383,
       "tag": "0006_rooms",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789670400338,
+      "tag": "0007_room_next_code",
+      "breakpoints": true
     }
   ]
 }

@@ -20,6 +20,7 @@ import {
   ROOM_FINISH_GRACE_SECONDS,
   ROOM_MAX_PLAYERS,
   ROOM_TTL_MINUTES,
+  ROOM_WAITING_TTL_MINUTES,
   type RoomPlayer,
   type RoomResponse,
   type RoomStatus,
@@ -52,10 +53,10 @@ function statusOf(row: RoomRow): RoomStatus {
 
 /** 寿命を過ぎているか。ポーリングのたびに UPDATE を撃たないための前さばき。 */
 function isStale(room: RoomRow): boolean {
-  return (
-    statusOf(room) !== 'finished' &&
-    Date.now() - room.createdAt.getTime() > ROOM_TTL_MINUTES * 60_000
-  )
+  const status = statusOf(room)
+  if (status === 'finished') return false
+  const ttlMinutes = status === 'waiting' ? ROOM_WAITING_TTL_MINUTES : ROOM_TTL_MINUTES
+  return Date.now() - room.createdAt.getTime() > ttlMinutes * 60_000
 }
 
 /** 生きている（= 終わっていない）部屋をコードで引く。 */
@@ -228,6 +229,7 @@ function toResponse(
     players: entries,
     my_game_id: mine?.gameId ?? null,
     my_game_status: (mine?.gameStatus as RoomResponse['my_game_status']) ?? null,
+    next_code: room.nextCode,
     join_url: roomJoinUrl(room.code),
   }
 }
@@ -260,7 +262,11 @@ async function closeStaleRooms(db: Db): Promise<void> {
         UPDATE rooms
            SET status = 'finished', finished_at = now()
          WHERE status <> 'finished'
-           AND created_at < now() - ${`${ROOM_TTL_MINUTES} minutes`}::interval
+           AND created_at < now() - (
+                 CASE WHEN status = 'waiting'
+                      THEN ${`${ROOM_WAITING_TTL_MINUTES} minutes`}::interval
+                      ELSE ${`${ROOM_TTL_MINUTES} minutes`}::interval
+                 END)
       `,
     )
     .catch(() => {})
@@ -373,21 +379,99 @@ export async function startRoom(db: Db, userId: string, code: string): Promise<R
     forbiddenInputs: started.forbiddenInputs,
   }
 
-  for (const player of players) {
-    const game = await createRoomGame(db, {
-      userId: player.state.userId,
-      roomId: started.id,
-      difficulty: started.difficulty as Difficulty,
-      challenge,
-    })
+  /**
+   * **途中で失敗したら `waiting` に戻す。**
+   * 戻さないと、ゲームを持たない参加者がいる `playing` の部屋から誰も抜け出せず、
+   * ホストがもう一度「はじめる」を押すこともできない（`ROOM_CLOSED` になる）。
+   * 作りかけの `games` は `room_players.game_id` を外せば参照されなくなるので、
+   * 引き直しても二重に効かない。
+   */
+  try {
+    for (const player of players) {
+      const game = await createRoomGame(db, {
+        userId: player.state.userId,
+        roomId: started.id,
+        difficulty: started.difficulty as Difficulty,
+        challenge,
+      })
+      await db
+        .update(roomPlayers)
+        .set({ gameId: game.id })
+        .where(and(eq(roomPlayers.roomId, started.id), eq(roomPlayers.userId, player.state.userId)))
+    }
+  } catch (error) {
     await db
       .update(roomPlayers)
-      .set({ gameId: game.id })
-      .where(and(eq(roomPlayers.roomId, started.id), eq(roomPlayers.userId, player.state.userId)))
+      .set({ gameId: null })
+      .where(eq(roomPlayers.roomId, started.id))
+      .catch(() => {})
+    await db
+      .update(rooms)
+      .set({ status: 'waiting', startedAt: null })
+      .where(eq(rooms.id, started.id))
+      .catch(() => {})
+    throw error
   }
 
   const next = await loadPlayers(db, started.id)
   return toResponse(started, next, userId)
+}
+
+/**
+ * 部屋を出る。
+ *
+ * - 待機中にホストが出たら**部屋ごと畳む**。ブースではホストの端末が落ちる・
+ *   アプリを閉じるのが普通に起きるので、`ROOM_WAITING_TTL_MINUTES` を待たずに片付ける
+ * - 待機中に参加者が出たら、その人だけ抜ける（席が 1 つ空く）
+ * - **レース中・決着後は何もしない。** 走っている人がいるのに畳むと勝負が消える
+ */
+export async function leaveRoom(db: Db, userId: string, code: string): Promise<RoomResponse> {
+  const room = await findLiveRoom(db, code)
+  const players = await loadPlayers(db, room.id)
+  assertMember(players, userId)
+
+  if (statusOf(room) !== 'waiting') return buildState(db, room, userId)
+
+  if (room.hostUserId === userId) {
+    const closed = await db
+      .update(rooms)
+      .set({ status: 'finished', finishedAt: new Date() })
+      .where(and(eq(rooms.id, room.id), eq(rooms.status, 'waiting')))
+      .returning()
+    const next = closed[0] ?? { ...room, status: 'finished' as const }
+    return toResponse(next, players, userId)
+  }
+
+  await db
+    .delete(roomPlayers)
+    .where(and(eq(roomPlayers.roomId, room.id), eq(roomPlayers.userId, userId)))
+  // 抜けたあとの状態は本人には返す（画面がそのまま結果を出せるように）。
+  return toResponse(room, players, userId)
+}
+
+/**
+ * 「もう一度」（ホストのみ）。同じ難易度で新しい部屋を作り、
+ * **終わった部屋に次のコードを書き残す。**
+ *
+ * 参加者はそれをポーリングで受け取って同じ部屋へ移る。
+ * 各自が「もう一度」で部屋を作ると全員が別々の部屋で待つことになり、
+ * ブースで誰も対戦を始められない（実際にそうなった）。
+ */
+export async function rematchRoom(db: Db, userId: string, code: string): Promise<RoomResponse> {
+  const room = await findLiveRoom(db, code)
+  if (room.hostUserId !== userId) throw appError('ROOM_NOT_HOST')
+
+  // 既に作ってあれば作り直さない（二度押し・再送で部屋が増えない）。
+  if (room.nextCode !== null) {
+    const existing = await findLiveRoom(db, room.nextCode).catch(() => null)
+    if (existing !== null && statusOf(existing) !== 'finished') {
+      return buildState(db, existing, userId)
+    }
+  }
+
+  const created = await createRoom(db, userId, room.difficulty as Difficulty)
+  await db.update(rooms).set({ nextCode: created.code }).where(eq(rooms.id, room.id))
+  return created
 }
 
 /**

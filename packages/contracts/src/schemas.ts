@@ -116,6 +116,12 @@ export const roomResponseSchema = z.object({
    * （待機 → ゲーム → 待機 の往復になる。実際に起きた）。
    */
   my_game_status: gameStatusSchema.nullable(),
+  /**
+   * 「もう一度」で作られた次の部屋のコード。**ホストだけが作る。**
+   * 参加者は結果画面のポーリングでこれを受け取り、同じ部屋へ移る
+   * （各自が新しい部屋を作ると、全員が別々の部屋で待つことになる）。
+   */
+  next_code: z.string().nullable(),
   /** 参加用のディープリンク（QR に入れる）。 */
   join_url: z.string(),
 })
