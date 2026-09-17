@@ -59,9 +59,16 @@ export const GOAL_NEIGHBOR_BAN = 12
 
 // ── ヒント ──────────────────────────────────────────────────
 export const HINT_COUNT = 6
-/** v_hint = (1 - HINT_RATIO) * v_current + HINT_RATIO * v_goal */
+/**
+ * 外挿点ごとに HNSW で集める近傍数。
+ * v_W*(r) = (v_goal - (1 - r) * v_current) / r の近傍を比率ごとに集める。
+ */
+export const HINT_EXTRAPOLATION_NEIGHBORS = 24
+/** 実際の混合まで走らせて検証する最終候補数。 */
+export const HINT_VERIFY_LIMIT = 16
+/** 旧ヒント（内挿）の goal 寄せ比率。外挿への差し替えで用済みになる。 */
 export const HINT_RATIO = 0.2
-/** ヒント候補を取る近傍数（ここから除外して先頭 HINT_COUNT 件）。 */
+/** 旧ヒントが候補を取る近傍数。外挿への差し替えで用済みになる。 */
 export const HINT_CANDIDATE_COUNT = 30
 
 // ── 演出帯（tier）────────────────────────────────────────────

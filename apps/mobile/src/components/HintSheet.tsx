@@ -5,7 +5,7 @@
  * 開いた回数はカード側に出す（サーバーの `hint_count` が正）。
  */
 
-import { HINT_COUNT, type TierId } from '@coto2ba/contracts'
+import { HINT_COUNT, type Hint, type TierId } from '@coto2ba/contracts'
 import {
   Modal,
   Pressable,
@@ -27,13 +27,13 @@ const HINT_SLOT_IDS = Array.from({ length: HINT_COUNT }, (_, i) => `hint-slot-${
 export type HintSheetProps = {
   visible: boolean
   tier: TierId
-  words: readonly string[]
+  hints: readonly Hint[]
   loading: boolean
   /** 取得に失敗したときの日本語メッセージ。null なら正常。 */
   errorMessage?: string | null
   /** サーバーが持っているヒントの使用回数。 */
   hintCount: number
-  onPick: (word: string) => void
+  onPick: (hint: Hint) => void
   onClose: () => void
   onRetry: () => void
 }
@@ -41,7 +41,7 @@ export type HintSheetProps = {
 export function HintSheet({
   visible,
   tier,
-  words,
+  hints,
   loading,
   errorMessage = null,
   hintCount,
@@ -75,10 +75,10 @@ export function HintSheet({
               ? HINT_SLOT_IDS.map((slotId) => (
                   <Skeleton key={slotId} height={HINT_SLOT_HEIGHT} cornerRadius={radius.md} />
                 ))
-              : words.map((word) => (
+              : hints.map((hint) => (
                   <Pressable
-                    key={word}
-                    onPress={() => onPick(word)}
+                    key={hint.word}
+                    onPress={() => onPick(hint)}
                     style={({ pressed }) => [
                       styles.item,
                       {
@@ -87,7 +87,7 @@ export function HintSheet({
                       },
                     ]}
                   >
-                    <Text style={[typography.body, { color: colors.text }]}>{word}</Text>
+                    <Text style={[typography.body, { color: colors.text }]}>{hint.word}</Text>
                   </Pressable>
                 ))}
 

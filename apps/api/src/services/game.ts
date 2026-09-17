@@ -12,10 +12,12 @@ import {
   HINT_CANDIDATE_COUNT,
   HINT_COUNT,
   HINT_RATIO,
+  type Hint,
   type HintResponse,
   isMorphologicalVariant,
   type LeaderboardResponse,
   type MoveResponse,
+  RATIO_DEFAULT,
   START_MAX_FREQ_RANK,
   START_RANK_RANGE,
   sharesKanji,
@@ -446,9 +448,9 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
     .where(and(eq(hintCache.goal, game.goal), eq(hintCache.current, game.current)))
     .limit(1)
 
-  let hints = cached[0]?.hints ?? null
+  let words = cached[0]?.hints ?? null
 
-  if (!hints) {
+  if (!words) {
     // そのゲームで既に登場した語を除く
     const history = await db
       .select({ result: moves.result, input: moves.inputWord })
@@ -484,10 +486,10 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
       if (kept.length >= HINT_COUNT) break
       if (!kept.includes(w)) kept.push(w)
     }
-    hints = kept
+    words = kept
     await db
       .insert(hintCache)
-      .values({ goal: game.goal, current: game.current, hints })
+      .values({ goal: game.goal, current: game.current, hints: words })
       .onConflictDoNothing()
   }
 
@@ -497,6 +499,8 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
     .where(eq(games.id, gameId))
     .returning({ hintCount: games.hintCount })
 
+  // 比率はまだ算出していない（Task 3 の外挿で埋まる）。契約を満たす暫定値を入れる。
+  const hints: Hint[] = words.map((word) => ({ word, ratio: RATIO_DEFAULT }))
   return { hints, hint_count: updated[0]?.hintCount ?? game.hintCount + 1 }
 }
 

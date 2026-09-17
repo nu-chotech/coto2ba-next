@@ -7,6 +7,7 @@ import { DISPLAY_NAME_MAX_LENGTH, DISPLAY_NAME_MIN_LENGTH, RATIOS } from '../src
 import {
   createGameRequestSchema,
   dateStringSchema,
+  hintResponseSchema,
   meResponseSchema,
   moveRequestSchema,
   patchMeRequestSchema,
@@ -146,5 +147,32 @@ describe('meResponseSchema の best_free_moves', () => {
     expect(meResponseSchema.safeParse({ ...base, best_free_moves: { easy: 0 } }).success).toBe(
       false,
     )
+  })
+})
+
+describe('hintResponseSchema', () => {
+  it('語と比率の組を受け付ける', () => {
+    const parsed = hintResponseSchema.safeParse({
+      hints: [{ word: '琥珀', ratio: 0.4 }],
+      hint_count: 1,
+    })
+    expect(parsed.success).toBe(true)
+  })
+
+  // ヒントが提案する比率も 8 段階でなければ、そのまま打てない。
+  it('8 段階にない比率は弾く', () => {
+    expect(
+      hintResponseSchema.safeParse({ hints: [{ word: '琥珀', ratio: 0.35 }], hint_count: 1 })
+        .success,
+    ).toBe(false)
+  })
+
+  it('語だけの旧形式は弾く', () => {
+    expect(hintResponseSchema.safeParse({ hints: ['琥珀'], hint_count: 1 }).success).toBe(false)
+  })
+
+  // 候補が全滅したら「効かないヒント」で埋めずに件数を減らす設計なので、空も正当。
+  it('空のヒントを受け付ける', () => {
+    expect(hintResponseSchema.safeParse({ hints: [], hint_count: 3 }).success).toBe(true)
   })
 })

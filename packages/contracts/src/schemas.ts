@@ -129,8 +129,18 @@ export const createGameRequestSchema = z.object({
   difficulty: difficultySchema.optional(),
 })
 
+/**
+ * ヒントは「語」ではなく「**その語をどの比率で混ぜるか**」まで含めた 1 つの提案。
+ * 比率が無いとプレイヤーは自分で探すことになり、提案どおりの結果にならない。
+ */
+export const hintSchema = z.object({
+  word: wordSchema,
+  ratio: ratioSchema,
+})
+
 export const hintResponseSchema = z.object({
-  hints: z.array(wordSchema),
+  // 検証を通った候補が無ければ空になりうる。効かない語で埋めない（SPEC §3.3）。
+  hints: z.array(hintSchema),
   hint_count: z.number().int().nonnegative(),
 })
 
@@ -250,6 +260,7 @@ export type UnlockedAchievement = z.infer<typeof unlockedAchievementSchema>
 export type Game = z.infer<typeof gameSchema>
 export type GameDetail = z.infer<typeof gameDetailSchema>
 export type CreateGameRequest = z.infer<typeof createGameRequestSchema>
+export type Hint = z.infer<typeof hintSchema>
 export type HintResponse = z.infer<typeof hintResponseSchema>
 export type DailyResponse = z.infer<typeof dailyResponseSchema>
 export type LeaderboardEntry = z.infer<typeof leaderboardEntrySchema>
