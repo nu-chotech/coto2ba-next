@@ -119,8 +119,10 @@ export function openRoomFromDeepLink(url: string, limit = ROOM_CODE_MEMORY_LIMIT
 
 /**
  * 部屋の画面に着地したとき、参加を投げるべきか。
- * 投げるときは**その場で印を付ける**（`onMutate` に任せると、Web の hydrate で
- * 木が作り直されたときに 2 本飛ぶ競争が残る）。
+ * 投げるときは**その場で印を付ける**。`onMutate` に任せると、TanStack v5 では
+ * 1 マイクロタスク遅れるので、Web の hydrate で木が作り直されたときに
+ * 二重送信の競争が残る（環境依存で出たり出なかったりする）。
+ * ここで同期に済ませれば競争そのものが無くなる。
  */
 export function shouldJoinOnArrival(code: string, limit = ROOM_CODE_MEMORY_LIMIT): boolean {
   if (code.length === 0) return false
