@@ -53,7 +53,11 @@ export function useCreateRoomMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: CreateRoomRequest) => createRoom(input),
-    onSuccess: (room) => cacheRoom(queryClient, room),
+    onSuccess: (room) => {
+      cacheRoom(queryClient, room)
+      // 作った人は既に参加者。部屋の画面が着地で join を投げ直さないように印を付ける。
+      markRoomJoinAttempted(room.code)
+    },
   })
 }
 
@@ -70,10 +74,31 @@ export function useJoinRoomMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (code: string) => joinRoom(code),
+    onMutate: (code) => markRoomJoinAttempted(code),
     retry: (failureCount, error) => failureCount < ROOM_JOIN_RETRY_COUNT && isTransient(error),
     retryDelay: (failureCount) => ROOM_JOIN_RETRY_DELAY_MS * (failureCount + 1),
     onSuccess: (room) => cacheRoom(queryClient, room),
   })
+}
+
+/**
+ * 参加を投げた部屋のコード。**モジュールスコープ**で覚える。
+ *
+ * - 入口の「参加する」で投げた直後に部屋の画面が開くので、そこで二重に投げない
+ * - Web は hydrate 直後にルート木が 1 度作り直される（`app/_layout.tsx` の
+ *   `useWebHydrationKey`）ので、`useRef` に置くと消えて二重送信になる
+ *
+ * 2 本目は汎用のレート制限バケツ（5 req/s）を無駄に食い、実際に 429 を踏んだ。
+ * サーバー側は冪等なので**安全側に倒しても壊れない**（投げ直しは retry が行う）。
+ */
+const joinAttempts = new Set<string>()
+
+export function markRoomJoinAttempted(code: string): void {
+  joinAttempts.add(code)
+}
+
+export function hasAttemptedRoomJoin(code: string): boolean {
+  return joinAttempts.has(code)
 }
 
 /** 投げ直せば結果が変わりうる失敗か。 */

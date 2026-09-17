@@ -28,6 +28,7 @@ import {
 } from '../../../../components'
 import { LOBBY_HREF, resultHref, useMeQuery } from '../../../../features/game'
 import {
+  hasAttemptedRoomJoin,
   isHost,
   normalizeRoomCode,
   ROOM_ENTRY_HREF,
@@ -46,9 +47,6 @@ import { layout, screenPadding, typography, useTheme } from '../../../../theme'
 /** 部屋は演出帯を持たない。ロビーと同じ落ち着いた地。 */
 const ROOM_TIER = 'mono'
 
-/** 参加を投げた部屋のコード。画面の作り直しを跨いで覚えておく（下の解説を参照）。 */
-const JOIN_ATTEMPTED = new Set<string>()
-
 export default function RoomScreen() {
   const { code: raw } = useLocalSearchParams<{ code: string }>()
   const code = normalizeRoomCode(typeof raw === 'string' ? raw : '')
@@ -66,16 +64,14 @@ export default function RoomScreen() {
   /**
    * 開いたら 1 回だけ join を投げる（サーバー側は冪等）。
    *
-   * 既に投げたかどうかは **モジュールスコープ**で覚える。`useRef` に置くと、
-   * Web の hydrate 直後にルート木が 1 度作り直される（`app/_layout.tsx` の
-   * `useWebHydrationKey`）ときに消えて、同じ参加が 2 回飛ぶ。
-   * 2 本目はレート制限の枠を無駄に食う（実際に 429 を踏んだ）。
+   * 入口の「参加する」から来たときは既に投げてあるので、ここでは投げない
+   * （`hasAttemptedRoomJoin` の理由は `features/rooms/queries.ts`）。
+   * QR や直リンクで来たときはここが唯一の参加経路になる。
    */
   const joinRoom = join.mutate
   useEffect(() => {
     if (code.length === 0) return
-    if (JOIN_ATTEMPTED.has(code)) return
-    JOIN_ATTEMPTED.add(code)
+    if (hasAttemptedRoomJoin(code)) return
     joinRoom(code)
   }, [code, joinRoom])
 
