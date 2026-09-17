@@ -22,30 +22,59 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # secrets は job 単位の if: では参照できないので、最初の step で見て以降を切り替える。
+      # EXPO_TOKEN は expo.dev の Personal Access Token（`~/.expo/state.json` の
+      # セッションとは別物）。未登録でも「壊れている」わけではないので緑のまま通す。
+      - name: Check EXPO_TOKEN
+        id: guard
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${EXPO_TOKEN}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=EAS Update を飛ばしました::EXPO_TOKEN が未登録です"
+            {
+              echo "### EAS Update — 設定待ちのため未実行"
+              echo
+              echo "\`EXPO_TOKEN\` が未登録です。"
+              echo "https://expo.dev/settings/access-tokens で発行して"
+              echo "リポジトリの Secrets に入れると、次の push から自動公開されます。"
+              echo
+              echo "それまでは手元から \`eas update\` を実行してください。"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Setup pnpm
+        if: steps.guard.outputs.configured == 'true'
         uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
+        if: steps.guard.outputs.configured == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install dependencies
+        if: steps.guard.outputs.configured == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Setup EAS
+        if: steps.guard.outputs.configured == 'true'
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: EAS Update (preview)
-        if: github.event_name != 'workflow_dispatch'
+        if: steps.guard.outputs.configured == 'true' && github.event_name != 'workflow_dispatch'
         working-directory: apps/mobile
         run: eas update --channel preview --auto --non-interactive
 
       - name: EAS Update (production, manual only)
-        if: github.event_name == 'workflow_dispatch'
+        if: steps.guard.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'
         working-directory: apps/mobile
         run: eas update --channel production --auto --non-interactive

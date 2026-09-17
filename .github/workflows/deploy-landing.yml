@@ -23,14 +23,48 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # secrets は job 単位の if: では参照できないので、最初の step で見て以降を切り替える。
+      # 未登録のときに「失敗」にしないのは、まだ設定されていないだけで
+      # 壊れてはいないから。赤が常態化すると本当の失敗に気づけなくなる。
+      - name: Check deploy secrets
+        id: guard
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_LANDING }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "${VERCEL_TOKEN}" ]      || missing+=("VERCEL_TOKEN")
+          [ -n "${VERCEL_ORG_ID}" ]     || missing+=("VERCEL_ORG_ID")
+          [ -n "${VERCEL_PROJECT_ID}" ] || missing+=("VERCEL_PROJECT_ID_LANDING")
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=デプロイを飛ばしました::未登録の secret: ${missing[*]}"
+            {
+              echo "### Deploy Landing — 設定待ちのため未実行"
+              echo
+              echo "以下の GitHub Secrets が未登録です:"
+              for m in "${missing[@]}"; do echo "- \`${m}\`"; done
+              echo
+              echo "登録すると、このワークフローは次の push から実際にデプロイします。"
+              echo "取得方法は \`docs/PROGRESS.md\` の「GitHub Secrets」を参照。"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Vercel pull (production environment)
+        if: steps.guard.outputs.configured == 'true'
         working-directory: apps/landing
         run: npx vercel@59 pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Vercel build
+        if: steps.guard.outputs.configured == 'true'
         working-directory: apps/landing
         run: npx vercel@59 build --prod --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Vercel deploy (prebuilt, production)
+        if: steps.guard.outputs.configured == 'true'
         working-directory: apps/landing
         run: npx vercel@59 deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}

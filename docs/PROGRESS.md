@@ -73,8 +73,18 @@
 クレジットと WikiEntVec のライセンス表記。
 
 ### CI/CD（.github/workflows）
-`ci.yml` / `deploy-api.yml` / `deploy-landing.yml` / `eas-update.yml` を配置済み。
-**未検証**（GitHub Secrets が未登録のため。下の「朝やること」参照）。
+`ci.yml` / `deploy-api.yml` / `deploy-landing.yml` / `eas-update.yml`。
+
+- **`ci.yml` は通る**（Biome / tsc 4 パッケージ / vitest 171 件 / ruff）。
+  vitest のうち DB が要るものは接続できなければ自動でスキップするので、
+  CI に Postgres を用意しなくても落ちない。
+- **デプロイ 3 本は secrets 未登録のあいだ「飛ばして緑」**。
+  各ワークフローの先頭で必要な secret の有無を見て、無ければ何もせず
+  ジョブサマリに不足している名前を出す。設定していないだけで壊れてはいないものを
+  赤にすると、本当の失敗に気づけなくなるため。
+  - ただし `deploy-api.yml` の **tsup ビルドとワークスペース import の検証は
+    secrets 無しでも毎回走る**（コードの健全性は鍵の有無と無関係なので）。
+  - secrets を登録すれば、次の push から実際にデプロイが動く。
 
 ### モバイル（apps/mobile）
 - Expo SDK 57 公式テンプレートから起こし、pnpm モノレポ用に Metro を設定
@@ -143,17 +153,31 @@ docker exec coto2ba-pg psql -U coto2ba -d coto2ba -c \
 ```
 **展示日の goal は手で選ぶ想定**（`daily_challenges` は直接編集してよい）。
 
-### 4. GitHub Secrets を登録して CI を通す
-`VERCEL_TOKEN` / `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID_API` / `VERCEL_PROJECT_ID_LANDING` /
-`DATABASE_URL_DIRECT` / `EXPO_TOKEN`
+### 4. GitHub Secrets を登録して自動デプロイを有効にする
+登録するまで CI は緑のまま通る（デプロイ部分を飛ばす）ので、急がなくてよい。
+登録すると次の push から `main` → 本番デプロイが自動で走るようになる。
 
-値の取り方:
+**手で発行が要るもの（ブラウザ）**
+- `VERCEL_TOKEN` … https://vercel.com/account/tokens
+- `EXPO_TOKEN` … https://expo.dev/settings/access-tokens
+  （`eas token:create` のような CLI は**無い**。必ず web で発行する）
+
+**リポジトリから読めるもの**
 ```bash
-cat apps/api/.vercel/project.json      # orgId / projectId（API）
-cat apps/landing/.vercel/project.json  # projectId（landing）
-grep DATABASE_URL_DIRECT apps/api/.env.neon
-npx eas-cli token:create               # EXPO_TOKEN
-# VERCEL_TOKEN は https://vercel.com/account/tokens
+gh secret set VERCEL_ORG_ID            --body "$(jq -r .orgId     apps/api/.vercel/project.json)"
+gh secret set VERCEL_PROJECT_ID_API    --body "$(jq -r .projectId apps/api/.vercel/project.json)"
+gh secret set VERCEL_PROJECT_ID_LANDING --body "$(jq -r .projectId apps/landing/.vercel/project.json)"
+gh secret set DATABASE_URL_DIRECT      --body "$(grep -m1 '^DATABASE_URL_DIRECT=' apps/api/.env.neon | cut -d= -f2-)"
+
+# 上の 2 つは発行したトークンを貼る（対話で入力される）
+gh secret set VERCEL_TOKEN
+gh secret set EXPO_TOKEN
+```
+
+登録後の確認:
+```bash
+gh secret list
+gh workflow run "Deploy Landing" && gh run watch
 ```
 
 ### 5. 独自ドメイン（任意）
