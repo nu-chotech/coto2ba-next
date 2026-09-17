@@ -482,6 +482,20 @@ export function recoverSession(): Promise<SessionRecovery> {
 // ── ブースモード ────────────────────────────────────────────
 
 /**
+ * 「次の人へ」の結果。
+ *
+ * **`switched` を必ず見ること。** 失敗しても `token` は（前の人のものが）返るので、
+ * これを見ないと「切り替わっていないのに切り替わったつもりで」続きの処理
+ * （ブースモードの入れ直しなど）を前の来場者に対して打ってしまう。
+ */
+export type ResetSessionResult = {
+  /** 新しい匿名ユーザーに切り替わったか。 */
+  switched: boolean
+  /** いま使えるトークン（失敗時は前の人のもの）。 */
+  token: string | null
+}
+
+/**
  * ブースモードの「次の人へ」（SPEC §8.8）。
  * 新しい匿名ユーザーを作って、**成功したときだけ**トークンを差し替える。
  *
@@ -489,16 +503,20 @@ export function recoverSession(): Promise<SessionRecovery> {
  * 「前の人のトークンも無い・新しいトークンも無い」状態になる。
  * サインインは Authorization を送らないので、古いトークンを持ったままでも
  * 必ず別の匿名ユーザーが作られる。
+ *
+ * **作られた匿名ユーザーの `booth` は DB 既定の `false`。**
+ * ブースモードの引き継ぎは呼び出し側の責任
+ * （`features/profile/booth.ts` の `handOverToNextPlayer`）。
  */
-export function resetSession(): Promise<string | null> {
+export function resetSession(): Promise<ResetSessionResult> {
   return runExclusive(async () => {
     const created = await requestAnonymousToken()
     if (created === null) {
       console.warn(`${LOG} 「次の人へ」に失敗しました。いまのセッションを維持します`)
-      return await getToken()
+      return { switched: false, token: await getToken() }
     }
     await setToken(created)
-    return created
+    return { switched: true, token: created }
   })
 }
 
