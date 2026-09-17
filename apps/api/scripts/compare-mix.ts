@@ -8,12 +8,18 @@ import { readFile } from 'node:fs/promises'
 import { normalizeRatio } from '@coto2ba/contracts'
 import { sql } from 'drizzle-orm'
 import { db, pool } from '../src/db/client'
-import { compareMixCandidates, summarizeMixComparisons } from '../src/services/mix-scoring'
+import {
+  attachRanks,
+  compareMixCandidates,
+  matchesProduction,
+  summarizeMixComparisons,
+} from '../src/services/mix-scoring'
 import {
   lookupWord,
   mixAndRank,
   mixCandidateMetrics,
   mixCandidateMetricsQuery,
+  rankOf,
 } from '../src/services/vector'
 
 type Case = { goal: string; current: string; input_word: string; ratio: number }
@@ -80,6 +86,23 @@ async function main() {
         item.ratio,
       )
       const comparison = compareMixCandidates(candidates)
+      // ゲームの勝敗は rank <= CLEAR_RANK で決まる。cos 値だけでは判断材料にならないので
+      // 選ばれた語ぶんだけ rank を引く（rank は全走査なので語数を絞る）。
+      const selectedWords = [
+        ...new Set(
+          [comparison.classic?.word, ...comparison.variants.map((variant) => variant.word)].filter(
+            (word): word is string => word !== undefined,
+          ),
+        ),
+      ]
+      const rankEntries = await Promise.all(
+        selectedWords.map(async (word) => {
+          const rank = await rankOf(tx, item.goal, word)
+          if (rank === null) throw new Error(`rank lookup failed for ${word}`)
+          return [word, rank] as const
+        }),
+      )
+      const ranked = attachRanks(comparison, new Map(rankEntries))
       const production = await mixAndRank(tx, item.goal, item.current, item.input_word, item.ratio)
       const plan = explain
         ? (
@@ -92,25 +115,28 @@ async function main() {
       results.push({
         input: item,
         candidate_count: candidates.length,
-        comparison,
+        ranked,
         production,
         plan,
       })
     }
     return results
   })
-  const formatted = outputs.map(({ input, candidate_count, comparison, production, plan }) => ({
+  const formatted = outputs.map(({ input, candidate_count, ranked, production, plan }) => ({
     input,
     candidate_count,
     production_result: production?.result ?? null,
-    classic_matches_production: comparison.classic?.word === production?.result,
-    classic: comparison.classic && {
-      word: comparison.classic.word,
-      blend_similarity: comparison.classic.blendSimilarity,
-      goal_similarity: comparison.classic.goalSimilarity,
-      score: comparison.classic.score,
+    production_rank: production?.rank ?? null,
+    classic_matches_production: matchesProduction(ranked.classic, production?.result ?? null),
+    classic: ranked.classic && {
+      word: ranked.classic.word,
+      blend_similarity: ranked.classic.blendSimilarity,
+      goal_similarity: ranked.classic.goalSimilarity,
+      score: ranked.classic.score,
+      rank: ranked.classic.rank,
+      cleared: ranked.classic.cleared,
     },
-    variants: comparison.variants.map((variant) => ({
+    variants: ranked.variants.map((variant) => ({
       beta: variant.beta,
       word: variant.word,
       blend_similarity: variant.blendSimilarity,
@@ -119,10 +145,13 @@ async function main() {
       changed_from_classic: variant.changedFromClassic,
       blend_difference: variant.blendDifference,
       goal_difference: variant.goalDifference,
+      rank: variant.rank,
+      rank_improvement: variant.rankImprovement,
+      cleared: variant.cleared,
     })),
     ...(plan ? { plan } : {}),
   }))
-  const summary = summarizeMixComparisons(outputs.map((output) => output.comparison))
+  const summary = summarizeMixComparisons(outputs.map((output) => output.ranked))
   process.stdout.write(`${JSON.stringify({ cases: formatted, summary }, null, 2)}\n`)
 }
 
