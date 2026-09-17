@@ -1,3 +1,8 @@
 package.json
 README.md
 node_modules/
+# ビルドの副産物を公開しない。outputDirectory が "." なので、
+# ここに書かないと apps/landing 直下のものが全部そのまま配信される。
+.turbo/
+.vercel/
+*.log

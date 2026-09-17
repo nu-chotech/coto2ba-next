@@ -59,6 +59,14 @@ jobs:
         working-directory: apps/landing
         run: npx vercel@59 pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
+      # pnpm / setup-node を **あえて置いていない**。
+      # apps/landing は index.html 1 枚で、vercel.json で installCommand と
+      # buildCommand を空文字にしてあるのでパッケージマネージャは要らない。
+      #
+      # 逆に言うと、vercel.json のこの 2 つを空文字から戻すと
+      # `vercel build` がモノレポ全体の install を始めて
+      # `spawn pnpm ENOENT` で落ちる（null は「未設定＝既定で install する」の意味で、
+      # 「何もしない」ではない）。触るときはここも一緒に直すこと。
       - name: Vercel build
         if: steps.guard.outputs.configured == 'true'
         working-directory: apps/landing

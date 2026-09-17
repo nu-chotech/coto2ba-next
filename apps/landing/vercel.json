@@ -13,7 +13,7 @@
     }
   ],
   "outputDirectory": ".",
-  "buildCommand": null,
-  "installCommand": null,
+  "buildCommand": "",
+  "installCommand": "",
   "framework": null
 }
