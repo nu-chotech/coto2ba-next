@@ -75,6 +75,19 @@ export function withAlpha(input: string | null | undefined, alpha: number): stri
   return formatRgba([r, g, b, alpha])
 }
 
+/**
+ * 半透明の色を地の上に重ねた結果の色（アルファ合成）。
+ *
+ * カードの面（`surface`）やガラスの着色は半透明なので、**そのままの値で
+ * コントラストを測っても意味がない**。合成してから測るために使う。
+ */
+export function compositeOver(foreground: string, background: string): string {
+  const [fr, fg, fb, fa] = parseColor(foreground)
+  const [br, bg, bb] = parseColor(background)
+  const a = Math.min(Math.max(fa, 0), 1)
+  return formatRgba([fr * a + br * (1 - a), fg * a + bg * (1 - a), fb * a + bb * (1 - a), 1])
+}
+
 /** 2 色を線形補間する（JS スレッド用。worklet 側は interpolateColor を使う）。 */
 export function mixColor(from: string, to: string, t: number): string {
   const a = parseColor(from)
@@ -86,4 +99,34 @@ export function mixColor(from: string, to: string, t: number): string {
     a[2] + (b[2] - a[2]) * clamped,
     a[3] + (b[3] - a[3]) * clamped,
   ])
+}
+
+// ── コントラスト ────────────────────────────────────────────
+const LUMINANCE_KNEE = 0.03928
+const LUMINANCE_R = 0.2126
+const LUMINANCE_G = 0.7152
+const LUMINANCE_B = 0.0722
+const CONTRAST_OFFSET = 0.05
+
+/** WCAG 2.1 の相対輝度。 */
+function relativeLuminance([r, g, b]: Rgba): number {
+  const channel = (v: number) => {
+    const s = v / BYTE_MAX
+    return s <= LUMINANCE_KNEE ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  return LUMINANCE_R * channel(r) + LUMINANCE_G * channel(g) + LUMINANCE_B * channel(b)
+}
+
+/**
+ * 前景と背景のコントラスト比（1〜21）。
+ *
+ * 会場は照明が明るく、屋外光も入る。ガラスの上に薄い文字を置くと読めなくなるので、
+ * **読めるかどうかをテストで担保する**ために使う（WCAG AA は本文 4.5、補足 3）。
+ * 半透明の色はアルファを無視して重ねる前の色で測る（地が一定でないため）。
+ */
+export function contrastRatio(foreground: string, background: string): number {
+  const a = relativeLuminance(parseColor(foreground))
+  const b = relativeLuminance(parseColor(background))
+  const [hi, lo] = a > b ? [a, b] : [b, a]
+  return (hi + CONTRAST_OFFSET) / (lo + CONTRAST_OFFSET)
 }

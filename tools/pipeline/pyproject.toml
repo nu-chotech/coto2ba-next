@@ -13,6 +13,7 @@ dependencies = [
     "tqdm>=4.67",
     "python-dotenv>=1.0",
     "httpx>=0.28",
+    "pillow>=12.3.0",
 ]
 
 [project.optional-dependencies]

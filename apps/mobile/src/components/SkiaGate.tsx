@@ -7,12 +7,20 @@
  * - **Web**: CanvasKit の WASM を非同期で読む必要があり、しかも `Skia` は import 時に
  *   束縛されるので、後から `LoadSkiaWeb()` しても import 済みのモジュールからは見えない
  *   （`WithSkiaWeb` による遅延 import が要る）。**Web は対象外**なので代替表示にする。
+ *
+ * **使うのは図鑑タブだけ。図鑑は宇宙なのでライトモードでも暗いまま**（SPEC §4.3）。
+ * ここをスキームに追従させると、暗い図鑑の上に紙色の板が出て文字が消える。
+ * だから `useTheme()` を使わず、ダーク固定の互換シムから `cosmos` を読む
+ * （覆い隠す画面と同じ地の色になる）。
  */
 
 import { rect } from '@shopify/react-native-skia'
 import type { ReactNode } from 'react'
 import { Platform, StyleSheet, Text, View } from 'react-native'
 import { paletteForTier, spacing, typography } from '../theme'
+
+/** 図鑑の地。スキームに追従させない（図鑑はライトでも暗い）。 */
+const SPACE_COLORS = paletteForTier('cosmos')
 
 /**
  * Skia が実際に使えるか。**存在チェックではなく 1 回呼んで確かめる。**
@@ -57,8 +65,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm,
     padding: spacing.xl,
-    backgroundColor: paletteForTier('mono').bg,
+    backgroundColor: SPACE_COLORS.bg,
   },
-  title: { ...typography.title, color: paletteForTier('mono').text, textAlign: 'center' },
-  body: { ...typography.body, color: paletteForTier('mono').sub, textAlign: 'center' },
+  title: { ...typography.title, color: SPACE_COLORS.text, textAlign: 'center' },
+  body: { ...typography.body, color: SPACE_COLORS.sub, textAlign: 'center' },
 })

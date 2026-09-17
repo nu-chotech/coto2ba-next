@@ -21,23 +21,24 @@ import {
   normalizeWord,
 } from '@coto2ba/contracts'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { SymbolView } from 'expo-symbols'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native'
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   ErrorState,
+  GlassButton,
   GlassCard,
   HintSheet,
   HistoryStrip,
   INPUT_OOV_MESSAGE,
   INPUT_SANITY_MAX_LENGTH,
+  MIN_TAP_SIZE,
   MixOverlay,
   MixSlider,
-  PrimaryButton,
   RankMeter,
   SkeletonCard,
+  SymbolIcon,
   TierBackground,
   toMessageJa,
   WordDisplay,
@@ -57,7 +58,7 @@ import {
 import { feedback, feedbackForRankChange } from '../../../../lib/feedback'
 import { isKnownWord, isVocabReady } from '../../../../lib/vocab'
 import { useUiStore } from '../../../../store/ui'
-import { layout, paletteForTier, spacing, typography } from '../../../../theme'
+import { iconSize, layout, screenPadding, spacing, typography, useTheme } from '../../../../theme'
 
 type Pending = { from: string; input: string }
 
@@ -86,6 +87,7 @@ export default function GameScreen() {
   const [inputError, setInputError] = useState<string | null>(null)
   const [hints, setHints] = useState<Hint[]>([])
 
+  const { paletteForTier } = useTheme()
   const detail = game.data ?? null
   const tier = detail === null ? 'mono' : currentTier(detail)
   const colors = paletteForTier(tier)
@@ -209,7 +211,7 @@ export default function GameScreen() {
   if (game.isPending) {
     return (
       <TierBackground tier="mono">
-        <View style={[styles.center, { paddingTop: insets.top + spacing.xxl }]}>
+        <View style={[styles.center, { paddingTop: insets.top }]}>
           <SkeletonCard />
         </View>
       </TierBackground>
@@ -219,7 +221,7 @@ export default function GameScreen() {
   if (game.isError || detail === null) {
     return (
       <TierBackground tier="mono">
-        <View style={[styles.center, { paddingTop: insets.top + spacing.xxl }]}>
+        <View style={[styles.center, { paddingTop: insets.top }]}>
           <ErrorState
             error={game.error}
             onRetry={() => void game.refetch()}
@@ -237,10 +239,7 @@ export default function GameScreen() {
       <KeyboardAwareScrollView
         bottomOffset={spacing.xxl}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.xxxl },
-        ]}
+        contentContainerStyle={[styles.content, screenPadding(insets)]}
       >
         {/* 1. ゴールカード */}
         <GlassCard tint={colors.glassTint} style={styles.card}>
@@ -250,14 +249,9 @@ export default function GameScreen() {
               accessibilityRole="button"
               accessibilityLabel="メニュー"
               onPress={confirmGiveUp}
-              hitSlop={spacing.md}
+              style={styles.menuButton}
             >
-              <SymbolView
-                name="ellipsis.circle"
-                tintColor={colors.sub}
-                size={typography.subtitle.fontSize}
-                fallback={<Text style={[typography.subtitle, { color: colors.sub }]}>…</Text>}
-              />
+              <SymbolIcon name="ellipsis.circle" size={iconSize.xl} color={colors.sub} />
             </Pressable>
           </View>
 
@@ -293,7 +287,7 @@ export default function GameScreen() {
         <RankMeter rank={detail.current_rank} prevRank={previousRank(detail)} tier={tier} />
 
         {finished ? (
-          <PrimaryButton
+          <GlassButton
             title="結果を見る"
             onPress={() => router.replace(resultHref(gameId))}
             tier={tier}
@@ -313,16 +307,12 @@ export default function GameScreen() {
             <MixSlider value={ratio} onChange={setRatio} tier={tier} disabled={pending !== null} />
 
             {/* 6. 混合ボタン */}
-            <PrimaryButton
-              title="混ぜる"
-              onPress={startMix}
-              tier={tier}
-              loading={pending !== null}
-            />
+            <GlassButton title="混ぜる" onPress={startMix} tier={tier} loading={pending !== null} />
 
             {/* 7. ヒント */}
-            <PrimaryButton
+            <GlassButton
               title={`ヒント（使った回数 ${detail.hint_count}）`}
+              icon="lightbulb"
               onPress={openHints}
               tier={tier}
               variant="ghost"
@@ -362,10 +352,20 @@ export default function GameScreen() {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: layout.screenPaddingHorizontal,
-    gap: spacing.lg,
+    gap: layout.sectionGap,
   },
   center: { flex: 1, justifyContent: 'center', paddingHorizontal: layout.screenPaddingHorizontal },
-  card: { gap: spacing.sm },
+  card: { gap: layout.cardGap },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  hero: { paddingVertical: spacing.lg },
+  // 主役の語だけは上下を大きく空けて、1 つだけ浮かせる。
+  hero: { paddingVertical: spacing.xl },
+  // 「…」は小さいので、当たり判定を Apple の 44pt まで広げてカードの角に寄せる。
+  menuButton: {
+    width: MIN_TAP_SIZE,
+    height: MIN_TAP_SIZE,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginRight: -spacing.sm,
+    marginVertical: -spacing.md,
+  },
 })

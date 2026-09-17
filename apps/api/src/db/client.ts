@@ -31,7 +31,7 @@ function createPool(): Pool {
     connectionTimeoutMillis: 10_000,
     // Neon は公開 CA なので検証を有効にしたままでよい。ローカル Docker だけ TLS を切る。
     // 部分一致ではなくホスト名で判定する（'localhost' を含むだけの外部ホストに騙されないため）。
-    ssl: isLocalHost(connectionString) ? false : true,
+    ssl: !isLocalHost(connectionString),
   })
   // Vercel Functions で invocation を跨いだ接続リークを防ぐ
   void import('@vercel/functions')

@@ -17,10 +17,11 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
-import { borderWidth, palette, paletteForTier, radius, spacing, typography } from '../theme'
+import { radius, spacing, typography, useTheme } from '../theme'
 import { HINT_SHEET_MAX_HEIGHT_RATIO, HINT_SLOT_HEIGHT } from './constants'
+import { GlassButton } from './GlassButton'
 import { GlassCard } from './GlassCard'
-import { PrimaryButton } from './PrimaryButton'
+import { ListRow } from './ListRow'
 import { Skeleton } from './Skeleton'
 
 /**
@@ -58,12 +59,17 @@ export function HintSheet({
   onClose,
   onRetry,
 }: HintSheetProps) {
+  const { palette, paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   const { height } = useWindowDimensions()
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="閉じる" />
+      <Pressable
+        style={[styles.scrim, { backgroundColor: palette.scrim }]}
+        onPress={onClose}
+        accessibilityLabel="閉じる"
+      />
       <View style={styles.dock} pointerEvents="box-none">
         <GlassCard
           variant="sheet"
@@ -80,33 +86,28 @@ export function HintSheet({
           </Text>
 
           <ScrollView contentContainerStyle={styles.list}>
-            {loading
-              ? HINT_SLOT_IDS.map((slotId) => (
+            {loading ? (
+              <View style={styles.slots}>
+                {HINT_SLOT_IDS.map((slotId) => (
                   <Skeleton key={slotId} height={HINT_SLOT_HEIGHT} cornerRadius={radius.md} />
-                ))
-              : hints.map((hint) => (
-                  <Pressable
-                    key={hint.word}
-                    onPress={() => onPick(hint)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${hint.word} を ${ratioMixLabel(hint.ratio)} で混ぜる`}
-                    style={({ pressed }) => [
-                      styles.item,
-                      {
-                        borderColor: colors.sub,
-                        backgroundColor: pressed ? palette.pressed : colors.surface,
-                      },
-                    ]}
-                  >
-                    <Text style={[typography.body, { color: colors.text }]}>{hint.word}</Text>
-                    <View style={styles.ratio}>
-                      <Text style={[typography.label, { color: colors.sub }]}>混ぜ方</Text>
-                      <Text style={[typography.subtitle, { color: colors.accent }]}>
-                        {ratioMixLabel(hint.ratio)}
-                      </Text>
-                    </View>
-                  </Pressable>
                 ))}
+              </View>
+            ) : (
+              hints.map((hint, index) => (
+                <ListRow
+                  key={hint.word}
+                  title={hint.word}
+                  // ヒントは「語」だけでなく「混ぜ方」まで含めて 1 つの提案。
+                  // 表記は contracts の ratioMixLabel に集約している。
+                  value={ratioMixLabel(hint.ratio)}
+                  onPress={() => onPick(hint)}
+                  accessory="arrow.up.right"
+                  textColor={colors.text}
+                  subColor={colors.sub}
+                  divided={index > 0}
+                />
+              ))
+            )}
 
             {!loading &&
             hints.length === 0 &&
@@ -119,12 +120,12 @@ export function HintSheet({
                 <Text style={[typography.caption, { color: palette.negative }]}>
                   {errorMessage}
                 </Text>
-                <PrimaryButton title="もう一度" onPress={onRetry} tier={tier} variant="ghost" />
+                <GlassButton title="もう一度" onPress={onRetry} tier={tier} variant="ghost" />
               </View>
             ) : null}
           </ScrollView>
 
-          <PrimaryButton title="閉じる" onPress={onClose} tier={tier} variant="secondary" />
+          <GlassButton title="閉じる" onPress={onClose} tier={tier} variant="secondary" />
         </GlassCard>
       </View>
     </Modal>
@@ -132,29 +133,11 @@ export function HintSheet({
 }
 
 const styles = StyleSheet.create({
-  scrim: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: palette.scrim,
-  },
+  scrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   dock: { flex: 1, justifyContent: 'flex-end', padding: spacing.lg },
   sheet: { gap: spacing.md },
   header: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
-  list: { gap: spacing.sm, paddingVertical: spacing.sm },
-  item: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.md,
-    borderWidth: borderWidth.hairline,
-  },
-  /** 「今の語 : 混ぜる語」。表記は contracts の ratioMixLabel に集約している。 */
-  ratio: { alignItems: 'flex-end' },
+  list: { paddingVertical: spacing.sm },
+  slots: { gap: spacing.sm },
   error: { gap: spacing.sm, paddingTop: spacing.sm },
 })

@@ -30,7 +30,6 @@ import * as Linking from 'expo-linking'
 import * as WebBrowser from 'expo-web-browser'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -43,8 +42,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   ErrorState,
+  GlassButton,
   GlassCard,
-  PrimaryButton,
+  ListRow,
   Skeleton,
   TierBackground,
   toMessageJa,
@@ -75,11 +75,11 @@ import { useSettingsStore } from '../../../store/settings'
 import {
   borderWidth,
   layout,
-  palette,
-  paletteForTier,
   radius,
+  screenPadding,
   spacing,
   typography,
+  useTheme,
 } from '../../../theme'
 
 /**
@@ -91,7 +91,6 @@ const EXPO_GO_URL_PREFIX = 'exp://'
 
 /** 設定は演出帯を持たない。 */
 const SETTINGS_TIER = 'mono'
-const colors = paletteForTier(SETTINGS_TIER)
 
 const CREDITS = [
   {
@@ -129,6 +128,8 @@ const CREDITS = [
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
+  const { palette, paletteForTier } = useTheme()
+  const colors = paletteForTier(SETTINGS_TIER)
 
   const me = useMeQuery()
   const updateProfile = useUpdateProfileMutation()
@@ -297,15 +298,12 @@ export default function SettingsScreen() {
     <TierBackground tier={SETTINGS_TIER}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.xxxl },
-        ]}
+        contentContainerStyle={[styles.content, screenPadding(insets)]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.sub} />
         }
       >
-        <Text style={[typography.title, { color: colors.text }]}>設定</Text>
+        <Text style={[typography.largeTitle, { color: colors.text }]}>設定</Text>
 
         {/* ── 表示名 ── */}
         <GlassCard tint={colors.glassTint} style={styles.card}>
@@ -346,7 +344,7 @@ export default function SettingsScreen() {
             {nameError ?? (nameSaved ? '保存しました' : ' ')}
           </Text>
 
-          <PrimaryButton
+          <GlassButton
             title="名前を保存"
             onPress={onSaveName}
             tier={SETTINGS_TIER}
@@ -364,6 +362,10 @@ export default function SettingsScreen() {
             value={boothMode}
             onChange={onToggleBooth}
             disabled={me.isPending}
+            accent={colors.accent}
+            textColor={colors.text}
+            subColor={colors.sub}
+            trackColor={palette.border}
           />
           {updateProfile.isError ? (
             <Text style={[typography.label, { color: palette.negative }]}>
@@ -401,11 +403,22 @@ export default function SettingsScreen() {
               </Text>
               <Text style={[typography.label, { color: colors.sub }]}>{expiresLabel}</Text>
               <View style={styles.copyRow}>
-                <CopyButton label="コードをコピー" onPress={() => onCopy(transferData.token)} />
+                <GlassButton
+                  title="コード"
+                  icon="doc.on.doc"
+                  onPress={() => onCopy(transferData.token)}
+                  tier={SETTINGS_TIER}
+                  variant="secondary"
+                  compact
+                />
                 {/* コピーするのは QR と同じリンク（貼り付け先で開いてもアプリに入る）。 */}
-                <CopyButton
-                  label="リンクをコピー"
+                <GlassButton
+                  title="リンク"
+                  icon="doc.on.doc"
                   onPress={() => onCopy(qrValue ?? transferData.url)}
+                  tier={SETTINGS_TIER}
+                  variant="secondary"
+                  compact
                 />
               </View>
               <Text style={[typography.label, { color: colors.sub }]}>
@@ -414,7 +427,7 @@ export default function SettingsScreen() {
             </View>
           ) : null}
 
-          <PrimaryButton
+          <GlassButton
             title={transferData === null ? '引き継ぎコードを作る' : 'コードを作り直す'}
             onPress={onCreateTransfer}
             tier={SETTINGS_TIER}
@@ -461,7 +474,7 @@ export default function SettingsScreen() {
             {claimError ?? (claimedName !== null ? `${claimedName} のデータを引き継ぎました` : ' ')}
           </Text>
 
-          <PrimaryButton
+          <GlassButton
             title="この端末に引き継ぐ"
             onPress={onClaim}
             tier={SETTINGS_TIER}
@@ -477,8 +490,12 @@ export default function SettingsScreen() {
             description="端末がサイレントのときは鳴りません。"
             value={soundEnabled}
             onChange={setSoundEnabled}
+            accent={colors.accent}
+            textColor={colors.text}
+            subColor={colors.sub}
+            trackColor={palette.border}
           />
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: palette.border }]} />
           <ToggleRow
             title="ハプティクス"
             description="混合・ランク変化・クリアで振動します。"
@@ -487,27 +504,29 @@ export default function SettingsScreen() {
               setHapticsEnabled(next)
               if (next) feedback('slider_detent')
             }}
+            accent={colors.accent}
+            textColor={colors.text}
+            subColor={colors.sub}
+            trackColor={palette.border}
           />
         </GlassCard>
 
         {/* ── クレジット ── */}
         <GlassCard tint={colors.glassTint} style={styles.card}>
           <Text style={[typography.label, { color: colors.sub }]}>クレジット</Text>
-          {CREDITS.map((credit) => (
-            <Pressable
+          {CREDITS.map((credit, index) => (
+            <ListRow
               key={credit.id}
-              disabled={credit.url === null}
-              onPress={() => {
-                if (credit.url !== null) void WebBrowser.openBrowserAsync(credit.url)
-              }}
-              style={({ pressed }) => [
-                styles.credit,
-                { backgroundColor: pressed ? palette.pressed : palette.transparent },
-              ]}
-            >
-              <Text style={[typography.body, { color: colors.text }]}>{credit.title}</Text>
-              <Text style={[typography.label, { color: colors.sub }]}>{credit.description}</Text>
-            </Pressable>
+              title={credit.title}
+              description={credit.description}
+              onPress={
+                credit.url === null ? null : () => void WebBrowser.openBrowserAsync(credit.url)
+              }
+              accessory="arrow.up.right"
+              textColor={colors.text}
+              subColor={colors.sub}
+              divided={index > 0}
+            />
           ))}
           <Text style={[typography.label, { color: colors.sub }]}>
             ベクトルは CC BY-SA 3.0 の継承対象です。派生データを公開するときは同じ条件で。
@@ -530,45 +549,35 @@ function ToggleRow({
   value,
   onChange,
   disabled = false,
+  accent,
+  textColor,
+  subColor,
+  trackColor,
 }: {
   title: string
   description: string
   value: boolean
   onChange: (next: boolean) => void
   disabled?: boolean
+  accent: string
+  textColor: string
+  subColor: string
+  trackColor: string
 }) {
   return (
     <View style={styles.toggleRow}>
       <View style={styles.toggleText}>
-        <Text style={[typography.body, { color: colors.text }]}>{title}</Text>
-        <Text style={[typography.label, { color: colors.sub }]}>{description}</Text>
+        <Text style={[typography.body, { color: textColor }]}>{title}</Text>
+        <Text style={[typography.label, { color: subColor }]}>{description}</Text>
       </View>
+      {/* つまみの色は指定しない（iOS も Android も素の白が正しい）。 */}
       <Switch
         value={value}
         onValueChange={onChange}
         disabled={disabled}
-        trackColor={{ false: palette.divider, true: colors.accent }}
-        thumbColor={palette.white}
+        trackColor={{ false: trackColor, true: accent }}
       />
     </View>
-  )
-}
-
-function CopyButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.copyButton,
-        {
-          borderColor: colors.sub,
-          backgroundColor: pressed ? palette.pressed : palette.transparent,
-        },
-      ]}
-    >
-      <Text style={[typography.label, { color: colors.text }]}>{label}</Text>
-    </Pressable>
   )
 }
 
@@ -584,9 +593,9 @@ function formatExpiry(expiresAt: string | null): string {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: layout.screenPaddingHorizontal,
-    gap: spacing.lg,
+    gap: layout.sectionGap,
   },
-  card: { gap: spacing.sm },
+  card: { gap: layout.cardGap },
   input: {
     height: layout.inputHeight,
     borderRadius: radius.md,
@@ -600,21 +609,9 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   toggleText: { flex: 1, gap: spacing.xs },
-  divider: { height: borderWidth.hairline, backgroundColor: palette.divider },
+  divider: { height: borderWidth.hairline },
   transfer: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
   token: { textAlign: 'center', letterSpacing: 1 },
   copyRow: { flexDirection: 'row', gap: spacing.sm },
-  copyButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.pill,
-    borderWidth: borderWidth.hairline,
-  },
-  credit: {
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.sm,
-  },
   footer: { textAlign: 'center' },
 })

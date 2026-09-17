@@ -5,19 +5,20 @@
  * 端末側で並べ替えない。`entry.rank` もサーバーの値をそのまま出す。
  *
  * - 自分の行は枠と地でハイライトする。
- * - 完全錬成には印（contracts の `TIER_EMOJI.gold`）。
+ * - 完全錬成には印（SF Symbols の `crown.fill`）。
  */
 
-import { type LeaderboardEntry, TIER_EMOJI, type TierId } from '@coto2ba/contracts'
+import type { LeaderboardEntry, TierId } from '@coto2ba/contracts'
 import { StyleSheet, Text, View } from 'react-native'
+import { SymbolIcon } from '../../components'
 import {
   borderWidth,
-  palette,
-  paletteForTier,
+  iconSize,
   radius,
   spacing,
-  tierPalettes,
+  TRANSPARENT,
   typography,
+  useTheme,
 } from '../../theme'
 import { LEADERBOARD_ROW_MIN_HEIGHT, ME_ROW_BORDER_WIDTH, RANK_BADGE_SIZE } from './constants'
 import { formatJstTime } from './dates'
@@ -33,10 +34,13 @@ export type LeaderboardRowProps = {
 }
 
 export function LeaderboardRow({ entry, tier, detached = false }: LeaderboardRowProps) {
+  const { palette, paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
+  // 上位 3 位と完全錬成の印は、その日の tier に関係なく「黄金」の色で出す。
+  const gold = paletteForTier('gold')
   const podium = entry.rank <= PODIUM_RANK_MAX
-  const badgeColor = podium ? tierPalettes.gold.accent : colors.sub
-  const badgeTextColor = podium ? palette.base : colors.text
+  const badgeColor = podium ? gold.accent : colors.sub
+  const badgeTextColor = podium ? gold.onAccent : colors.text
 
   const clearedAt = formatJstTime(entry.cleared_at)
   const subtitle = [
@@ -52,8 +56,8 @@ export function LeaderboardRow({ entry, tier, detached = false }: LeaderboardRow
       style={[
         styles.root,
         {
-          backgroundColor: entry.is_me ? colors.surface : palette.transparent,
-          borderColor: entry.is_me ? colors.accent : palette.divider,
+          backgroundColor: entry.is_me ? colors.surface : TRANSPARENT,
+          borderColor: entry.is_me ? colors.accent : palette.border,
           borderWidth: entry.is_me ? ME_ROW_BORDER_WIDTH : borderWidth.hairline,
         },
       ]}
@@ -74,9 +78,10 @@ export function LeaderboardRow({ entry, tier, detached = false }: LeaderboardRow
       <View style={styles.right}>
         <Text style={[typography.subtitle, { color: colors.text }]}>{entry.move_count} 手</Text>
         {entry.perfect ? (
-          <Text style={[typography.label, { color: tierPalettes.gold.accent }]}>
-            {TIER_EMOJI.gold} 完全錬成
-          </Text>
+          <View style={styles.perfect}>
+            <SymbolIcon name="crown.fill" size={iconSize.sm} color={gold.accent} />
+            <Text style={[typography.label, { color: gold.accent }]}>完全錬成</Text>
+          </View>
         ) : null}
       </View>
     </View>
@@ -102,4 +107,5 @@ const styles = StyleSheet.create({
   },
   middle: { flex: 1, gap: spacing.xs },
   right: { alignItems: 'flex-end', gap: spacing.xs },
+  perfect: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
 })

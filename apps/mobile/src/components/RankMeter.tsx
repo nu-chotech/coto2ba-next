@@ -10,8 +10,10 @@ import { PERFECT_RANK, rankToHeat, type TierId } from '@coto2ba/contracts'
 import { useEffect } from 'react'
 import { type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native'
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
-import { palette, paletteForTier, radius, spacing, typography } from '../theme'
+import { iconSize, radius, spacing, typography, useTheme } from '../theme'
 import { RANK_METER_DURATION_MS, RANK_METER_HEIGHT } from './constants'
+import { SymbolIcon } from './SymbolIcon'
+import type { SymbolName } from './symbols'
 
 export type RankMeterProps = {
   rank: number
@@ -26,17 +28,25 @@ function formatRank(rank: number): string {
   return `${rank.toLocaleString('ja-JP')} 位`
 }
 
-/** 前手からの差分の文字（「1,204 近づいた」）。null なら出さない。 */
-function formatDelta(rank: number, prevRank: number | null | undefined): string | null {
+/**
+ * 前手からの差分（「1,204 近づいた」）。null なら出さない。
+ * 矢印は文字ではなくアイコンで出す（`icon`）ので、ここでは名前だけ返す。
+ */
+type Delta = { icon: SymbolName | null; text: string }
+
+function formatDelta(rank: number, prevRank: number | null | undefined): Delta | null {
   if (prevRank === null || prevRank === undefined) return null
   const diff = prevRank - rank
-  if (diff === 0) return '変わらず'
-  const arrow = diff > 0 ? '↑' : '↓'
+  if (diff === 0) return { icon: null, text: '変わらず' }
   const label = diff > 0 ? '近づいた' : '遠ざかった'
-  return `${arrow} ${Math.abs(diff).toLocaleString('ja-JP')} ${label}`
+  return {
+    icon: diff > 0 ? 'arrow.up' : 'arrow.down',
+    text: `${Math.abs(diff).toLocaleString('ja-JP')} ${label}`,
+  }
 }
 
 export function RankMeter({ rank, prevRank = null, tier, style }: RankMeterProps) {
+  const { palette, paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   const heat = rankToHeat(rank)
   const fill = useSharedValue(heat)
@@ -61,10 +71,20 @@ export function RankMeter({ rank, prevRank = null, tier, style }: RankMeterProps
       <View style={styles.row}>
         <Text style={[typography.subtitle, { color: colors.text }]}>{formatRank(rank)}</Text>
         {delta !== null ? (
-          <Text style={[typography.label, { color: deltaColor }]}>{delta}</Text>
+          <View style={styles.delta}>
+            {delta.icon !== null ? (
+              <SymbolIcon
+                name={delta.icon}
+                size={iconSize.sm}
+                color={deltaColor}
+                weight="semibold"
+              />
+            ) : null}
+            <Text style={[typography.label, { color: deltaColor }]}>{delta.text}</Text>
+          </View>
         ) : null}
       </View>
-      <View style={[styles.track, { backgroundColor: palette.divider }]}>
+      <View style={[styles.track, { backgroundColor: palette.border }]}>
         <Animated.View style={[styles.fill, { backgroundColor: colors.accent }, fillStyle]} />
       </View>
       <Text style={[typography.label, { color: colors.sub }]}>
@@ -76,7 +96,8 @@ export function RankMeter({ rank, prevRank = null, tier, style }: RankMeterProps
 
 const styles = StyleSheet.create({
   root: { gap: spacing.sm },
-  row: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  delta: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   track: {
     height: RANK_METER_HEIGHT,
     borderRadius: radius.pill,

@@ -48,7 +48,7 @@ import {
 } from 'react-native'
 import { isAllHiragana } from '../lib/text'
 import { isKnownWord, isVocabReady, suggest } from '../lib/vocab'
-import { layout, palette, paletteForTier, radius, spacing, typography } from '../theme'
+import { layout, radius, spacing, typography, useTheme } from '../theme'
 import {
   INPUT_ERROR_ROW_HEIGHT,
   INPUT_OOV_DEBOUNCE_MS,
@@ -98,6 +98,7 @@ export const WordInput = forwardRef<WordInputHandle, WordInputProps>(function Wo
   },
   ref,
 ) {
+  const { palette, paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   const latest = useRef('')
   const inputRef = useRef<TextInput | null>(null)

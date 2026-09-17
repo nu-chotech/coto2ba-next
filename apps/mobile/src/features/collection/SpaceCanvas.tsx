@@ -40,6 +40,8 @@ import { useEffect, useMemo } from 'react'
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native'
 import { type ComposedGesture, Gesture, GestureDetector } from 'react-native-gesture-handler'
 import { runOnJS, type SharedValue, useDerivedValue, useSharedValue } from 'react-native-reanimated'
+// 図鑑は宇宙なので、ライトモードでも暗いまま（意図的な例外、SPEC §4.3）。
+// 色はダーク固定の互換シムから取る。
 import { palette, tierPalettes } from '../../theme'
 import type { SpaceCamera } from './camera'
 import {

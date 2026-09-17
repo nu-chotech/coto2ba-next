@@ -21,9 +21,11 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   ErrorState,
+  GlassButton,
   GlassCard,
   HERO_LINE_HEIGHT_RATIO,
-  PrimaryButton,
+  LOGO_HEIGHT_HEADER,
+  Logo,
   Segmented,
   Skeleton,
   SkeletonCard,
@@ -38,7 +40,15 @@ import {
   useDailyQuery,
   useMeQuery,
 } from '../../../features/game'
-import { heroFontSize, layout, paletteForTier, radius, spacing, typography } from '../../../theme'
+import {
+  heroFontSize,
+  layout,
+  radius,
+  screenPadding,
+  spacing,
+  typography,
+  useTheme,
+} from '../../../theme'
 
 /** ロビーは演出帯を持たないので、常に落ち着いた mono。 */
 const LOBBY_TIER = 'mono'
@@ -78,6 +88,7 @@ function dailyActionLabel(state: DailyState): string {
 export default function LobbyScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const { paletteForTier } = useTheme()
   const colors = paletteForTier(LOBBY_TIER)
 
   const daily = useDailyQuery()
@@ -118,18 +129,18 @@ export default function LobbyScreen() {
   return (
     <TierBackground tier={LOBBY_TIER}>
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.xxxl },
-        ]}
+        contentContainerStyle={[styles.content, screenPadding(insets)]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.sub} />
         }
       >
-        <Text style={[typography.title, { color: colors.text }]}>コトコトバ</Text>
-        <Text style={[typography.caption, { color: colors.sub }]}>
-          言葉を混ぜて、ゴールの語に近づける
-        </Text>
+        {/* ロゴを出すのでタイトル文字は出さない（同じ情報を二重に出さない）。 */}
+        <View style={styles.header}>
+          <Logo height={LOGO_HEIGHT_HEADER} />
+          <Text style={[typography.caption, { color: colors.sub }]}>
+            言葉を混ぜて、ゴールの語に近づける
+          </Text>
+        </View>
 
         {/* ── 今日のデイリー ── */}
         {daily.isPending ? (
@@ -181,7 +192,7 @@ export default function LobbyScreen() {
               </Text>
             </View>
 
-            <PrimaryButton
+            <GlassButton
               title={dailyActionLabel(state)}
               onPress={onDailyPress}
               tier={LOBBY_TIER}
@@ -204,7 +215,7 @@ export default function LobbyScreen() {
             tier={LOBBY_TIER}
           />
 
-          <PrimaryButton
+          <GlassButton
             title="あそぶ"
             onPress={onFreePress}
             tier={LOBBY_TIER}
@@ -233,9 +244,11 @@ export default function LobbyScreen() {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: layout.screenPaddingHorizontal,
-    gap: spacing.lg,
+    gap: layout.sectionGap,
   },
-  card: { gap: spacing.md, borderRadius: radius.lg },
+  // ロゴと一行説明は同じ塊なので近づける。
+  header: { gap: spacing.sm, alignItems: 'flex-start' },
+  card: { gap: layout.cardGap, borderRadius: radius.lg },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   goal: { textAlign: 'center', paddingVertical: spacing.sm },
   error: { textAlign: 'center' },

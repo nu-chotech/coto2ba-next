@@ -13,7 +13,15 @@ import { LEADERBOARD_LIMIT } from '@coto2ba/contracts'
 import { useCallback, useMemo, useState } from 'react'
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ErrorState, GlassCard, Skeleton, TierBackground } from '../../../components'
+import {
+  ErrorState,
+  GlassCard,
+  MIN_TAP_SIZE,
+  Skeleton,
+  SymbolIcon,
+  type SymbolName,
+  TierBackground,
+} from '../../../components'
 import {
   clearedCountLabel,
   formatJstDateLabel,
@@ -29,13 +37,15 @@ import {
 } from '../../../features/ranking'
 import {
   borderWidth,
+  iconSize,
   layout,
   opacity,
-  palette,
-  paletteForTier,
   radius,
+  screenPadding,
   spacing,
+  TRANSPARENT,
   typography,
+  useTheme,
 } from '../../../theme'
 
 /** ランキングは演出帯を持たない。ロビーと同じ落ち着いた地。 */
@@ -49,6 +59,7 @@ const SKELETON_IDS = Array.from(
 
 export default function RankingScreen() {
   const insets = useSafeAreaInsets()
+  const { paletteForTier } = useTheme()
   const colors = paletteForTier(RANKING_TIER)
 
   const today = useMemo(() => jstToday(), [])
@@ -80,23 +91,22 @@ export default function RankingScreen() {
   return (
     <TierBackground tier={RANKING_TIER}>
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.xxxl },
-        ]}
+        contentContainerStyle={[styles.content, screenPadding(insets)]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.sub} />
         }
       >
-        <Text style={[typography.title, { color: colors.text }]}>ランキング</Text>
-        <Text style={[typography.caption, { color: colors.sub }]}>
-          その日のデイリーをクリアした人。ヒント数 → 手数 → クリア時刻の順。
-        </Text>
+        <View style={styles.header}>
+          <Text style={[typography.largeTitle, { color: colors.text }]}>ランキング</Text>
+          <Text style={[typography.caption, { color: colors.sub }]}>
+            その日のデイリーをクリアした人。ヒント数 → 手数 → クリア時刻の順。
+          </Text>
+        </View>
 
         {/* ── 日付切替 ── */}
         <View style={styles.dateBar}>
           <DateArrow
-            label="◀"
+            icon="chevron.left"
             accessibilityLabel="前の日"
             onPress={goPrev}
             tierColor={colors.text}
@@ -111,7 +121,7 @@ export default function RankingScreen() {
             </Text>
           </View>
           <DateArrow
-            label="▶"
+            icon="chevron.right"
             accessibilityLabel="次の日"
             onPress={goNext}
             disabled={!canGoForward}
@@ -167,18 +177,19 @@ export default function RankingScreen() {
 }
 
 function DateArrow({
-  label,
+  icon,
   accessibilityLabel,
   onPress,
   disabled = false,
   tierColor,
 }: {
-  label: string
+  icon: SymbolName
   accessibilityLabel: string
   onPress: () => void
   disabled?: boolean
   tierColor: string
 }) {
+  const { palette } = useTheme()
   return (
     <Pressable
       accessibilityRole="button"
@@ -189,12 +200,13 @@ function DateArrow({
       style={({ pressed }) => [
         styles.arrow,
         {
+          borderColor: palette.border,
           opacity: disabled ? opacity.disabled : opacity.full,
-          backgroundColor: pressed ? palette.pressed : palette.transparent,
+          backgroundColor: pressed ? palette.pressed : TRANSPARENT,
         },
       ]}
     >
-      <Text style={[typography.subtitle, { color: tierColor }]}>{label}</Text>
+      <SymbolIcon name={icon} size={iconSize.md} color={tierColor} weight="semibold" />
     </Pressable>
   )
 }
@@ -202,17 +214,17 @@ function DateArrow({
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: layout.screenPaddingHorizontal,
-    gap: spacing.lg,
+    gap: layout.sectionGap,
   },
-  card: { gap: spacing.sm },
+  header: { gap: spacing.xs },
+  card: { gap: layout.cardGap },
   dateBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   dateLabel: { flex: 1, alignItems: 'center', gap: spacing.xs },
   arrow: {
-    width: layout.buttonHeight,
-    height: layout.buttonHeight,
+    width: MIN_TAP_SIZE,
+    height: MIN_TAP_SIZE,
     borderRadius: radius.pill,
     borderWidth: borderWidth.hairline,
-    borderColor: palette.divider,
     alignItems: 'center',
     justifyContent: 'center',
   },

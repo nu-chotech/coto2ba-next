@@ -3,9 +3,10 @@
  */
 
 import { Stack } from 'expo-router'
-import { palette } from '../../../theme'
+import { useTheme } from '../../../theme'
 
 export default function SettingsLayout() {
+  const { palette } = useTheme()
   return (
     <Stack
       screenOptions={{

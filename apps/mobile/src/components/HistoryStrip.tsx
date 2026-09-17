@@ -5,11 +5,12 @@
  * チップ 1 枚 = `input ×ratio → result (rank)`。
  */
 
-import { type Move, PERFECT_RANK, TIER_EMOJI, type TierId } from '@coto2ba/contracts'
+import { type Move, PERFECT_RANK, type TierId } from '@coto2ba/contracts'
 import { useEffect, useRef } from 'react'
 import { ScrollView, type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native'
-import { borderWidth, palette, paletteForTier, radius, spacing, typography } from '../theme'
+import { borderWidth, radius, spacing, typography, useTheme } from '../theme'
 import { HISTORY_CHIP_MIN_WIDTH, HISTORY_STRIP_HEIGHT } from './constants'
+import { TierDot } from './TierDot'
 
 export type HistoryStripProps = {
   moves: readonly Move[]
@@ -24,6 +25,7 @@ function formatRank(rank: number): string {
 }
 
 export function HistoryStrip({ moves, tier, start, style }: HistoryStripProps) {
+  const { paletteForTier } = useTheme()
   const colors = paletteForTier(tier)
   const scrollRef = useRef<ScrollView | null>(null)
 
@@ -44,7 +46,7 @@ export function HistoryStrip({ moves, tier, start, style }: HistoryStripProps) {
         contentContainerStyle={styles.row}
         style={styles.scroll}
       >
-        <View style={[styles.chip, styles.startChip, { borderColor: colors.sub }]}>
+        <View style={[styles.chip, { borderColor: colors.sub }]}>
           <Text style={[typography.label, { color: colors.sub }]}>スタート</Text>
           <Text style={[typography.body, { color: colors.text }]} numberOfLines={1}>
             {start}
@@ -59,9 +61,15 @@ export function HistoryStrip({ moves, tier, start, style }: HistoryStripProps) {
             <Text style={[typography.label, { color: colors.sub }]} numberOfLines={1}>
               {move.seq}. {move.input_word} ×{move.ratio.toFixed(1)}
             </Text>
-            <Text style={[typography.body, { color: colors.text }]} numberOfLines={1}>
-              {TIER_EMOJI[move.tier]} {move.result}
-            </Text>
+            <View style={styles.resultRow}>
+              <TierDot tier={move.tier} />
+              <Text
+                style={[typography.body, styles.result, { color: colors.text }]}
+                numberOfLines={1}
+              >
+                {move.result}
+              </Text>
+            </View>
             <Text style={[typography.label, { color: colors.sub }]}>{formatRank(move.rank)}</Text>
           </View>
         ))}
@@ -82,5 +90,6 @@ const styles = StyleSheet.create({
     borderWidth: borderWidth.hairline,
     gap: spacing.xs,
   },
-  startChip: { backgroundColor: palette.transparent },
+  resultRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  result: { flex: 1 },
 })

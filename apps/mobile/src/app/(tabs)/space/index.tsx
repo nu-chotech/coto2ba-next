@@ -37,11 +37,17 @@ import {
   palette,
   paletteForTier,
   radius,
+  SCREEN_TOP_PADDING,
   spacing,
   typography,
 } from '../../../theme'
 
-/** 図鑑は宇宙。tier は固定。 */
+/**
+ * 図鑑は宇宙。tier は固定。
+ *
+ * **意図的な例外：ライトモードでも地は暗いまま**（SPEC §4.3）。
+ * `useTheme()` ではなくダーク固定の互換シムを読む。宇宙が白いと figure が壊れる。
+ */
 const SPACE_TIER = 'cosmos'
 const colors = paletteForTier(SPACE_TIER)
 
@@ -149,7 +155,11 @@ export default function SpaceScreen() {
       />
 
       {/* ── 上：検索 ── */}
-      <View style={[styles.top, { paddingTop: insets.top + spacing.sm }]} pointerEvents="box-none">
+      {/* 浮いている操作なので中身は絶対配置だが、上端の余白は他の画面と揃える。 */}
+      <View
+        style={[styles.top, { paddingTop: insets.top + SCREEN_TOP_PADDING }]}
+        pointerEvents="box-none"
+      >
         <TextInput
           ref={searchRef}
           defaultValue=""
