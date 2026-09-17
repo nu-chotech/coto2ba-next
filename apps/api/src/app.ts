@@ -5,6 +5,7 @@ import { auth } from './auth'
 import { AppError } from './lib/errors'
 import type { AuthVariables } from './middleware/auth'
 import { gamesRoutes } from './routes/games'
+import { craftRoutes } from './routes/craft'
 import { meRoutes } from './routes/me'
 import { wordsRoutes } from './routes/words'
 
@@ -34,6 +35,7 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw))
 
 app.route('/api', meRoutes)
 app.route('/api', gamesRoutes)
+app.route('/api', craftRoutes)
 app.route('/api', wordsRoutes)
 
 app.notFound((c) => c.json({ code: 'GAME_NOT_FOUND', message: 'そのパスはありません' }, 404))

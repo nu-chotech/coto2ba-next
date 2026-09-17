@@ -16,6 +16,7 @@
 import { NEAREST_CANDIDATES, VECTOR_DIM } from '@coto2ba/contracts'
 import { type SQL, sql } from 'drizzle-orm'
 import type { Db } from '../db/client'
+import { CRAFT_CONFIG } from './craft-config'
 
 const DIM = sql.raw(String(VECTOR_DIM))
 
@@ -82,6 +83,36 @@ export async function mixAndRank(
   `)
   const row = rows.rows[0]
   return row ? { result: row.result, rank: Number(row.rank) } : null
+}
+
+/** 既存の正規化済み語彙と混合式を再利用し、craft 用候補を返す。 */
+export async function craftCandidateWords(
+  db: Db, a: string, b: string, goal: string, alpha: number, beta: number,
+): Promise<{ word: string; score: number }[]> {
+  const mixed = blend(vectorOf(a), alpha, vectorOf(b), 1 - alpha)
+  const rows = await db.execute<{ word: string; score: number }>(sql`
+    WITH pool AS (
+      SELECT v.word, v.w2v, (1 - (v.w2v <=> ${mixed}))::real AS blend_score
+      FROM vocab v
+      WHERE v.is_output AND v.word <> ${a} AND v.word <> ${b}
+      ORDER BY v.w2v <=> ${mixed}
+      LIMIT ${CRAFT_CONFIG.poolSize}
+    )
+    SELECT word,
+      ((1 - ${beta}) * blend_score + ${beta} * (1 - (w2v <=> ${vectorOf(goal)})))::real AS score
+    FROM pool
+    ORDER BY score DESC, blend_score DESC, word ASC
+    LIMIT ${CRAFT_CONFIG.candidateCount}
+  `)
+  return rows.rows.map((r) => ({ word: r.word, score: Number(r.score) }))
+}
+
+export async function similarityToGoal(db: Db, word: string, goal: string): Promise<number> {
+  const rows = await db.execute<{ similarity: number }>(sql`
+    SELECT (1 - (w2v <=> ${vectorOf(goal)}))::real AS similarity
+    FROM vocab WHERE word = ${word}
+  `)
+  return Number(rows.rows[0]?.similarity ?? 0)
 }
 
 /**

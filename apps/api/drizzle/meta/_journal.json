@@ -29,6 +29,13 @@
       "when": 1789588216874,
       "tag": "0003_vocab_is_concrete",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789632000000,
+      "tag": "0004_craft_games",
+      "breakpoints": true
     }
   ]
 }

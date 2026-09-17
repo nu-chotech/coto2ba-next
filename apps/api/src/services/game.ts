@@ -85,7 +85,7 @@ async function goalDescriptionOf(db: Db, goal: string): Promise<string | null> {
 }
 
 /** ゴールから見て妥当なスタート語を 1 つ選ぶ（SPEC §6.3）。 */
-async function chooseStart(db: Db, goal: string, exclude: string[] = []): Promise<string> {
+export async function chooseStart(db: Db, goal: string, exclude: string[] = []): Promise<string> {
   const candidates = await sampleStartWord(
     db,
     goal,
@@ -105,7 +105,7 @@ async function chooseStart(db: Db, goal: string, exclude: string[] = []): Promis
  * `vocab.is_concrete` を必ず条件に入れること — ゴールプールには過去の実行で入った
  * 抽象語（顧み・促進・提唱）が残っている可能性があり、目的地として弱い。
  */
-async function chooseGoal(db: Db, difficulty: Difficulty): Promise<string> {
+export async function chooseGoal(db: Db, difficulty: Difficulty): Promise<string> {
   const rows = await db.execute<{ word: string }>(sql`
     SELECT g.word FROM goal_pool g
     JOIN vocab v ON v.word = g.word

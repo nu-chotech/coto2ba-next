@@ -126,6 +126,40 @@ export const createGameRequestSchema = z.object({
   difficulty: difficultySchema.optional(),
 })
 
+// craft は既存 games と独立。追加の示唆は開始時の設定値として固定する。
+export const createCraftRequestSchema = z.object({
+  difficulty: difficultySchema.default('normal'),
+  combo_enabled: z.boolean().default(true),
+  goal_bias_enabled: z.boolean().default(true),
+})
+export const craftCandidatesRequestSchema = z.object({
+  material_a: wordSchema,
+  material_b: wordSchema,
+  alpha: z.number().min(0).max(1),
+})
+export const craftConfirmRequestSchema = z.object({
+  candidate_set_id: z.string().uuid(),
+  candidate_id: z.string().uuid(),
+})
+export const craftStateSchema = z.object({
+  id: z.string().uuid(),
+  goal: wordSchema,
+  start: wordSchema,
+  current: wordSchema,
+  difficulty: difficultySchema,
+  combo_enabled: z.boolean(),
+  goal_bias_enabled: z.boolean(),
+  turn: z.number().int().nonnegative(),
+  combo: z.number().int().nonnegative(),
+  history: z.array(wordSchema),
+  status: z.enum(['playing', 'cleared']),
+})
+export const craftCandidatesResponseSchema = z.object({
+  candidate_set_id: z.string().uuid(),
+  beta: z.number(),
+  candidates: z.array(z.object({ id: z.string().uuid(), word: wordSchema, score: z.number() })),
+})
+
 export const hintResponseSchema = z.object({
   hints: z.array(wordSchema),
   hint_count: z.number().int().nonnegative(),

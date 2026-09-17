@@ -36,7 +36,9 @@ function renderState() {
 }
 
 function candidates(a, b, alpha, combo) {
-  const query = normalize(vectors[a].map((value, i) => alpha * value + (1 - alpha) * vectors[b][i]))
+  const normalizedA = normalize(vectors[a])
+  const normalizedB = normalize(vectors[b])
+  const query = normalize(normalizedA.map((value, i) => alpha * value + (1 - alpha) * normalizedB[i]))
   const beta = Math.min(0.22, 0.03 + combo * 0.025)
   const pool = words.filter((word) => word !== a && word !== b)
     .map((word) => ({ word, blend: cosine(vectors[word], query) }))
@@ -48,6 +50,7 @@ function candidates(a, b, alpha, combo) {
 }
 
 function generate() {
+  if (state.current === goal) return
   const a = byId('material-a').value
   const b = byId('material-b').value
   const alpha = Number(byId('alpha').value) / 100

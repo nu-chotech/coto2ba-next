@@ -128,6 +128,26 @@ export const moves = pgTable(
   (t) => [primaryKey({ columns: [t.gameId, t.seq] })],
 )
 
+/** 候補選択モード。既存 games/ランキングとは状態とスコアを分離する。 */
+export const craftGames = pgTable('craft_games', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  difficulty: text('difficulty').notNull(),
+  goal: text('goal').notNull(),
+  start: text('start').notNull(),
+  current: text('current').notNull(),
+  turn: integer('turn').notNull().default(0),
+  combo: integer('combo').notNull().default(0),
+  comboEnabled: boolean('combo_enabled').notNull().default(true),
+  goalBiasEnabled: boolean('goal_bias_enabled').notNull().default(true),
+  previousSimilarity: real('previous_similarity'),
+  activeSetId: uuid('active_set_id'),
+  activeOptions: jsonb('active_options').$type<{ id: string; word: string; score: number }[]>(),
+  history: text('history').array().notNull(),
+  status: text('status').notNull().default('playing'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [index('craft_games_user_created').on(t.userId, t.createdAt)])
+
 // ── キャッシュ ──────────────────────────────────────────────
 export const calcCache = pgTable(
   'calc_cache',
