@@ -44,6 +44,8 @@ import Animated, {
 import { feedback } from '../lib/feedback'
 import { duration, opacity, radius, spacing, spring, typography, useTheme } from '../theme'
 import {
+  WHEEL_ACTIVATE_DISTANCE,
+  WHEEL_GRIP_MIN_RADIUS,
   WHEEL_HUB_SIZE,
   WHEEL_INERTIA_SEC,
   WHEEL_KNOB_ACTIVE_SCALE,
@@ -62,8 +64,10 @@ import { GlassCard } from './GlassCard'
 import {
   angleToIndex,
   angularVelocity,
+  canTurnAt,
   clampIndex,
   indexToAngle,
+  isTurningMove,
   pointerAngle,
   unwrapDelta,
 } from './wheel-geometry'
@@ -94,6 +98,13 @@ export function MixWheel({ value, onChange, tier, disabled = false, style }: Mix
   const angle = useSharedValue(indexToAngle(index, STEP_COUNT, WHEEL_SWEEP))
   /** 直前のフレームの指の角度（差分を取るためだけ）。 */
   const lastTouch = useSharedValue(0)
+  /** いま輪を掴んでいるか。中央の窓に入ったら離す（0）。 */
+  const gripping = useSharedValue(0)
+  /** 触れ始めた位置。掴んでよい場所か・回す動きかの判定に使う。 */
+  const touchStartX = useSharedValue(0)
+  const touchStartY = useSharedValue(0)
+  /** 掴む / 見送るの判定が済んだか。**1 回の指で 1 度しか決めない。** */
+  const decided = useSharedValue(0)
   const active = useSharedValue(0)
 
   // 外から値が変わったとき（ヒント選択・リセット）に追従する。
@@ -133,15 +144,70 @@ export function MixWheel({ value, onChange, tier, disabled = false, style }: Mix
     [stepBy],
   )
 
+  /**
+   * ジェスチャ。**掴むかどうかを自分で決める**（`manualActivation`）。
+   *
+   * 素直に掴むと 2 つ壊れる:
+   * 1. 中央の窓を掴めてしまい、**4px の指ブレで 2 段飛ぶ**（中心ほど 1px が巨大な角度）
+   * 2. 216pt 四方がスクロールを奪い、**縦になぞっても画面が送れない**
+   *
+   * そこで「掴んでよい半径の外から始まり、かつ**回す動き**（接線方向が半径方向より
+   * 大きい）」のときだけ掴む。上端を縦になぞるのは中心へ向かう動きなので掴まず、
+   * スクロールに譲る。判定はどちらも `wheel-geometry` の純粋関数（テスト済み）。
+   */
   const pan = Gesture.Pan()
     .enabled(!disabled)
-    .minDistance(0)
-    .onBegin((event) => {
+    .manualActivation(true)
+    .onTouchesDown((event, manager) => {
+      const touch = event.allTouches[0]
+      if (touch === undefined) {
+        manager.fail()
+        return
+      }
+      touchStartX.value = touch.x
+      touchStartY.value = touch.y
+      decided.value = 0
+    })
+    .onTouchesMove((event, manager) => {
+      // 掴むと決めたあとに activate を呼び直すと、そのたびに測り直しになって
+      // 回した量が落ちる（実測で半分ほど失われた）。判定は 1 回だけ。
+      if (decided.value === 1) return
+      const touch = event.allTouches[0]
+      if (touch === undefined) return
+      const moveX = touch.x - touchStartX.value
+      const moveY = touch.y - touchStartY.value
+      // まだ動きが小さいうちは保留する（触れただけで比率を動かさない）。
+      if (moveX * moveX + moveY * moveY < WHEEL_ACTIVATE_DISTANCE * WHEEL_ACTIVATE_DISTANCE) return
+
+      decided.value = 1
+      const dx = touchStartX.value - CENTER
+      const dy = touchStartY.value - CENTER
+      if (!canTurnAt(dx, dy, WHEEL_GRIP_MIN_RADIUS) || !isTurningMove(dx, dy, moveX, moveY)) {
+        manager.fail()
+        return
+      }
+      manager.activate()
+    })
+    .onStart((event) => {
       lastTouch.value = pointerAngle(event.x, event.y, CENTER, CENTER)
+      gripping.value = 1
       active.value = withTiming(1, { duration: duration.fast })
     })
     .onUpdate((event) => {
+      const dx = event.x - CENTER
+      const dy = event.y - CENTER
+      // 中央の窓に入っているあいだは回さない（ここでの 1px は角度が暴れる）。
+      if (!canTurnAt(dx, dy, WHEEL_GRIP_MIN_RADIUS)) {
+        gripping.value = 0
+        return
+      }
       const touch = pointerAngle(event.x, event.y, CENTER, CENTER)
+      // 窓を通り抜けて出てきたときは、そこから測り直す（横断ぶん飛ばさない）。
+      if (gripping.value === 0) {
+        gripping.value = 1
+        lastTouch.value = touch
+        return
+      }
       const delta = unwrapDelta(lastTouch.value, touch)
       lastTouch.value = touch
 
@@ -157,12 +223,10 @@ export function MixWheel({ value, onChange, tier, disabled = false, style }: Mix
     })
     .onEnd((event) => {
       // 払った勢いのぶんだけ先へ送ってから、最寄りの段に収める。
-      const omega = angularVelocity(
-        event.velocityX,
-        event.velocityY,
-        event.x - CENTER,
-        event.y - CENTER,
-      )
+      // 中央の窓の中で離したときは勢いを見ない（半径が小さく角速度が暴れる）。
+      const omega = canTurnAt(event.x - CENTER, event.y - CENTER, WHEEL_GRIP_MIN_RADIUS)
+        ? angularVelocity(event.velocityX, event.velocityY, event.x - CENTER, event.y - CENTER)
+        : 0
       const projected = angle.value + omega * WHEEL_INERTIA_SEC
       const nextIndex = angleToIndex(projected, STEP_COUNT, WHEEL_SWEEP)
       if (nextIndex !== committed.value) {
@@ -171,6 +235,8 @@ export function MixWheel({ value, onChange, tier, disabled = false, style }: Mix
       }
     })
     .onFinalize(() => {
+      gripping.value = 0
+      decided.value = 0
       // 途中で取り消されても段の上に戻す（中途半端な角度で止めない）。
       angle.value = withSpring(
         indexToAngle(committed.value, STEP_COUNT, WHEEL_SWEEP),
@@ -192,7 +258,10 @@ export function MixWheel({ value, onChange, tier, disabled = false, style }: Mix
       style={[styles.root, disabled ? { opacity: opacity.disabled } : null, style]}
       pointerEvents={disabled ? 'none' : 'auto'}
     >
-      <GestureDetector gesture={pan}>
+      {/* `touchAction` は Web 限定。ブラウザは縦のなぞりを**自分でスクロールに使う**ので、
+          これが 'none'（既定）のままだとホイールの上で画面が送れない。
+          ネイティブ側はジェスチャの調停（上の manualActivation）が同じ仕事をする。 */}
+      <GestureDetector gesture={pan} touchAction="pan-y">
         <View
           style={styles.wheel}
           accessible

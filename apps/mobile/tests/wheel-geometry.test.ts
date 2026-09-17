@@ -11,8 +11,10 @@ import { describe, expect, it } from 'vitest'
 import {
   angleToIndex,
   angularVelocity,
+  canTurnAt,
   clampIndex,
   indexToAngle,
+  isTurningMove,
   pointerAngle,
   unwrapDelta,
 } from '../src/components/wheel-geometry'
@@ -116,5 +118,59 @@ describe('angularVelocity', () => {
     const near = angularVelocity(80, 0, 0, -40)
     const far = angularVelocity(80, 0, 0, -160)
     expect(Math.abs(near)).toBeGreaterThan(Math.abs(far))
+  })
+})
+
+describe('canTurnAt', () => {
+  /** ホイールの中央の窓の半径。ここより内側では掴ませない。 */
+  const GRIP = 58
+
+  /** 指が (x, y) から (x + mx, y + my) へ動いたときの角度の変化（中心は原点）。 */
+  const turned = (x: number, y: number, mx: number, my: number): number =>
+    Math.abs(unwrapDelta(pointerAngle(x, y, 0, 0), pointerAngle(x + mx, y + my, 0, 0)))
+
+  const STEP = SWEEP / (COUNT - 1)
+
+  it('中心に近いほど、同じ 4px の指ブレが巨大な角度になる', () => {
+    // これがバグの正体。中心から 4px の位置では 4px 動かすだけで 1 段を越える。
+    expect(turned(4, 0, 0, 4)).toBeGreaterThan(STEP)
+    // 掴んでよい半径まで離れていれば、同じ 4px で段の境界（半段）にも届かない。
+    expect(turned(GRIP, 0, 0, 4)).toBeLessThan(STEP / 2)
+  })
+
+  it('中心の窓の内側では掴ませない', () => {
+    expect(canTurnAt(0, 0, GRIP)).toBe(false)
+    expect(canTurnAt(4, 0, GRIP)).toBe(false)
+    expect(canTurnAt(0, -GRIP + 1, GRIP)).toBe(false)
+  })
+
+  it('窓の縁より外なら掴める', () => {
+    expect(canTurnAt(GRIP, 0, GRIP)).toBe(true)
+    expect(canTurnAt(0, GRIP + 20, GRIP)).toBe(true)
+  })
+})
+
+describe('isTurningMove', () => {
+  // 上端（12 時）を縦になぞるのは「回す」ではなく「画面を送る」動き。
+  it('上端の横なぞりは回す動き', () => {
+    expect(isTurningMove(0, -100, 10, 0)).toBe(true)
+  })
+
+  it('上端の縦なぞりは回す動きではない（スクロールに譲る）', () => {
+    expect(isTurningMove(0, -100, 0, 10)).toBe(false)
+    expect(isTurningMove(0, -100, 0, -10)).toBe(false)
+  })
+
+  it('右端では縦なぞりが回す動きになる（そこでは接線が縦）', () => {
+    expect(isTurningMove(100, 0, 0, 10)).toBe(true)
+    expect(isTurningMove(100, 0, 10, 0)).toBe(false)
+  })
+
+  it('接線と半径がちょうど半々なら回さない（迷ったらスクロールに譲る）', () => {
+    expect(isTurningMove(0, -100, 10, 10)).toBe(false)
+  })
+
+  it('動いていなければ回す動きではない', () => {
+    expect(isTurningMove(0, -100, 0, 0)).toBe(false)
   })
 })

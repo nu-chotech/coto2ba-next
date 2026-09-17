@@ -38,8 +38,10 @@ import {
   resultHref,
   useCreateGameMutation,
   useDailyQuery,
+  useGameQuery,
   useMeQuery,
 } from '../../../features/game'
+import { useUiStore } from '../../../store/ui'
 import {
   heroFontSize,
   layout,
@@ -79,6 +81,11 @@ function dailyStatusLabel(state: DailyState): string {
   return `ギブアップ ${state.game.move_count} 手`
 }
 
+/** 遊びかけの進み具合。0 手のときに「0 手まで進んでいます」と言わない。 */
+function resumeProgressLabel(moveCount: number): string {
+  return moveCount === 0 ? 'まだ 1 手も打っていません' : `${moveCount} 手まで進んでいます`
+}
+
 function dailyActionLabel(state: DailyState): string {
   if (state.kind === 'fresh') return 'はじめる'
   if (state.kind === 'playing') return 'つづきから'
@@ -94,6 +101,18 @@ export default function LobbyScreen() {
   const daily = useDailyQuery()
   const me = useMeQuery()
   const createGame = useCreateGameMutation()
+
+  /**
+   * 遊びかけのフリーモードに戻る導線。
+   *
+   * デイリーは `GET /api/daily` が自分の挑戦を返すが、**フリーモードにはその経路が無い**。
+   * 直前に開いた挑戦の id だけ UI 側で覚えておき（`resumeGameId`）、
+   * **進行中かどうかはサーバーに聞く**（古い id が残っていても「つづきから」は出ない）。
+   */
+  const resumeGameId = useUiStore((s) => s.resumeGameId)
+  const resume = useGameQuery(resumeGameId)
+  const freeInProgress =
+    resume.data?.mode === 'free' && resume.data.status === 'playing' ? resume.data : null
 
   const [difficulty, setDifficulty] = useState<Difficulty>('normal')
   const [refreshing, setRefreshing] = useState(false)
@@ -229,6 +248,18 @@ export default function LobbyScreen() {
             }
           />
           {me.isPending ? <Skeleton width="50%" height={14} /> : null}
+
+          {/* 遊びかけがあるときだけ。無ければ行ごと出さない（普段の画面を増やさない）。 */}
+          {freeInProgress !== null ? (
+            <GlassButton
+              title="つづきから"
+              icon="arrow.uturn.up"
+              onPress={() => router.push(gameHref(freeInProgress.id))}
+              tier={LOBBY_TIER}
+              variant="ghost"
+              subtitle={`${DIFFICULTY_LABELS_JA[freeInProgress.difficulty]} ・ ${resumeProgressLabel(freeInProgress.move_count)}`}
+            />
+          ) : null}
         </GlassCard>
 
         {createError !== null ? (

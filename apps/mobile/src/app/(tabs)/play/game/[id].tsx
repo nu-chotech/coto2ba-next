@@ -118,6 +118,7 @@ export default function GameScreen() {
   const setMixing = useUiStore((s) => s.setMixing)
   const setActiveTier = useUiStore((s) => s.setActiveTier)
   const resetGameUi = useUiStore((s) => s.resetGameUi)
+  const setResumeGameId = useUiStore((s) => s.setResumeGameId)
 
   const inputRef = useRef<WordInputHandle | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
@@ -133,6 +134,11 @@ export default function GameScreen() {
 
   // 画面を離れるときに入力・ratio・シートを畳む。
   useEffect(() => () => resetGameUi(), [resetGameUi])
+
+  // ロビーから戻れるように、開いた挑戦を覚えておく（フリーモードには他に経路が無い）。
+  useEffect(() => {
+    if (gameId.length > 0) setResumeGameId(gameId)
+  }, [gameId, setResumeGameId])
 
   // 背景の演出帯を UI 状態にも反映する（Skia の背景は次の担当者がここを読む）。
   useEffect(() => {

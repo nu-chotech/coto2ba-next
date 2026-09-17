@@ -20,6 +20,7 @@ import type { TierId } from '@coto2ba/contracts'
 import { useEffect, useState } from 'react'
 import { Modal, StyleSheet, Text, View } from 'react-native'
 import Animated, {
+  cancelAnimation,
   Easing,
   interpolateColor,
   runOnJS,
@@ -119,9 +120,14 @@ export function MixOverlay({
   }, [result])
 
   // 開いた瞬間：2 語を中央に寄せ、光を脈打たせる。
-  // **閉じるときには戻さない**（戻すと消えぎわに最初の絵が一瞬出る）。
+  // **閉じるときには値を戻さない**（戻すと消えぎわに最初の絵が一瞬出る）。
+  // ただし脈打ちは `withRepeat(-1)` の無限ループなので、**必ず止める**。
+  // 止め忘れると、語彙エラーで閉じたときなどに裏で回り続ける。
   useEffect(() => {
-    if (!visible) return
+    if (!visible) {
+      cancelAnimation(glow)
+      return
+    }
     converge.value = 0
     glow.value = 0
     reveal.value = 0

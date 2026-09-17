@@ -89,6 +89,35 @@ export function pointerAngle(x: number, y: number, cx: number, cy: number): numb
 }
 
 /**
+ * その位置で回してよいか（中心から `minRadius` 以上離れているか）。
+ *
+ * **回転は中心に近いほど 1px が巨大な角度になる。** 中心から 4px の位置では
+ * 指が 4px ぶれただけで 45 度 ── 段を 1 つ飛び越えてしまう
+ * （同じ 4px でも半径 58px の位置なら 4 度で、段の境界にも届かない）。
+ * 中央の窓の内側を掴ませないのはこのため。`tests/wheel-geometry.test.ts` が
+ * その差を数値で固定している。
+ */
+export function canTurnAt(dx: number, dy: number, minRadius: number): boolean {
+  'worklet'
+  return dx * dx + dy * dy >= minRadius * minRadius
+}
+
+/**
+ * その指の動きが「回す動き」か。接線方向の成分が半径方向より大きければ回す動き。
+ *
+ * `(dx, dy)` は中心から指へのベクトル、`(mx, my)` は指が動いた向き。
+ * **これで縦スクロールと回転を分ける。** 上端を縦になぞるのは中心へ向かう動き
+ * （＝画面を送りたい）なので回さず、スクロールに譲る。右端の縦なぞりは
+ * そこでは接線方向なので回す。半々のときは回さない（迷ったらスクロール）。
+ */
+export function isTurningMove(dx: number, dy: number, mx: number, my: number): boolean {
+  'worklet'
+  const tangential = Math.abs(my * dx - mx * dy)
+  const radial = Math.abs(mx * dx + my * dy)
+  return tangential > radial
+}
+
+/**
  * 指の速度（px/秒）→ ホイールの角速度（rad/秒）。慣性の投げ幅に使う。
  *
  * `(dx, dy)` は中心から指へのベクトル。接線方向の成分だけを取り出して半径で割る

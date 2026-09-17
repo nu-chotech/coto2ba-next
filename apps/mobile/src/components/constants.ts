@@ -74,6 +74,22 @@ export const WHEEL_TICK_ACTIVE_WIDTH = 3
 export const WHEEL_TICK_INSET = WHEEL_RING_INSET + WHEEL_RING_WIDTH + 6
 /** つまみの直径。最小タップ領域は輪全体で稼ぐので、見た目はこの大きさでよい。 */
 export const WHEEL_KNOB_SIZE = 24
+/**
+ * ここより内側では掴ませない半径（＝中央の窓の縁）。
+ *
+ * **回転は中心に近いほど 1px が巨大な角度になる。** 中心から 4px の位置では
+ * 指が 4px ぶれただけで 45 度（段を 1 つ飛び越える）。この半径まで離れていれば
+ * 同じ 4px が 4 度にしかならない。`wheel-geometry` の `canTurnAt` に渡す。
+ */
+export const WHEEL_GRIP_MIN_RADIUS = WHEEL_HUB_SIZE / 2
+/**
+ * 回し始めたと判定するまでの指の移動量。
+ *
+ * ここに達するまではジェスチャを保留し、**縦スクロールに譲る余地を残す**
+ * （`isTurningMove` で回す動きかどうかを見てから掴む）。
+ * 大きくすると回し始めが鈍く、小さくすると触れただけで比率が動く。
+ */
+export const WHEEL_ACTIVATE_DISTANCE = 6
 /** 回している間のつまみの拡大率。 */
 export const WHEEL_KNOB_ACTIVE_SCALE = 1.16
 /**
