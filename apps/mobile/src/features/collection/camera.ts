@@ -1,5 +1,9 @@
 /**
- * 図鑑のオービットカメラ（yaw / pitch / distance）。
+ * 図鑑のオービットカメラ（yaw / pitch / distance / target）。
+ *
+ * **原点ではなく `target`（選択中の経路の中心）のまわりを回る。**
+ * 主役は「自分の軌跡」なので、回しても経路が画面の真ん中から逃げないようにする。
+ * 原点を回るカメラだと少し回しただけで経路が画面外に振られ、迷子になる。
  *
  * - パン（1 本指）→ yaw / pitch。離すと `withDecay` で滑る。
  * - ピンチ → distance。行き過ぎを許してバネで戻す。
@@ -39,6 +43,10 @@ export type SpaceCamera = {
   yaw: SharedValue<number>
   pitch: SharedValue<number>
   distance: SharedValue<number>
+  /** 注視点（回転の中心）。選択中の経路の中心に置く。 */
+  targetX: SharedValue<number>
+  targetY: SharedValue<number>
+  targetZ: SharedValue<number>
   /** 触っている間だけ 1。ラベルの薄さなどに使う。 */
   interacting: SharedValue<number>
   /**
@@ -61,9 +69,9 @@ export function nearestAngle(current: number, target: number): number {
 export type UseSpaceCameraResult = {
   camera: SpaceCamera
   gesture: ReturnType<typeof Gesture.Simultaneous>
-  /** 初期姿勢に戻す。 */
+  /** 初期姿勢（注視点は原点）に戻す。 */
   reset: () => void
-  /** その座標が正面かつ手前に来るようにカメラを回す（検索・選択から呼ぶ）。 */
+  /** その語が画面の真ん中に来るように注視点を移す（検索・近傍から呼ぶ）。 */
   focusOn: (pos: readonly [number, number, number]) => void
 }
 
@@ -71,14 +79,18 @@ export function useSpaceCamera(): UseSpaceCameraResult {
   const yaw = useSharedValue(0)
   const pitch = useSharedValue(SPACE_PITCH_INITIAL)
   const distance = useSharedValue(SPACE_DISTANCE_DEFAULT)
+  const targetX = useSharedValue(0)
+  const targetY = useSharedValue(0)
+  const targetZ = useSharedValue(0)
   const interacting = useSharedValue(0)
   const distanceStart = useSharedValue(SPACE_DISTANCE_DEFAULT)
   const lastMovedAt = useSharedValue(0)
 
-  // カメラが動いたフレームだけ時刻を刻む。3 値の和で見る（同時に打ち消し合って
+  // カメラが動いたフレームだけ時刻を刻む。値の和で見る（同時に打ち消し合って
   // 和が変わらないことは実質起きない）。UI スレッド内で完結するので安い。
+  // 注視点も含める：寄っている最中のタップを「止める」操作として捨てるため。
   useAnimatedReaction(
-    () => yaw.value + pitch.value + distance.value,
+    () => yaw.value + pitch.value + distance.value + targetX.value + targetY.value + targetZ.value,
     (current, previous) => {
       if (previous !== null && current !== previous) lastMovedAt.value = Date.now()
     },
@@ -155,24 +167,35 @@ export function useSpaceCamera(): UseSpaceCameraResult {
     yaw.value = withSpring(nearestAngle(yaw.value, 0), SPACE_CAMERA_SPRING)
     pitch.value = withSpring(SPACE_PITCH_INITIAL, SPACE_CAMERA_SPRING)
     distance.value = withSpring(SPACE_DISTANCE_DEFAULT, SPACE_CAMERA_SPRING)
-  }, [yaw, pitch, distance])
+    targetX.value = withSpring(0, SPACE_CAMERA_SPRING)
+    targetY.value = withSpring(0, SPACE_CAMERA_SPRING)
+    targetZ.value = withSpring(0, SPACE_CAMERA_SPRING)
+  }, [yaw, pitch, distance, targetX, targetY, targetZ])
 
+  /**
+   * その語を画面の真ん中に置く。
+   *
+   * **回さずに注視点を移す。** 以前は「その点が正面に来るようにカメラを回す」
+   * だったが、宇宙ごと回るので何が起きたのか分からなくなっていた。
+   */
   const focusOn = useCallback(
     (pos: readonly [number, number, number]) => {
       const [x, y, z] = pos
-      const radial = Math.sqrt(x * x + z * z)
-      // yaw = atan2(-x, z) + π で、その点が画面中央の **手前側** に来る。
-      const targetYaw = Math.atan2(-x, z) + Math.PI
-      const targetPitch = clamp(Math.atan2(-y, radial), SPACE_PITCH_MIN, SPACE_PITCH_MAX)
-      yaw.value = withSpring(nearestAngle(yaw.value, targetYaw), SPACE_CAMERA_SPRING)
-      pitch.value = withSpring(targetPitch, SPACE_CAMERA_SPRING)
-      // 寄りすぎているときだけ引く（すでに近ければそのまま）。
+      targetX.value = withSpring(x, SPACE_CAMERA_SPRING)
+      targetY.value = withSpring(y, SPACE_CAMERA_SPRING)
+      targetZ.value = withSpring(z, SPACE_CAMERA_SPRING)
+      // 引きすぎているときだけ寄る（すでに近ければそのまま）。
       if (distance.value > SPACE_FOCUS_DISTANCE) {
         distance.value = withSpring(SPACE_FOCUS_DISTANCE, SPACE_CAMERA_SPRING)
       }
     },
-    [yaw, pitch, distance],
+    [distance, targetX, targetY, targetZ],
   )
 
-  return { camera: { yaw, pitch, distance, interacting, lastMovedAt }, gesture, reset, focusOn }
+  return {
+    camera: { yaw, pitch, distance, targetX, targetY, targetZ, interacting, lastMovedAt },
+    gesture,
+    reset,
+    focusOn,
+  }
 }

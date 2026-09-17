@@ -168,6 +168,9 @@ export function SpaceCanvas({
         camera.yaw.value,
         camera.pitch.value,
         camera.distance.value,
+        camera.targetX.value,
+        camera.targetY.value,
+        camera.targetZ.value,
         width / 2,
         height / 2,
         Math.min(width, height) * SPACE_WORLD_SCALE,
@@ -217,6 +220,9 @@ export function SpaceCanvas({
         camera.yaw.value,
         camera.pitch.value,
         camera.distance.value,
+        camera.targetX.value,
+        camera.targetY.value,
+        camera.targetZ.value,
         width / 2,
         height / 2,
         Math.min(width, height) * SPACE_WORLD_SCALE,
@@ -266,9 +272,9 @@ export function SpaceCanvas({
       let started = false
       for (let k = from; k < to; k += 1) {
         const index = indices[k]
-        const x = points[index * 3]
-        const y = points[index * 3 + 1]
-        const z = points[index * 3 + 2]
+        const x = points[index * 3] - camera.targetX.value
+        const y = points[index * 3 + 1] - camera.targetY.value
+        const z = points[index * 3 + 2] - camera.targetZ.value
         const x1 = x * cosYaw + z * sinYaw
         const z1 = -x * sinYaw + z * cosYaw
         const y1 = y * cosPitch - z1 * sinPitch
@@ -428,6 +434,9 @@ function useRing(
       camera.yaw.value,
       camera.pitch.value,
       camera.distance.value,
+      camera.targetX.value,
+      camera.targetY.value,
+      camera.targetZ.value,
       width / 2,
       height / 2,
       Math.min(width, height) * SPACE_WORLD_SCALE,

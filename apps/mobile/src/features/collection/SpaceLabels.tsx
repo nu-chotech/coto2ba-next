@@ -28,7 +28,14 @@ import {
 import { projectAll } from './projection'
 import type { SpaceScene } from './scene'
 
-type CameraSnapshot = { yaw: number; pitch: number; distance: number }
+type CameraSnapshot = {
+  yaw: number
+  pitch: number
+  distance: number
+  targetX: number
+  targetY: number
+  targetZ: number
+}
 
 type PlacedLabel = { word: string; x: number; y: number; opacity: number }
 
@@ -42,7 +49,14 @@ export type SpaceLabelsProps = {
 
 export function SpaceLabels({ scene, camera, width, height, color }: SpaceLabelsProps) {
   const limit = scene.interactiveCount
-  const [snapshot, setSnapshot] = useState<CameraSnapshot>({ yaw: 0, pitch: 0, distance: 0 })
+  const [snapshot, setSnapshot] = useState<CameraSnapshot>({
+    yaw: 0,
+    pitch: 0,
+    distance: 0,
+    targetX: 0,
+    targetY: 0,
+    targetZ: 0,
+  })
   const lastPushedAt = useSharedValue(0)
 
   // JS 側の作業領域。毎回確保しない。
@@ -61,6 +75,9 @@ export function SpaceLabels({ scene, camera, width, height, color }: SpaceLabels
       yaw: camera.yaw.value,
       pitch: camera.pitch.value,
       distance: camera.distance.value,
+      targetX: camera.targetX.value,
+      targetY: camera.targetY.value,
+      targetZ: camera.targetZ.value,
     }),
     (current) => {
       const now = Date.now()
@@ -78,6 +95,9 @@ export function SpaceLabels({ scene, camera, width, height, color }: SpaceLabels
       snapshot.yaw,
       snapshot.pitch,
       snapshot.distance,
+      snapshot.targetX,
+      snapshot.targetY,
+      snapshot.targetZ,
       width / 2,
       height / 2,
       Math.min(width, height) * SPACE_WORLD_SCALE,

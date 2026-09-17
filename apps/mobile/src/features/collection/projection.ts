@@ -10,8 +10,13 @@
  *
  * 座標系：
  * - `pos3` は各軸 [-1, 1]（SPEC §9.1）。
- * - yaw は Y 軸まわり、pitch は X 軸まわり。カメラは -Z 側から原点を見る。
+ * - yaw は Y 軸まわり、pitch は X 軸まわり。カメラは -Z 側から **注視点**を見る。
  * - depth = 回転後の z + distance。小さいほど手前。
+ *
+ * **注視点（target）**：回転は原点ではなく `target` を中心に行う。
+ * 図鑑の主役は「自分の軌跡」なので、回しても経路が画面の真ん中から
+ * 逃げないようにするため（原点を回るカメラだと、少し回すだけで経路が
+ * 画面外へ振られて迷子になる）。`target` が原点なら以前と同じ絵になる。
  */
 
 import { SPACE_FOCAL } from '@coto2ba/contracts'
@@ -41,6 +46,9 @@ export function projectAll(
   yaw: number,
   pitch: number,
   distance: number,
+  targetX: number,
+  targetY: number,
+  targetZ: number,
   centerX: number,
   centerY: number,
   worldScale: number,
@@ -55,13 +63,15 @@ export function projectAll(
   const cosPitch = Math.cos(pitch)
   const sinPitch = Math.sin(pitch)
 
+  // 深度の正規化は注視点が原点のときの幅のまま（はみ出した分は端で頭打ち）。
+  // 経路に寄ると遠くのゴースト点がまとめていちばん暗くなる＝背景に沈む。
   const near = distance - SPACE_WORLD_RADIUS
   const span = SPACE_WORLD_RADIUS * 2
 
   for (let i = 0; i < count; i += 1) {
-    const x = xyz[i * 3]
-    const y = xyz[i * 3 + 1]
-    const z = xyz[i * 3 + 2]
+    const x = xyz[i * 3] - targetX
+    const y = xyz[i * 3 + 1] - targetY
+    const z = xyz[i * 3 + 2] - targetZ
 
     // yaw（Y 軸） → pitch（X 軸）。
     const x1 = x * cosYaw + z * sinYaw
@@ -183,6 +193,9 @@ export function projectOne(
   yaw: number,
   pitch: number,
   distance: number,
+  targetX: number,
+  targetY: number,
+  targetZ: number,
   centerX: number,
   centerY: number,
   worldScale: number,
@@ -195,14 +208,56 @@ export function projectOne(
   out[3] = 0
   if (index < 0 || (index + 1) * 3 > xyz.length) return
 
+  projectPoint(
+    xyz[index * 3] as number,
+    xyz[index * 3 + 1] as number,
+    xyz[index * 3 + 2] as number,
+    yaw,
+    pitch,
+    distance,
+    targetX,
+    targetY,
+    targetZ,
+    centerX,
+    centerY,
+    worldScale,
+    out,
+  )
+}
+
+/**
+ * 任意の 1 点を投影する（経路の折れ線・節の輪など、`xyz` に無い点も通す）。
+ * `out` は長さ 4：[画面 x, 画面 y, サイズ倍率（0 なら不可視）, 深さ]。
+ */
+export function projectPoint(
+  x0: number,
+  y0: number,
+  z0: number,
+  yaw: number,
+  pitch: number,
+  distance: number,
+  targetX: number,
+  targetY: number,
+  targetZ: number,
+  centerX: number,
+  centerY: number,
+  worldScale: number,
+  out: Float32Array,
+): void {
+  'worklet'
+  out[0] = centerX
+  out[1] = centerY
+  out[2] = 0
+  out[3] = 0
+
   const cosYaw = Math.cos(yaw)
   const sinYaw = Math.sin(yaw)
   const cosPitch = Math.cos(pitch)
   const sinPitch = Math.sin(pitch)
 
-  const x = xyz[index * 3]
-  const y = xyz[index * 3 + 1]
-  const z = xyz[index * 3 + 2]
+  const x = x0 - targetX
+  const y = y0 - targetY
+  const z = z0 - targetZ
   const x1 = x * cosYaw + z * sinYaw
   const z1 = -x * sinYaw + z * cosYaw
   const y1 = y * cosPitch - z1 * sinPitch
