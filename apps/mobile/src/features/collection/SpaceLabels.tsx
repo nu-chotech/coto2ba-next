@@ -6,7 +6,10 @@
  * 代わりに RN の `<Text>` を Canvas の上に絶対配置する。システムフォントなので
  * 和文がいちばん綺麗に出る、という副作用もある。
  *
- * 出すのは **画面上でカメラに近い上位 `SPACE_LABEL_LIMIT`（40）語**だけ。
+ * **経路を選んでいる間は、その経路の節だけを出す。** 図鑑の主役は自分の軌跡なので、
+ * 語を撒き散らさずに「スタート → 1手目 → … → 到達」が読めることを優先する。
+ * 経路を選んでいないときだけ、画面上でカメラに近い上位 `SPACE_LABEL_LIMIT`（40）語を出す。
+ *
  * 位置は JS スレッドで計算するので、カメラの値は `SPACE_LABEL_UPDATE_MS` ごとに
  * 間引いて受け取る（毎フレーム JS に渡すと図鑑が重くなる）。回転中はラベルが
  * わずかに遅れて追いつくが、点の描画（UI スレッド）は 60fps のまま。
@@ -16,15 +19,17 @@ import { SPACE_LABEL_LIMIT } from '@coto2ba/contracts'
 import { useMemo, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import { runOnJS, useAnimatedReaction, useSharedValue } from 'react-native-reanimated'
-import { typography } from '../../theme'
+import { spacing, typography } from '../../theme'
 import type { SpaceCamera } from './camera'
 import {
   SPACE_LABEL_MARGIN,
   SPACE_LABEL_MAX_WIDTH,
   SPACE_LABEL_OFFSET_Y,
   SPACE_LABEL_UPDATE_MS,
+  SPACE_PATH_LABEL_MIN_OPACITY,
   SPACE_WORLD_SCALE,
 } from './constants'
+import { stepLabel } from './paths'
 import { projectAll } from './projection'
 import type { SpaceScene } from './scene'
 
@@ -37,7 +42,15 @@ type CameraSnapshot = {
   targetZ: number
 }
 
-type PlacedLabel = { word: string; x: number; y: number; opacity: number }
+type PlacedLabel = {
+  id: string
+  word: string
+  /** 経路の節なら「スタート」「2手目」「到達」。それ以外は null。 */
+  step: string | null
+  x: number
+  y: number
+  opacity: number
+}
 
 export type SpaceLabelsProps = {
   scene: SpaceScene
@@ -45,9 +58,21 @@ export type SpaceLabelsProps = {
   width: number
   height: number
   color: string
+  /** 補助の文字色（手数の添え字）。 */
+  subColor: string
+  /** 選択中の経路の点のインデックス列。無ければ null。 */
+  activePath: Int32Array | null
 }
 
-export function SpaceLabels({ scene, camera, width, height, color }: SpaceLabelsProps) {
+export function SpaceLabels({
+  scene,
+  camera,
+  width,
+  height,
+  color,
+  subColor,
+  activePath,
+}: SpaceLabelsProps) {
   const limit = scene.interactiveCount
   const [snapshot, setSnapshot] = useState<CameraSnapshot>({
     yaw: 0,
@@ -107,6 +132,30 @@ export function SpaceLabels({ scene, camera, width, height, color }: SpaceLabels
       scratch.depth,
     )
 
+    // ── 経路を選んでいるとき：その節だけを、順番つきで出す ──
+    if (activePath !== null && activePath.length > 0) {
+      const placed: PlacedLabel[] = []
+      for (let k = 0; k < activePath.length; k += 1) {
+        const index = activePath[k] as number
+        if (index < 0 || index >= limit) continue
+        if (scratch.sizeMul[index] <= 0) continue
+        const node = scene.nodes[index]
+        if (node === undefined || node.word.length === 0) continue
+        placed.push({
+          // 同じ語を 2 度通る経路があるので、順番も鍵に混ぜる。
+          id: `${k}:${node.word}`,
+          word: node.word,
+          step: stepLabel(k, activePath.length),
+          x: scratch.screen[index * 2] as number,
+          y: (scratch.screen[index * 2 + 1] as number) + SPACE_LABEL_OFFSET_Y,
+          // 主役なので、奥に回っても読める下限を持たせる。
+          opacity: Math.max(scratch.alphaMul[index] as number, SPACE_PATH_LABEL_MIN_OPACITY),
+        })
+      }
+      return placed
+    }
+
+    // ── 経路を選んでいないとき：手前の語から数語 ──
     const visible: { index: number; depth: number }[] = []
     for (let i = 0; i < limit; i += 1) {
       if (scratch.sizeMul[i] <= 0) continue
@@ -121,41 +170,52 @@ export function SpaceLabels({ scene, camera, width, height, color }: SpaceLabels
     visible.sort((a, b) => a.depth - b.depth)
 
     return visible.slice(0, SPACE_LABEL_LIMIT).map(({ index }) => ({
+      id: `${index}`,
       word: scene.nodes[index]?.word ?? '',
+      step: null,
       x: scratch.screen[index * 2] as number,
       y: (scratch.screen[index * 2 + 1] as number) + SPACE_LABEL_OFFSET_Y,
       opacity: scratch.alphaMul[index] as number,
     }))
-  }, [scene, limit, snapshot, width, height, scratch])
+  }, [scene, limit, snapshot, width, height, scratch, activePath])
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {labels.map((label) => (
-        <Text
-          key={label.word}
-          numberOfLines={1}
+        <View
+          key={label.id}
           style={[
-            typography.label,
-            styles.label,
-            {
-              color,
-              opacity: label.opacity,
-              left: label.x - SPACE_LABEL_MAX_WIDTH / 2,
-              top: label.y,
-            },
+            styles.item,
+            { opacity: label.opacity, left: label.x - SPACE_LABEL_MAX_WIDTH / 2, top: label.y },
           ]}
         >
-          {label.word}
-        </Text>
+          <Text
+            numberOfLines={1}
+            style={[
+              label.step === null ? typography.label : typography.body,
+              styles.text,
+              { color },
+            ]}
+          >
+            {label.word}
+          </Text>
+          {label.step !== null ? (
+            <Text numberOfLines={1} style={[typography.label, styles.text, { color: subColor }]}>
+              {label.step}
+            </Text>
+          ) : null}
+        </View>
       ))}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  label: {
+  item: {
     position: 'absolute',
     width: SPACE_LABEL_MAX_WIDTH,
-    textAlign: 'center',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
+  text: { textAlign: 'center' },
 })

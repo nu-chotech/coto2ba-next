@@ -43,6 +43,12 @@ export type SpaceNode = {
 export type SpacePath = {
   gameId: string
   dailyDate: string | null
+  /**
+   * そのゲームの手数。
+   * `indices` は座標を持たない語が落ちて短くなることがあるので、
+   * 「4 手」の表示には**こちらを使う**（線の点数と手数は別物）。
+   */
+  moveCount: number
   /** 点のインデックス列（2 点以上のときだけ作る）。 */
   indices: Int32Array
 }
@@ -62,6 +68,7 @@ export type SpaceScene = {
   sizePt: Float32Array
   nodes: SpaceNode[]
   indexByWord: Map<string, number>
+  /** クリア済みの経路。**サーバーが返した順（古い順）のまま**。 */
   paths: SpacePath[]
   /** 今日のゴールの点のインデックス。無ければ -1。 */
   goalIndex: number
@@ -124,6 +131,8 @@ function pathDrafts(
     out.push({
       gameId: path.game_id,
       dailyDate: path.daily_date,
+      // words は [start, 各手の結果] なので、手数は 1 引いた数。
+      moveCount: Math.max(0, path.words.length - 1),
       indices: Int32Array.from(indices),
     })
   }

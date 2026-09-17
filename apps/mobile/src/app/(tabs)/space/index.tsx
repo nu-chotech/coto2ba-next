@@ -17,6 +17,8 @@ import { GlassCard, SkiaGate, toMessageJa } from '../../../components'
 import {
   buildSpaceScene,
   collectionSummary,
+  defaultPathIndex,
+  findPathByGameId,
   type GoalMarker,
   hasRealGhosts,
   SPACE_SEARCH_HEIGHT,
@@ -82,6 +84,16 @@ export default function SpaceScreen() {
     )
   }, [])
 
+  // ── 主役にする経路 ────────────────────────────────────────
+  // 既定はいちばん新しいクリア。読み込みが終わるまでは null（点群だけ）。
+  const [pickedPath, setPickedPath] = useState<string | null>(null)
+  const activePathIndex = useMemo(() => {
+    const picked = findPathByGameId(scene.paths, pickedPath)
+    return picked ?? defaultPathIndex(scene.paths)
+  }, [scene.paths, pickedPath])
+  const activePath =
+    activePathIndex === null ? null : (scene.paths[activePathIndex]?.indices ?? null)
+
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [sheetIndex, setSheetIndex] = useState(-1)
   const [query, setQuery] = useState('')
@@ -143,6 +155,7 @@ export default function SpaceScreen() {
           gesture={gesture}
           onHit={onHit}
           selectedIndex={selectedIndex}
+          activePathIndex={activePathIndex}
           onResize={onResize}
         />
       </SkiaGate>
@@ -152,6 +165,8 @@ export default function SpaceScreen() {
         width={size.width}
         height={size.height}
         color={colors.text}
+        subColor={colors.sub}
+        activePath={activePath}
       />
 
       {/* ── 上：検索 ── */}

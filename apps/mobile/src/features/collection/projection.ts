@@ -184,50 +184,12 @@ export function nearestIndex(
 }
 
 /**
- * 1 点だけ投影する（選択中の輪など）。
- * `out` は長さ 4：[画面 x, 画面 y, サイズ倍率（0 なら不可視）, 深さ]。
- */
-export function projectOne(
-  xyz: Float32Array,
-  index: number,
-  yaw: number,
-  pitch: number,
-  distance: number,
-  targetX: number,
-  targetY: number,
-  targetZ: number,
-  centerX: number,
-  centerY: number,
-  worldScale: number,
-  out: Float32Array,
-): void {
-  'worklet'
-  out[0] = centerX
-  out[1] = centerY
-  out[2] = 0
-  out[3] = 0
-  if (index < 0 || (index + 1) * 3 > xyz.length) return
-
-  projectPoint(
-    xyz[index * 3] as number,
-    xyz[index * 3 + 1] as number,
-    xyz[index * 3 + 2] as number,
-    yaw,
-    pitch,
-    distance,
-    targetX,
-    targetY,
-    targetZ,
-    centerX,
-    centerY,
-    worldScale,
-    out,
-  )
-}
-
-/**
  * 任意の 1 点を投影する（経路の折れ線・節の輪など、`xyz` に無い点も通す）。
  * `out` は長さ 4：[画面 x, 画面 y, サイズ倍率（0 なら不可視）, 深さ]。
+ *
+ * **`projectOne` より前に置くこと。** worklet は Reanimated のプラグインが
+ * `const` に変換するので、使う側より後ろにあると module の初期化で TDZ になる
+ * （`Cannot access 'projectPoint' before initialization`）。
  */
 export function projectPoint(
   x0: number,
@@ -274,4 +236,46 @@ export function projectPoint(
   if (t < 0) t = 0
   else if (t > 1) t = 1
   out[2] = SPACE_DEPTH_SIZE_MAX + (SPACE_DEPTH_SIZE_MIN - SPACE_DEPTH_SIZE_MAX) * t
+}
+
+/**
+ * 1 点だけ投影する（選択中の輪など）。
+ * `out` は長さ 4：[画面 x, 画面 y, サイズ倍率（0 なら不可視）, 深さ]。
+ */
+export function projectOne(
+  xyz: Float32Array,
+  index: number,
+  yaw: number,
+  pitch: number,
+  distance: number,
+  targetX: number,
+  targetY: number,
+  targetZ: number,
+  centerX: number,
+  centerY: number,
+  worldScale: number,
+  out: Float32Array,
+): void {
+  'worklet'
+  out[0] = centerX
+  out[1] = centerY
+  out[2] = 0
+  out[3] = 0
+  if (index < 0 || (index + 1) * 3 > xyz.length) return
+
+  projectPoint(
+    xyz[index * 3] as number,
+    xyz[index * 3 + 1] as number,
+    xyz[index * 3 + 2] as number,
+    yaw,
+    pitch,
+    distance,
+    targetX,
+    targetY,
+    targetZ,
+    centerX,
+    centerY,
+    worldScale,
+    out,
+  )
 }

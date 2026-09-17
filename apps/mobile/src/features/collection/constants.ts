@@ -8,6 +8,9 @@
  */
 
 import { SPACE_FOCAL } from '@coto2ba/contracts'
+// 図鑑は宇宙なので、ライトモードでも暗いまま（意図的な例外、SPEC §4.3）。
+// 線の色はダーク固定の tier パレットから取る。
+import { tierPalettes } from '../../theme/tiers'
 
 // ── カメラ ──────────────────────────────────────────────────
 /**
@@ -84,27 +87,67 @@ export const SPACE_FRAMING_PITCH_TILT = 0.18
 export const SPACE_DOT_TEXTURE_SIZE = 32
 /** 所持語の基準サイズ（pt）。 */
 export const SPACE_DOT_OWNED_PT = 13
-/** ゴースト点（未取得語）の基準サイズ（pt）。 */
-export const SPACE_DOT_GHOST_PT = 5
+/**
+ * ゴースト点（未取得語）の基準サイズ（pt）。
+ * **背景に降格させてある。** 主役は自分の軌跡で、ここは「宇宙がそこにある」ことの
+ * 気配だけを担う（大きいと経路が点群に埋もれる）。
+ */
+export const SPACE_DOT_GHOST_PT = 3.4
 /** 今日のゴールの基準サイズ（pt）。金の輪をさらに重ねる。 */
 export const SPACE_DOT_GOAL_PT = 18
 /** ゴースト点の色と濃さ。 */
 export const SPACE_GHOST_COLOR = '#8A8A96'
-export const SPACE_GHOST_ALPHA = 0.55
-/** 選択中の語を示す輪の太さ。 */
+export const SPACE_GHOST_ALPHA = 0.34
+/** 選択中の語を示す輪の太さと大きさ（基準サイズに対する比）。 */
 export const SPACE_RING_WIDTH = 2
+export const SPACE_SELECTED_RING_SCALE = 1.8
 /** ゴールの金の輪の半径（基準サイズに対する比）。 */
 export const SPACE_GOAL_RING_SCALE = 1.9
 
-// ── 経路 ────────────────────────────────────────────────────
-/** クリア済みゲームの経路の線の太さ。 */
-export const SPACE_PATH_WIDTH = 1.2
-export const SPACE_PATH_ALPHA = 0.35
-/** 強調中の経路。 */
-export const SPACE_PATH_HIGHLIGHT_WIDTH = 2.4
-export const SPACE_PATH_HIGHLIGHT_ALPHA = 0.9
+// ── 経路（この画面の主役）────────────────────────────────────
+/**
+ * 軌跡の線の色。**結果画面のクリア演出と同じ色を使う**
+ * （同じ「意味空間を歩いた」という現象を、同じ絵で見せるため）。
+ * 灰（スタート）から金（到達）へ。歩くほど温まる、という tier の物語に合わせる。
+ */
+export const SPACE_TRAIL_COLOR_START = tierPalettes.mono.accent
+export const SPACE_TRAIL_COLOR_END = tierPalettes.gold.accent
+
+/** 選んでいない経路の線（背景側）。 */
+export const SPACE_PATH_WIDTH = 1.1
+export const SPACE_PATH_ALPHA = 0.16
+/** 選択中の経路の線（主役）。太いこと自体が「これが軌跡だ」の合図。 */
+export const SPACE_PATH_ACTIVE_WIDTH = 3.2
+/** 主役の線の下に敷く発光。星座のように光らせる。 */
+export const SPACE_PATH_GLOW_WIDTH = 10
+export const SPACE_PATH_GLOW_ALPHA = 0.4
+export const SPACE_PATH_GLOW_BLUR = 7
+/** 節（各手）に打つ輪。点の基準サイズに対する比。 */
+export const SPACE_PATH_NODE_RING_SCALE = 1.5
+export const SPACE_PATH_NODE_RING_WIDTH = 1.6
+export const SPACE_PATH_NODE_RING_ALPHA = 0.75
+/** スタートと到達点だけの大きい輪。 */
+export const SPACE_PATH_END_RING_SCALE = 2.5
+export const SPACE_PATH_END_RING_WIDTH = 2.2
 /** 一度に描く経路の上限（多すぎると線だらけになる）。 */
 export const SPACE_PATH_LIMIT = 30
+
+// ── 主役と背景の重みづけ（`paths.ts` の buildEmphasis）──────
+/** 選択中の経路に乗っている語を大きく見せる倍率。 */
+export const SPACE_EMPHASIS_PATH_SIZE = 1.45
+/** 経路を選んでいるときの、経路外の所持語の濃さ。 */
+export const SPACE_EMPHASIS_OFF_PATH_ALPHA = 0.4
+/** 経路を選んでいるときのゴースト点の濃さの倍率（さらに背景へ沈める）。 */
+export const SPACE_EMPHASIS_GHOST_ACTIVE = 0.6
+/**
+ * 経路を選んでいないときのゴースト点の濃さの倍率。
+ * 1 より大きい：主役が居ない画面を真っ暗にしないため、少しだけ強く出す。
+ */
+export const SPACE_EMPHASIS_GHOST_IDLE = 1.35
+
+// ── ゴールの輪 ──────────────────────────────────────────────
+/** 今日のゴールを囲む金の輪の太さ。 */
+export const SPACE_GOAL_RING_WIDTH = 2.4
 
 // ── ラベル ──────────────────────────────────────────────────
 /** 和文ラベルの位置を JS 側に送り直す間隔。短くすると滑らかだが JS が忙しくなる。 */
@@ -115,6 +158,11 @@ export const SPACE_LABEL_MAX_WIDTH = 104
 export const SPACE_LABEL_OFFSET_Y = 10
 /** 画面の外側この pt までは描く（端で急に消えないように）。 */
 export const SPACE_LABEL_MARGIN = 24
+/**
+ * 選択中の経路の節のラベルの、いちばん薄いときの濃さ。
+ * 主役なので、奥に回っても読めるところで止める。
+ */
+export const SPACE_PATH_LABEL_MIN_OPACITY = 0.55
 
 // ── タップ ──────────────────────────────────────────────────
 /**

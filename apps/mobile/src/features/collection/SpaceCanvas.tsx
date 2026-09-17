@@ -1,6 +1,10 @@
 /**
  * 図鑑の 2.5D レンダラ（SPEC §9.2）。
  *
+ * **主役は点群ではなく「選択中の経路」。** `start → 各手` を太い折れ線で描いて
+ * 発光させ、節に輪を打つ。所持語・ゴースト点は背景に降格する（`paths.ts` の
+ * `buildEmphasis` が点ごとの濃さとサイズの倍率を作る）。
+ *
  * - 全画面 Skia Canvas。点は **`Atlas` で 1 ドロー**（1 点 1 コンポーネントにしない）。
  *   白いドットのテクスチャ 1 枚を `colors` + `BlendMode.SrcIn` で点ごとに着色する。
  * - 変換は `useRSXformBuffer`、色は `useColorBuffer`。どちらも UI スレッドで
@@ -20,12 +24,14 @@
  * シーンが差し替わったら作り直すのがいちばん安全（差し替えは読み込み時の 1 回だけ）。
  */
 
-import { SPACE_FOCAL, SPACE_TAP_RADIUS } from '@coto2ba/contracts'
+import { SPACE_TAP_RADIUS } from '@coto2ba/contracts'
 import {
   Atlas,
+  BlurMask,
   Canvas,
   Circle,
   Group,
+  LinearGradient,
   Path,
   RadialGradient,
   rect,
@@ -47,17 +53,36 @@ import type { SpaceCamera } from './camera'
 import {
   SPACE_DOT_TEXTURE_SIZE,
   SPACE_GOAL_RING_SCALE,
-  SPACE_NEAR_PLANE,
+  SPACE_GOAL_RING_WIDTH,
+  SPACE_PATH_ACTIVE_WIDTH,
   SPACE_PATH_ALPHA,
-  SPACE_PATH_HIGHLIGHT_WIDTH,
+  SPACE_PATH_END_RING_SCALE,
+  SPACE_PATH_END_RING_WIDTH,
+  SPACE_PATH_GLOW_ALPHA,
+  SPACE_PATH_GLOW_BLUR,
+  SPACE_PATH_GLOW_WIDTH,
+  SPACE_PATH_NODE_RING_ALPHA,
+  SPACE_PATH_NODE_RING_SCALE,
+  SPACE_PATH_NODE_RING_WIDTH,
   SPACE_PATH_WIDTH,
   SPACE_RING_WIDTH,
+  SPACE_SELECTED_RING_SCALE,
   SPACE_TAP_MAX_DISTANCE,
   SPACE_TAP_MAX_DURATION_MS,
   SPACE_TAP_SETTLE_MS,
+  SPACE_TRAIL_COLOR_END,
+  SPACE_TRAIL_COLOR_START,
   SPACE_WORLD_SCALE,
 } from './constants'
-import { DEPTH_BUCKETS, nearestIndex, orderByDepth, projectAll, projectOne } from './projection'
+import { buildEmphasis } from './paths'
+import {
+  DEPTH_BUCKETS,
+  nearestIndex,
+  orderByDepth,
+  projectAll,
+  projectOne,
+  projectPoint,
+} from './projection'
 import type { SpaceScene } from './scene'
 
 const DOT = SPACE_DOT_TEXTURE_SIZE
@@ -74,6 +99,8 @@ export type SpaceCanvasProps = {
   onHit: (index: number) => void
   /** 強調する点（シートで開いている語）。-1 なら無し。 */
   selectedIndex: number
+  /** 主役として描く経路（`scene.paths` の添字）。無ければ null。 */
+  activePathIndex: number | null
   /** レイアウトが決まったら知らせる（ラベルの計算に使う）。 */
   onResize?: (width: number, height: number) => void
 }
@@ -104,6 +131,7 @@ export function SpaceCanvas({
   gesture,
   onHit,
   selectedIndex,
+  activePathIndex,
   onResize,
 }: SpaceCanvasProps) {
   const count = scene.count
@@ -128,6 +156,50 @@ export function SpaceCanvas({
   }, [selectedIndex, selected])
   const goal = useSharedValue(scene.goalIndex)
   const interactiveCount = useSharedValue(scene.interactiveCount)
+
+  // ── 主役と背景の重みづけ ──────────────────────────────────
+  // 経路を切り替えるたびに JS で作り直して差し替える（点の数ぶんの走査 1 回）。
+  // 共有値に**新しい配列を代入する**ことで mapper が作り直される
+  // （中身だけ書き換えても Reanimated は気づかない）。
+  const emphasis = useMemo(() => buildEmphasis(scene, activePathIndex), [scene, activePathIndex])
+  const emphasisAlpha = useSharedValue(emphasis.alpha)
+  const emphasisSize = useSharedValue(emphasis.size)
+  useEffect(() => {
+    emphasisAlpha.value = emphasis.alpha
+    emphasisSize.value = emphasis.size
+  }, [emphasis, emphasisAlpha, emphasisSize])
+
+  // ── 選択中の経路（平たい配列のどこからどこまでか）──────────
+  const activeRange = useMemo(() => {
+    if (activePathIndex === null) return { index: -1, from: 0, to: 0, start: -1, end: -1 }
+    const indices = scene.paths[activePathIndex]?.indices
+    if (indices === undefined || indices.length === 0) {
+      return { index: -1, from: 0, to: 0, start: -1, end: -1 }
+    }
+    return {
+      index: activePathIndex,
+      from: paths.offsets[activePathIndex] ?? 0,
+      to: paths.offsets[activePathIndex + 1] ?? 0,
+      start: indices[0] as number,
+      end: indices[indices.length - 1] as number,
+    }
+  }, [scene, paths, activePathIndex])
+
+  const activeIndex = useSharedValue(activeRange.index)
+  const activeFrom = useSharedValue(activeRange.from)
+  const activeTo = useSharedValue(activeRange.to)
+  const activeStart = useSharedValue(activeRange.start)
+  const activeEnd = useSharedValue(activeRange.end)
+  useEffect(() => {
+    activeIndex.value = activeRange.index
+    activeFrom.value = activeRange.from
+    activeTo.value = activeRange.to
+    activeStart.value = activeRange.start
+    activeEnd.value = activeRange.end
+  }, [activeRange, activeIndex, activeFrom, activeTo, activeStart, activeEnd])
+
+  /** 経路を投影するときの作業領域（毎フレーム確保しない）。 */
+  const routeScratch = useSharedValue(new Float32Array(4))
 
   // ── 毎フレームの作業領域（mapper ごとに別々に持つ）──────────
   const transformScratch = useFrameScratch(count)
@@ -194,7 +266,7 @@ export function SpaceCanvas({
       val.set(0, 0, OFFSCREEN, OFFSCREEN)
       return
     }
-    const scale = (sizePt.value[point] * depthScale) / DOT
+    const scale = (sizePt.value[point] * depthScale * emphasisSize.value[point]) / DOT
     const half = DOT_RADIUS * scale
     val.set(
       scale,
@@ -244,62 +316,135 @@ export function SpaceCanvas({
     val[0] = rgb.value[point * 3]
     val[1] = rgb.value[point * 3 + 1]
     val[2] = rgb.value[point * 3 + 2]
-    val[3] = baseAlpha.value[point] * colorScratch.alphaMul.value[point]
+    const alpha =
+      baseAlpha.value[point] * colorScratch.alphaMul.value[point] * emphasisAlpha.value[point]
+    val[3] = alpha > 1 ? 1 : alpha
   })
 
-  // ── 経路（クリア済みゲームの start → result… → goal）────────
-  const routePath = useDerivedValue<SkPath>(() => {
+  // ── 経路（この画面の主役）──────────────────────────────────
+  /** 選んでいない経路。背景として薄く残す（自分の宇宙の地図）。 */
+  const idleRoutePath = useDerivedValue<SkPath>(() => {
     const path = Skia.Path.Make()
     const width = viewWidth.value
     const height = viewHeight.value
     const offsets = pathOffsets.value
     if (width <= 0 || height <= 0 || offsets.length < 2) return path
-
-    const points = xyz.value
-    const indices = pathIndices.value
     const worldScale = Math.min(width, height) * SPACE_WORLD_SCALE
-    const centerX = width / 2
-    const centerY = height / 2
-    const distance = camera.distance.value
-    const cosYaw = Math.cos(camera.yaw.value)
-    const sinYaw = Math.sin(camera.yaw.value)
-    const cosPitch = Math.cos(camera.pitch.value)
-    const sinPitch = Math.sin(camera.pitch.value)
-
     for (let p = 0; p + 1 < offsets.length; p += 1) {
-      const from = offsets[p]
-      const to = offsets[p + 1]
-      let started = false
-      for (let k = from; k < to; k += 1) {
-        const index = indices[k]
-        const x = points[index * 3] - camera.targetX.value
-        const y = points[index * 3 + 1] - camera.targetY.value
-        const z = points[index * 3 + 2] - camera.targetZ.value
-        const x1 = x * cosYaw + z * sinYaw
-        const z1 = -x * sinYaw + z * cosYaw
-        const y1 = y * cosPitch - z1 * sinPitch
-        const z2 = y * sinPitch + z1 * cosPitch
-        const d = z2 + distance
-        if (d <= SPACE_NEAR_PLANE) {
-          started = false
-          continue
-        }
-        const scale = (SPACE_FOCAL / d) * worldScale
-        const sx = centerX + x1 * scale
-        const sy = centerY - y1 * scale
-        if (started) path.lineTo(sx, sy)
-        else {
-          path.moveTo(sx, sy)
-          started = true
-        }
-      }
+      if (p === activeIndex.value) continue
+      appendRoute(
+        path,
+        xyz.value,
+        pathIndices.value,
+        offsets[p] as number,
+        offsets[p + 1] as number,
+        camera.yaw.value,
+        camera.pitch.value,
+        camera.distance.value,
+        camera.targetX.value,
+        camera.targetY.value,
+        camera.targetZ.value,
+        width / 2,
+        height / 2,
+        worldScale,
+        routeScratch.value,
+      )
     }
     return path
   })
 
-  // ── 強調する点（選択中 / 今日のゴール）──────────────────────
-  const selectedRing = useRing(selected, xyz, sizePt, camera, viewWidth, viewHeight, 1.8)
+  /** 選択中の経路。太く描いて発光させる。 */
+  const activeRoutePath = useDerivedValue<SkPath>(() => {
+    const path = Skia.Path.Make()
+    const width = viewWidth.value
+    const height = viewHeight.value
+    if (activeIndex.value < 0 || width <= 0 || height <= 0) return path
+    appendRoute(
+      path,
+      xyz.value,
+      pathIndices.value,
+      activeFrom.value,
+      activeTo.value,
+      camera.yaw.value,
+      camera.pitch.value,
+      camera.distance.value,
+      camera.targetX.value,
+      camera.targetY.value,
+      camera.targetZ.value,
+      width / 2,
+      height / 2,
+      Math.min(width, height) * SPACE_WORLD_SCALE,
+      routeScratch.value,
+    )
+    return path
+  })
+
+  /** 節（各手）の輪。何手目かは `SpaceLabels` が RN の Text で添える。 */
+  const activeNodesPath = useDerivedValue<SkPath>(() => {
+    const path = Skia.Path.Make()
+    const width = viewWidth.value
+    const height = viewHeight.value
+    if (activeIndex.value < 0 || width <= 0 || height <= 0) return path
+    appendNodeRings(
+      path,
+      xyz.value,
+      pathIndices.value,
+      sizePt.value,
+      activeFrom.value,
+      activeTo.value,
+      camera.yaw.value,
+      camera.pitch.value,
+      camera.distance.value,
+      camera.targetX.value,
+      camera.targetY.value,
+      camera.targetZ.value,
+      width / 2,
+      height / 2,
+      Math.min(width, height) * SPACE_WORLD_SCALE,
+      routeScratch.value,
+    )
+    return path
+  })
+
+  // ── 強調する点（経路の端 / 選択中 / 今日のゴール）────────────
+  const selectedRing = useRing(
+    selected,
+    xyz,
+    sizePt,
+    camera,
+    viewWidth,
+    viewHeight,
+    SPACE_SELECTED_RING_SCALE,
+  )
   const goalRing = useRing(goal, xyz, sizePt, camera, viewWidth, viewHeight, SPACE_GOAL_RING_SCALE)
+  const startRing = useRing(
+    activeStart,
+    xyz,
+    sizePt,
+    camera,
+    viewWidth,
+    viewHeight,
+    SPACE_PATH_END_RING_SCALE,
+  )
+  const endRing = useRing(
+    activeEnd,
+    xyz,
+    sizePt,
+    camera,
+    viewWidth,
+    viewHeight,
+    SPACE_PATH_END_RING_SCALE,
+  )
+
+  // 線の色は「灰（スタート）→ 金（到達）」。端が重なって勾配が潰れないよう、
+  // 同じ点になったときだけ 1pt ずらす（Skia の勾配は始点と終点が同じだと死ぬ）。
+  const trailFrom = useDerivedValue(() => vec(startRing.cx.value, startRing.cy.value))
+  const trailTo = useDerivedValue(() => {
+    const dx = endRing.cx.value - startRing.cx.value
+    const dy = endRing.cy.value - startRing.cy.value
+    if (dx * dx + dy * dy > 1) return vec(endRing.cx.value, endRing.cy.value)
+    return vec(startRing.cx.value + 1, startRing.cy.value + 1)
+  })
 
   // ── タップ ────────────────────────────────────────────────
   /**
@@ -354,13 +499,18 @@ export function SpaceCanvas({
     <GestureDetector gesture={composed}>
       <View style={styles.root} onLayout={onLayout} collapsable={false}>
         <Canvas style={StyleSheet.absoluteFill}>
+          {/* 1. 選んでいない経路（背景の地図）。 */}
           <Path
-            path={routePath}
+            path={idleRoutePath}
             style="stroke"
             strokeWidth={SPACE_PATH_WIDTH}
+            strokeJoin="round"
+            strokeCap="round"
             color={palette.tiers.cosmos.accent}
             opacity={SPACE_PATH_ALPHA}
           />
+
+          {/* 2. 点。所持語・ゴール・ゴースト（主役の経路以外は背景に沈む）。 */}
           {count > 0 ? (
             <Atlas
               image={texture}
@@ -370,13 +520,64 @@ export function SpaceCanvas({
               colorBlendMode="srcIn"
             />
           ) : null}
+
+          {/* 3. 主役の経路。発光 → 線 → 節の輪 → 端の輪 の順に重ねる。 */}
+          <Path
+            path={activeRoutePath}
+            style="stroke"
+            strokeWidth={SPACE_PATH_GLOW_WIDTH}
+            strokeJoin="round"
+            strokeCap="round"
+            color={SPACE_TRAIL_COLOR_END}
+            opacity={SPACE_PATH_GLOW_ALPHA}
+          >
+            <BlurMask blur={SPACE_PATH_GLOW_BLUR} style="normal" />
+          </Path>
+          <Path
+            path={activeRoutePath}
+            style="stroke"
+            strokeWidth={SPACE_PATH_ACTIVE_WIDTH}
+            strokeJoin="round"
+            strokeCap="round"
+          >
+            <LinearGradient
+              start={trailFrom}
+              end={trailTo}
+              colors={[SPACE_TRAIL_COLOR_START, SPACE_TRAIL_COLOR_END]}
+            />
+          </Path>
+          <Path
+            path={activeNodesPath}
+            style="stroke"
+            strokeWidth={SPACE_PATH_NODE_RING_WIDTH}
+            color={palette.white}
+            opacity={SPACE_PATH_NODE_RING_ALPHA}
+          />
+          <Circle
+            cx={startRing.cx}
+            cy={startRing.cy}
+            r={startRing.r}
+            color={SPACE_TRAIL_COLOR_START}
+            style="stroke"
+            strokeWidth={SPACE_PATH_END_RING_WIDTH}
+          />
+          <Circle
+            cx={endRing.cx}
+            cy={endRing.cy}
+            r={endRing.r}
+            color={SPACE_TRAIL_COLOR_END}
+            style="stroke"
+            strokeWidth={SPACE_PATH_END_RING_WIDTH}
+          />
+
+          {/* 4. 今日のゴールと、シートで開いている語。 */}
           <Circle
             cx={goalRing.cx}
             cy={goalRing.cy}
             r={goalRing.r}
             color={tierPalettes.gold.accent}
             style="stroke"
-            strokeWidth={SPACE_PATH_HIGHLIGHT_WIDTH}
+            strokeWidth={SPACE_GOAL_RING_WIDTH}
           />
           <Circle
             cx={selectedRing.cx}
@@ -395,6 +596,107 @@ export function SpaceCanvas({
 const styles = StyleSheet.create({
   root: { flex: 1 },
 })
+
+// ── 経路を積む worklet ──────────────────────────────────────
+
+/**
+ * 折れ線を 1 本ぶん積む。
+ *
+ * **線が繋がることを見せる**のがこの画面の目的なので、線を切るのは
+ * near plane の向こうに出た点だけ（飛ばして繋ぐと通っていない経路を描くことになる）。
+ * `out` は長さ 4 の作業領域（毎フレーム確保しない）。
+ */
+function appendRoute(
+  path: SkPath,
+  points: Float32Array,
+  indices: Float32Array,
+  from: number,
+  to: number,
+  yaw: number,
+  pitch: number,
+  distance: number,
+  targetX: number,
+  targetY: number,
+  targetZ: number,
+  centerX: number,
+  centerY: number,
+  worldScale: number,
+  out: Float32Array,
+): void {
+  'worklet'
+  let started = false
+  for (let k = from; k < to; k += 1) {
+    const index = indices[k] as number
+    projectPoint(
+      points[index * 3] as number,
+      points[index * 3 + 1] as number,
+      points[index * 3 + 2] as number,
+      yaw,
+      pitch,
+      distance,
+      targetX,
+      targetY,
+      targetZ,
+      centerX,
+      centerY,
+      worldScale,
+      out,
+    )
+    if (out[2] === 0) {
+      started = false
+      continue
+    }
+    if (started) path.lineTo(out[0] as number, out[1] as number)
+    else {
+      path.moveTo(out[0] as number, out[1] as number)
+      started = true
+    }
+  }
+}
+
+/** 節に打つ輪。深度でサイズが変わるので、点と同じ倍率を掛ける。 */
+function appendNodeRings(
+  path: SkPath,
+  points: Float32Array,
+  indices: Float32Array,
+  sizePt: Float32Array,
+  from: number,
+  to: number,
+  yaw: number,
+  pitch: number,
+  distance: number,
+  targetX: number,
+  targetY: number,
+  targetZ: number,
+  centerX: number,
+  centerY: number,
+  worldScale: number,
+  out: Float32Array,
+): void {
+  'worklet'
+  for (let k = from; k < to; k += 1) {
+    const index = indices[k] as number
+    projectPoint(
+      points[index * 3] as number,
+      points[index * 3 + 1] as number,
+      points[index * 3 + 2] as number,
+      yaw,
+      pitch,
+      distance,
+      targetX,
+      targetY,
+      targetZ,
+      centerX,
+      centerY,
+      worldScale,
+      out,
+    )
+    const depthScale = out[2] as number
+    if (depthScale === 0) continue
+    const radius = ((sizePt[index] as number) * depthScale * SPACE_PATH_NODE_RING_SCALE) / 2
+    path.addCircle(out[0] as number, out[1] as number, radius)
+  }
+}
 
 // ── 補助フック ──────────────────────────────────────────────
 
