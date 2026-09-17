@@ -16,7 +16,6 @@
 import { NEAREST_CANDIDATES, VECTOR_DIM } from '@coto2ba/contracts'
 import { type SQL, sql } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import type { MixCandidateScore } from './mix-scoring'
 
 const DIM = sql.raw(String(VECTOR_DIM))
 
@@ -83,54 +82,6 @@ export async function mixAndRank(
   `)
   const row = rows.rows[0]
   return row ? { result: row.result, rank: Number(row.rank) } : null
-}
-
-/** 比較実験専用。production の mixAndRank と同じ LIMIT 後に除外する。 */
-export function mixCandidateMetricsQuery(
-  goal: string,
-  current: string,
-  input: string,
-  ratio: number,
-): SQL {
-  const mixed = blend(vectorOf(current), 1 - ratio, vectorOf(input), ratio)
-  return sql`
-    WITH cand AS (
-      SELECT v.word, v.w2v
-      FROM vocab v
-      WHERE v.is_output
-      ORDER BY v.w2v <=> ${mixed}
-      LIMIT ${NEAREST_CANDIDATES}
-    )
-    SELECT c.word,
-      1 - (c.w2v <=> ${mixed}) AS blend_similarity,
-      1 - (c.w2v <=> ${vectorOf(goal)}) AS goal_similarity
-    FROM cand c
-    WHERE c.word <> ${current} AND c.word <> ${input}
-  `
-}
-
-export async function mixCandidateMetrics(
-  db: Db,
-  goal: string,
-  current: string,
-  input: string,
-  ratio: number,
-): Promise<MixCandidateScore[]> {
-  const rows = await db.execute<{
-    word: string
-    blend_similarity: number | null
-    goal_similarity: number | null
-  }>(mixCandidateMetricsQuery(goal, current, input, ratio))
-  return rows.rows.map((row) => {
-    if (row.blend_similarity === null || row.goal_similarity === null) {
-      throw new Error('comparison words must exist in vocab')
-    }
-    return {
-      word: row.word,
-      blendSimilarity: Number(row.blend_similarity),
-      goalSimilarity: Number(row.goal_similarity),
-    }
-  })
 }
 
 /**
