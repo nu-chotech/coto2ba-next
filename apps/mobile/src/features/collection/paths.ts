@@ -29,6 +29,15 @@ export type PathOption = {
   detail: string
 }
 
+/**
+ * 描く経路を上限まで絞る。**残すのは新しいほう。**
+ * サーバーは古い順で返すので、前から取るとクリアが上限を超えた人の
+ * 「いちばん新しい軌跡」が消える（既定で開く軌跡がそれなので致命的）。
+ */
+export function recentPaths<T>(paths: readonly T[], limit: number): readonly T[] {
+  return paths.length <= limit ? paths : paths.slice(paths.length - limit)
+}
+
 /** 経路を新しい順に並べたチップの選択肢。サーバーは古い順で返す。 */
 export function pathOptions(paths: readonly SpacePath[], today: string): PathOption[] {
   const out: PathOption[] = []

@@ -26,6 +26,7 @@ import {
   SPACE_PATH_LIMIT,
 } from './constants'
 import { getGhostPoints } from './ghost'
+import { recentPaths } from './paths'
 
 const BYTE_MAX = 255
 
@@ -121,7 +122,7 @@ function pathDrafts(
   indexByWord: Map<string, number>,
 ): SpacePath[] {
   const out: SpacePath[] = []
-  for (const path of clearedPaths.slice(0, SPACE_PATH_LIMIT)) {
+  for (const path of recentPaths(clearedPaths, SPACE_PATH_LIMIT)) {
     const indices: number[] = []
     for (const word of path.words) {
       const index = indexByWord.get(word)

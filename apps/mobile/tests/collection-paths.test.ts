@@ -7,13 +7,14 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { SPACE_GHOST_ALPHA } from '../src/features/collection/constants'
+import { SPACE_GHOST_ALPHA, SPACE_PATH_LIMIT } from '../src/features/collection/constants'
 import {
   buildEmphasis,
   defaultPathIndex,
   findPathByGameId,
   pathOptions,
   pathPoints,
+  recentPaths,
   stepLabel,
 } from '../src/features/collection/paths'
 import type { SpaceNode, SpacePath, SpaceScene } from '../src/features/collection/scene'
@@ -210,5 +211,21 @@ describe('buildEmphasis', () => {
 
   it('経路が空でも落ちない', () => {
     expect(() => buildEmphasis(makeScene([]), 0)).not.toThrow()
+  })
+})
+
+describe('recentPaths', () => {
+  it('上限を超えたら**新しいほうを残す**（いちばん新しい軌跡が消えない）', () => {
+    // サーバーは古い順で返す。上限 + 2 本ぶん作って、残るのが後ろ側か見る。
+    const many = Array.from({ length: SPACE_PATH_LIMIT + 2 }, (_, i) => `g${i}`)
+    const kept = recentPaths(many, SPACE_PATH_LIMIT)
+    expect(kept.length).toBe(SPACE_PATH_LIMIT)
+    expect(kept[kept.length - 1]).toBe(`g${SPACE_PATH_LIMIT + 1}`)
+    expect(kept[0]).toBe('g2')
+  })
+
+  it('上限以下ならそのまま', () => {
+    const few = ['a', 'b']
+    expect(recentPaths(few, SPACE_PATH_LIMIT)).toEqual(few)
   })
 })
