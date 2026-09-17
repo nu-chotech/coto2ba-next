@@ -7,6 +7,8 @@
  * 寄せると「まず放り出されて、それから連れて行かれる」ことになる）。
  *
  * 上は検索ではなく**経路の切り替え**。検索は右上のアイコンからシートで開く。
+ * 結果画面の「この軌跡を見る」からは `?game=<id>` で入ってくる。これは
+ * **一度きりの指示**として扱い、読んだら消す（何度でも同じ軌跡に寄れる）。
  * パンで回し、ピンチで寄り、二本指タップで経路に戻り、タップで語の詳細。
  *
  * **サーバーが空でも落ちない。** `GET /api/collection` が失敗しても
@@ -14,6 +16,7 @@
  */
 
 import { SPACE_GHOST_COUNT } from '@coto2ba/contracts'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -62,6 +65,8 @@ const colors = paletteForTier(SPACE_TIER)
 
 export default function SpaceScreen() {
   const insets = useSafeAreaInsets()
+  const router = useRouter()
+  const { game } = useLocalSearchParams<{ game?: string }>()
 
   const collection = useCollectionQuery()
   const daily = useDailyQuery()
@@ -94,6 +99,8 @@ export default function SpaceScreen() {
   // ── どの軌跡を見るか ──────────────────────────────────────
   // 既定はいちばん新しいクリア。選ぶのは game_id（経路の並びが変わっても迷子にならない）。
   const [pickedGameId, setPickedGameId] = useState<string | null>(null)
+  /** フレーミングをやり直させるための合図（同じ経路をもう一度指されたとき）。 */
+  const [frameRequest, setFrameRequest] = useState(0)
   const activePathIndex = useMemo(
     () => findPathByGameId(scene.paths, pickedGameId) ?? defaultPathIndex(scene.paths),
     [scene.paths, pickedGameId],
@@ -110,12 +117,27 @@ export default function SpaceScreen() {
   const framedRef = useRef<string | null>(null)
   useEffect(() => {
     if (activePathIndex === null || activePoints.length === 0) return
-    const key = scene.paths[activePathIndex]?.gameId ?? ''
+    // 合図（frameRequest）を鍵に混ぜる。同じ軌跡をもう一度指されても寄せ直すため。
+    const key = `${frameRequest}:${scene.paths[activePathIndex]?.gameId ?? ''}`
     if (framedRef.current === key) return
     const first = framedRef.current === null
     framedRef.current = key
     frameTo(activePoints, first)
-  }, [scene, activePathIndex, activePoints, frameTo])
+  }, [scene, activePathIndex, activePoints, frameTo, frameRequest])
+
+  /**
+   * 結果画面の「この軌跡を見る」から `?game=<id>` で入ってきたとき。
+   * **読んだらパラメータを消す。** 残しておくと、そのあとチップで別の軌跡を
+   * 選んでも、タブに戻るたびに指示が生き返ってしまう。
+   */
+  useEffect(() => {
+    if (typeof game !== 'string' || game.length === 0) return
+    setPickedGameId(game)
+    // 待たせずにその位置から始める（結果画面から続いている一連の動きなので）。
+    framedRef.current = null
+    setFrameRequest((current) => current + 1)
+    router.setParams({ game: undefined })
+  }, [game, router])
 
   /** 迷子からの復帰。二本指タップと画面下のボタンの両方から呼ぶ。 */
   const recenter = useCallback(() => {
