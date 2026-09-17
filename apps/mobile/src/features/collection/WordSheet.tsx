@@ -6,11 +6,12 @@
  *
  * 説明・近傍はサーバー頼みなので、取れなくてもシートは開く（その行が出ないだけ）。
  *
- * **意図的な例外：ライトモードでも暗いまま。** 図鑑は宇宙なので、`useTheme()` ではなく
- * ダーク固定の互換シム（`palette` / `paletteForTier`）を読む（SPEC §4.3）。
+ * **意図的な例外：ライトモードでも暗いまま。** 図鑑は宇宙なので、端末がライトでも
+ * ここは暗い。固定しているのは `app/(tabs)/space/_layout.tsx` の
+ * `<ThemeProvider scheme={SPACE_SCHEME}>` だけなので、**ここは `useTheme()` を素直に読む**
+ * （部品ごとにダーク固定のシムを読むと、シムと追従する部品が混ざって文字が消える）。
  */
 
-import type { TierId } from '@coto2ba/contracts'
 import {
   Modal,
   Pressable,
@@ -21,13 +22,11 @@ import {
   View,
 } from 'react-native'
 import { GlassButton, GlassCard, Skeleton, TierDot } from '../../components'
-import { borderWidth, palette, paletteForTier, radius, spacing, typography } from '../../theme'
+import { borderWidth, radius, SPACE_TIER, spacing, typography, useTheme } from '../../theme'
 import { formatJstDateLabel, toJstDateString } from '../ranking/dates'
 import { SPACE_SHEET_MAX_HEIGHT_RATIO } from './constants'
 import { useWordDetailQuery } from './queries'
 import type { SpaceNode } from './scene'
-
-const SHEET_TIER: TierId = 'cosmos'
 
 export type WordSheetProps = {
   node: SpaceNode | null
@@ -44,7 +43,8 @@ function firstSeenLabel(node: SpaceNode): string | null {
 }
 
 export function WordSheet({ node, onClose, onPickWord }: WordSheetProps) {
-  const colors = paletteForTier(SHEET_TIER)
+  const { palette, paletteForTier } = useTheme()
+  const colors = paletteForTier(SPACE_TIER)
   const { height } = useWindowDimensions()
   const detail = useWordDetailQuery(node?.word ?? null)
 
@@ -53,7 +53,11 @@ export function WordSheet({ node, onClose, onPickWord }: WordSheetProps) {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="閉じる" />
+      <Pressable
+        style={[styles.scrim, { backgroundColor: palette.scrim }]}
+        onPress={onClose}
+        accessibilityLabel="閉じる"
+      />
       <View style={styles.dock} pointerEvents="box-none">
         <GlassCard
           variant="sheet"
@@ -132,7 +136,7 @@ export function WordSheet({ node, onClose, onPickWord }: WordSheetProps) {
             </ScrollView>
           )}
 
-          <GlassButton title="閉じる" onPress={onClose} tier={SHEET_TIER} variant="secondary" />
+          <GlassButton title="閉じる" onPress={onClose} tier={SPACE_TIER} variant="secondary" />
         </GlassCard>
       </View>
     </Modal>
@@ -146,7 +150,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: palette.scrim,
   },
   dock: { flex: 1, justifyContent: 'flex-end', padding: spacing.lg },
   sheet: { gap: spacing.md },
