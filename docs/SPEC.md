@@ -255,8 +255,9 @@ export const RATIO_MAX = 0.8;
 export const RATIO_STEP = 0.1;           // 0.1, 0.2, …, 0.8 の 8 段階
 export const CLEAR_RANK = 10;            // rank <= 10 でクリア
 export const MAX_MOVES = 20;             // 20 手でギブアップ扱い
-export const HINT_COUNT = 6;
-export const HINT_RATIO = 0.2;           // v_hint = 0.8*v_current + 0.2*v_goal
+export const HINT_COUNT = 6;             // ヒントの上限件数（下回ることがある。§5.4）
+export const HINT_EXTRAPOLATION_NEIGHBORS = 24;  // 外挿点ごとに集める近傍数
+export const HINT_VERIFY_LIMIT = 16;     // 実際に混ぜて検証する候補数
 export const TIERS = [                   // 演出帯（出力語彙 ≈ 10 万語 を前提）
   { id: "gold",   maxRank: 10 },
   { id: "cosmos", maxRank: 300 },
@@ -305,10 +306,33 @@ POST /games/:id/moves { input_word, ratio }
 
 ### 5.4 ヒント
 
-- `POST /games/:id/hints` で 6 語を返し、`games.hint_count` を +1 する。
-- 生成：`v_hint = (1 - HINT_RATIO) * v_current + HINT_RATIO * v_goal` の出力語彙内の近傍 30 語から、`{current, goal}` と **そのゲームで既に登場した語（history）** を除いた先頭 6 語。
-- 同じ current に対して 2 回開いても同じ 6 語（キャッシュ）。カウントは開くたびに増える。
-- クライアントはヒントをタップすると入力欄に入れる（自動で混合はしない）。
+- `POST /games/:id/hints` で **`{ word, ratio }` を最大 `HINT_COUNT`（6）件**返し、`games.hint_count` を +1 する。
+  **語だけでなく「どの比率で混ぜるか」まで返す。**
+- 生成（`hintCandidates`）。**内挿ではなく外挿**である。1 手は `blend(v_current, 1-r, v_input, r)` なので、
+  現在とゴールの中間にある語を混ぜても結果は現在からほとんど動かない。比率 `r` でゴールに着地させる入力語は
+
+  ```
+  v_W*(r) = (v_goal − (1 − r) · v_current) / r
+  ```
+
+  の方向にある。
+
+  1. `RATIOS` の比率ごとに `v_W*(r)` を作り、出力語彙の近傍を `HINT_EXTRAPOLATION_NEIGHBORS` 件ずつ集める（1 本の SQL）
+  2. 各候補について全比率を走査し、混合結果がゴールに最も近づく比率を算術で選ぶ
+  3. 上位 `HINT_VERIFY_LIMIT` 件を**実際に混ぜて**、結果語のゴール類似度が `current` を超えるものだけ残す
+  4. `{current, goal}`・**そのゲームで既に登場した語（history）**・`games.forbidden_inputs`・
+     表記揺れ（`isMorphologicalVariant`）を除く
+  5. 残った先頭 `HINT_COUNT` 件を、**`(goal, current)` を種にした決定的シャッフル**で並べ替えて返す
+
+- **6 件に満たないことがある。0 件もありうる。** 効かない語で埋めると「ヒントが効かない」に戻るため、
+  件数が減ることを許す。0 件のときは端末がその旨を出す。
+- 並びは**ゴールに近い順ではない**。近い順だと 1 位が常に勝ち確定の手になり、反射的に一番上を押されるため。
+  ただし `hint_cache` が `(goal, current)` でキャッシュされる以上、
+  **同じ盤面なら常に同じ語・同じ並び**でなければならない（`Math.random()` を使わない理由）。
+- 同じ current に対して 2 回開いても同じ結果（キャッシュ）。カウントは開くたびに増える。
+- クライアントはヒントをタップすると**語と比率の両方**を入力に載せる（自動で混合はしない）。
+- **ヒントの強さに上限は設けていない。** 実測では一番上のヒントの約半数がそのままクリア圏に着地する。
+  抑止は §5.8 のランキング（ヒント数が最優先キー）が担う。
 
 ### 5.5 演出帯
 
@@ -388,6 +412,12 @@ return None                                          # 到達不能
 - 5 回の平均 `bot_moves` で分類：**Easy ≤ 4 / Normal 5〜7 / Hard 8〜12**。13 以上または None が 1 回でもあれば除外。
 - これにより「ヒントに従えば必ず解ける」ことが保証される。
 - 目標：Easy 80 / Normal 150 / Hard 70 程度。足りなければ頻度範囲を広げる。
+
+> **注記（2026-09）**: `goal_pool.difficulty` に入っている値は**旧ヒントアルゴリズム（内挿）基準**である。
+> ヒントを外挿に作り直した（§5.4）結果、このボットは現在ほぼ全てのゴールを 1 手でクリアするため、
+> **`bot_moves` の絶対値は現行ヒントの手数とは対応しない。**
+> ただしゴール同士の**相対的な難易度の順序づけ**としては引き続き有効なので、そのまま使っている。
+> 作り直すにはパイプラインの再実行が要る。詳細は `docs/QUESTIONS.md`。
 
 ### 6.3 スタート語の規則
 
