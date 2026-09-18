@@ -4,17 +4,18 @@
  * ここで守りたいのは「シートで選んだヒントを**そのまま打てて、順位が上がる**」こと。
  * - 返す比率が 8 段階でなければサーバー自身が 422 を返す（丸めない契約）
  * - 提案どおりに混ぜたとき rank が改善する
- * - hint_cache（jsonb）を経由しても同じヒントが返る
+ * - hint_candidate_cache（jsonb）を経由しても同じヒントが返る
  *
  * vocab のデータが無ければ skipped として報告する（実行 0 件の passed にしない）。
  */
 import { hintResponseSchema, RATIOS } from '@coto2ba/contracts'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { afterAll, describe, expect, it } from 'vitest'
 import { app } from '../src/app'
 import { db, pool } from '../src/db/client'
-import { session, user } from '../src/db/schema'
-import { SKIP_WITHOUT_VOCAB } from './db-available'
+import { games, hintCache, hintCandidateCache, moves, session, user } from '../src/db/schema'
+import { openHints } from '../src/services/game'
+import { SKIP_WITHOUT_DB, SKIP_WITHOUT_VOCAB } from './db-available'
 
 const createdUserIds: string[] = []
 
@@ -89,17 +90,123 @@ describe.skipIf(SKIP_WITHOUT_VOCAB)('POST /api/games/:id/hints', () => {
     expect(move.rank).toBeLessThan(move.prev_rank)
   })
 
-  it('2 回目は hint_cache 経由でも同じヒントを返す', async () => {
+  it('2 回目は hint_candidate_cache 経由でも同じヒントを返す', async () => {
     const bearer = await signIn()
     const created = await post('/api/games', bearer, { mode: 'free', difficulty: 'normal' })
     const game = (await created.json()) as { id: string }
 
     const first = await post(`/api/games/${game.id}/hints`, bearer)
+    const [board] = await db
+      .select({ goal: games.goal, current: games.current })
+      .from(games)
+      .where(eq(games.id, game.id))
+    expect(board).toBeDefined()
+    if (!board) return
+    const cached = await db
+      .select()
+      .from(hintCandidateCache)
+      .where(
+        and(
+          eq(hintCandidateCache.goal, board.goal),
+          eq(hintCandidateCache.current, board.current),
+          eq(hintCandidateCache.hintVersion, 2),
+        ),
+      )
+    expect(cached).toHaveLength(1)
     const second = await post(`/api/games/${game.id}/hints`, bearer)
     const a = (await first.json()) as { hints: unknown; hint_count: number }
     const b = (await second.json()) as { hints: unknown; hint_count: number }
     expect(b.hints).toEqual(a.hints)
     // 開いた回数はキャッシュに関係なく増える。
     expect(b.hint_count).toBe(a.hint_count + 1)
+  })
+})
+
+describe.skipIf(SKIP_WITHOUT_DB)('game-specific exclusions on a shared cached pool', () => {
+  it('keeps each game history out and ignores the old display cache', async () => {
+    await signIn()
+    const userId = createdUserIds.at(-1)!
+    const goal = `test-goal-${crypto.randomUUID()}`
+    const current = `test-current-${crypto.randomUUID()}`
+    const hints = Array.from({ length: 10 }, (_, i) => ({
+      word: `test-candidate-${i}`,
+      ratio: 0.5,
+    }))
+    const [a, b] = await db
+      .insert(games)
+      .values([
+        {
+          userId,
+          mode: 'free',
+          difficulty: 'normal',
+          goal,
+          current,
+          start: hints[0]!.word,
+          currentRank: 500,
+        },
+        {
+          userId,
+          mode: 'free',
+          difficulty: 'normal',
+          goal,
+          current,
+          start: hints[3]!.word,
+          currentRank: 500,
+          forbiddenInputs: [hints[4]!.word],
+        },
+      ])
+      .returning({ id: games.id })
+    expect(a && b).toBeTruthy()
+    if (!a || !b) return
+    try {
+      await db
+        .insert(hintCache)
+        .values({ goal, current, hints: [{ word: 'old-cache-only', ratio: 0.5 }] })
+      await db.insert(hintCandidateCache).values({ goal, current, hintVersion: 2, hints })
+      await db.insert(moves).values([
+        {
+          gameId: a.id,
+          seq: 1,
+          inputWord: hints[1]!.word,
+          result: hints[2]!.word,
+          ratio: 0.5,
+          rank: 500,
+        },
+        {
+          gameId: b.id,
+          seq: 1,
+          inputWord: hints[5]!.word,
+          result: hints[6]!.word,
+          ratio: 0.5,
+          rank: 500,
+        },
+      ])
+      const first = await openHints(db, userId, a.id)
+      const second = await openHints(db, userId, b.id)
+      for (const word of hints.slice(0, 3))
+        expect(first.hints.map((h) => h.word)).not.toContain(word.word)
+      for (const word of hints.slice(3, 7))
+        expect(second.hints.map((h) => h.word)).not.toContain(word.word)
+      expect(second.hints.map((h) => h.word)).toContain(hints[0]!.word)
+      expect(first.hints.map((h) => h.word)).not.toContain('old-cache-only')
+      const [stored] = await db
+        .select({ hints: hintCandidateCache.hints })
+        .from(hintCandidateCache)
+        .where(
+          and(
+            eq(hintCandidateCache.goal, goal),
+            eq(hintCandidateCache.current, current),
+            eq(hintCandidateCache.hintVersion, 2),
+          ),
+        )
+      expect(stored?.hints).toEqual(hints)
+    } finally {
+      await db
+        .delete(hintCandidateCache)
+        .where(and(eq(hintCandidateCache.goal, goal), eq(hintCandidateCache.current, current)))
+      await db
+        .delete(hintCache)
+        .where(and(eq(hintCache.goal, goal), eq(hintCache.current, current)))
+    }
   })
 })

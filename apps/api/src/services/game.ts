@@ -11,7 +11,6 @@ import {
   type Game as GameDto,
   type GameMode,
   GOAL_NEIGHBOR_BAN,
-  HINT_COUNT,
   type HintResponse,
   type LeaderboardResponse,
   type MoveResponse,
@@ -27,7 +26,7 @@ import {
   dailyChallenges,
   games,
   goalPool,
-  hintCache,
+  hintCandidateCache,
   moves,
   user,
   wordDescriptions,
@@ -36,17 +35,18 @@ import { appError } from '../lib/errors'
 import { jstDate } from '../lib/jst'
 import { pickRandom } from '../lib/random'
 import { evaluateAchievements, recordEncounters } from './achievements'
+import { selectHints } from './hint-pool'
 // 対戦ルーム（設計 §9）。`rooms.ts` も `game.ts` を使うので相互参照になるが、
 // **どちらも相手を関数の中でしか呼ばない**（モジュール評価時に触らない）ので安全。
 import { roomStandingsForGame } from './rooms'
 import { applyMove, parseBestFreeMoves, updateBestFreeMoves, validateMove } from './rules'
 import {
   goalNeighborhood,
-  hintCandidates,
   lookupWord,
   mixAndRank,
   rankOf,
   sampleStartWord,
+  verifiedHintPool,
 } from './vector'
 
 const LEADERBOARD_PAGE = 50
@@ -517,44 +517,49 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
   const game = await loadGame(db, userId, gameId)
   if (game.status !== 'playing') throw appError('GAME_FINISHED')
 
+  const version = 2 // v1 cached game-specific six-slot lists; v2 caches verified pools.
+
   const cached = await db
-    .select({ hints: hintCache.hints })
-    .from(hintCache)
-    .where(and(eq(hintCache.goal, game.goal), eq(hintCache.current, game.current)))
+    .select({ hints: hintCandidateCache.hints })
+    .from(hintCandidateCache)
+    .where(
+      and(
+        eq(hintCandidateCache.goal, game.goal),
+        eq(hintCandidateCache.current, game.current),
+        eq(hintCandidateCache.hintVersion, version),
+      ),
+    )
     .limit(1)
 
-  let hints = cached[0]?.hints ?? null
+  let pool = cached[0]?.hints ?? null
 
-  if (!hints) {
-    // そのゲームで既に登場した語と、ゴールに近すぎて打てない語（forbidden_inputs）を除く。
-    // forbidden_inputs は goal から決まるので、(goal, current) のキャッシュと整合する。
-    const history = await db
-      .select({ result: moves.result, input: moves.inputWord })
-      .from(moves)
-      .where(eq(moves.gameId, gameId))
-    const exclude = new Set<string>([game.goal, game.current, game.start])
-    for (const w of game.forbiddenInputs) exclude.add(w)
-    for (const h of history) {
-      exclude.add(h.result)
-      exclude.add(h.input)
-    }
-    // 表記揺れの除外は hintCandidates の中で行う。
-    hints = await hintCandidates(db, game.goal, game.current, [...exclude], HINT_COUNT)
+  if (!pool) {
+    // Only goal/current-independent exclusions are applied before storing the pool.
+    pool = await verifiedHintPool(db, game.goal, game.current)
     // **キャッシュに書けなくてもヒントは返す。** ここは速くするための保存でしかなく、
     // 正しいヒントはもう手元にある。書き込みの失敗（スキーマが古い・容量・権限など）で
     // ヒント機能ごと 500 にする理由が無い。
-    // 実際にありうるのは「`0004_hint_cache_jsonb` を流す前の DB に新コードが当たる」型で、
-    // そのときここだけが落ちる（デプロイ順序は
-    // docs/superpowers/plans/2026-09-17-exhibition-ops.md Task 0.7）。
+    // Migration 0008 must be applied before deploying this reader (SELECT also uses the table).
     try {
       await db
-        .insert(hintCache)
-        .values({ goal: game.goal, current: game.current, hints })
+        .insert(hintCandidateCache)
+        .values({ goal: game.goal, current: game.current, hintVersion: version, hints: pool })
         .onConflictDoNothing()
     } catch (e) {
-      console.error('hint_cache への保存に失敗（ヒント自体は返す）', e)
+      console.error('hint_candidate_cache への保存に失敗（ヒント自体は返す）', e)
     }
   }
+
+  const history = await db
+    .select({ result: moves.result, input: moves.inputWord })
+    .from(moves)
+    .where(eq(moves.gameId, gameId))
+  const excluded = [
+    game.start,
+    ...game.forbiddenInputs,
+    ...history.flatMap((h) => [h.input, h.result]),
+  ]
+  const hints = selectHints(pool, game.goal, game.current, excluded)
 
   const updated = await db
     .update(games)

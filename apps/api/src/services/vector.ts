@@ -292,6 +292,7 @@ export async function hintCandidates(
   current: string,
   exclude: readonly string[],
   limit: number,
+  shuffle = true,
 ): Promise<Hint[]> {
   if (limit <= 0) return []
   const anchors = await wordVectors(db, [current, goal])
@@ -323,12 +324,22 @@ export async function hintCandidates(
     .map(({ word, ratio }) => ({ word, ratio }))
 
   const hints = await keepUsefulHints(db, goal, current, byArithmetic, limit)
-  if (hints.length > 0) return shuffleForDisplay(hints, goal, current)
+  if (hints.length > 0) return shuffle ? shuffleForDisplay(hints, goal, current) : hints
 
   // 最後の手段。1 件も検証を通らなかったときだけ、ゴールの近傍を候補にしてもう一度試す。
   // **ここでも同じ検証を通す。** 素通しすると「混ぜても順位が下がる語」を返しうる。
   const rescue = await goalNeighborCandidates(db, goal, current, currentVec, goalVec, banned)
-  return shuffleForDisplay(await keepUsefulHints(db, goal, current, rescue, 1), goal, current)
+  const fallback = await keepUsefulHints(db, goal, current, rescue, 1)
+  return shuffle ? shuffleForDisplay(fallback, goal, current) : fallback
+}
+
+/** Ordered, verified, history-independent cache pool. Display selection happens after reading it. */
+export async function verifiedHintPool(db: Db, goal: string, current: string): Promise<Hint[]> {
+  // Eight extrapolation targets each fetch HINT_EXTRAPOLATION_NEIGHBORS words.
+  // At most HINT_VERIFY_LIMIT (16) candidates enter the batched real-mix check;
+  // zero can pass it. The rescue check is also bounded by 16 and runs only when
+  // the first check yields nothing. Display selection takes at most six later.
+  return hintCandidates(db, goal, current, [], HINT_VERIFY_LIMIT, false)
 }
 
 /**
