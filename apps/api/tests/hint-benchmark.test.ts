@@ -18,7 +18,6 @@
 import {
   CLEAR_RANK,
   GOAL_NEIGHBOR_BAN,
-  HINT_COUNT,
   START_MAX_FREQ_RANK,
   START_RANK_RANGE,
   sharesKanji,
@@ -26,7 +25,8 @@ import {
 import { sql } from 'drizzle-orm'
 import { afterAll, describe, expect, it } from 'vitest'
 import { db, pool } from '../src/db/client'
-import { goalNeighborhood, hintCandidates, mixAndRank, rankOf } from '../src/services/vector'
+import { selectHints } from '../src/services/hint-pool'
+import { goalNeighborhood, mixAndRank, rankOf, verifiedHintPool } from '../src/services/vector'
 import { SKIP_WITHOUT_VOCAB } from './db-available'
 
 /** 改善率の下限。ここを下げてはいけない（下げるならアルゴリズムを直すこと）。 */
@@ -106,7 +106,13 @@ describe.skipIf(SKIP_WITHOUT_VOCAB)('ヒントの順位改善率', () => {
       for (const { goal, current } of cases) {
         const forbidden = await goalNeighborhood(db, goal, GOAL_NEIGHBOR_BAN)
         // シートに出るのと同じ件数を取り、**一番上**を打つ（人はそうする）。
-        const [hint] = await hintCandidates(db, goal, current, forbidden, HINT_COUNT)
+        // openHints と同じ順序で呼ぶ（プール構築にゴール由来の禁止語、表示時に履歴）。
+        const [hint] = selectHints(
+          await verifiedHintPool(db, goal, current, forbidden),
+          goal,
+          current,
+          forbidden,
+        )
         if (!hint) {
           withoutHint++
           continue

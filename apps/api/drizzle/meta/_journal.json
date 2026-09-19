@@ -57,6 +57,13 @@
       "when": 1789670400338,
       "tag": "0007_room_next_code",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789769409035,
+      "tag": "0008_hint_candidate_cache",
+      "breakpoints": true
     }
   ]
 }

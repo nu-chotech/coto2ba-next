@@ -228,6 +228,18 @@ export const hintCache = pgTable(
   (t) => [primaryKey({ columns: [t.goal, t.current] })],
 )
 
+/** Separate table keeps v1 readers isolated during rolling deploys and rollback. */
+export const hintCandidateCache = pgTable(
+  'hint_candidate_cache',
+  {
+    goal: text('goal').notNull(),
+    current: text('current').notNull(),
+    hintVersion: integer('hint_version').notNull(),
+    hints: jsonb('hints').$type<Hint[]>().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.goal, t.current, t.hintVersion] })],
+)
+
 export const wordDescriptions = pgTable('word_descriptions', {
   word: text('word').primaryKey(),
   text: text('text').notNull(),
