@@ -66,6 +66,15 @@ export const HINT_COUNT = 6
 export const HINT_EXTRAPOLATION_NEIGHBORS = 24
 /** 実際の混合まで走らせて検証する最終候補数。 */
 export const HINT_VERIFY_LIMIT = 16
+/**
+ * `hint_candidate_cache` のキーに入るバージョン。**候補の作り方を変えたら上げる。**
+ * 上げると古い行は読まれなくなる（消さなくてよい。ロールバックの戻り先になる）。
+ *
+ * - v1: ゲーム個別の 6 枠を完成形で持っていた（別テーブル `hint_cache`）
+ * - v2: 検証済みプールにしたが、ゴール由来の禁止語を表示時まで残していた
+ * - v3: 禁止語をプール構築時に落とす（検証枠 16 を出せない語で埋めない）
+ */
+export const HINT_CACHE_VERSION = 3
 
 // ── 演出帯（tier）────────────────────────────────────────────
 export const TIERS = [

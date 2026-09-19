@@ -11,6 +11,7 @@ import {
   type Game as GameDto,
   type GameMode,
   GOAL_NEIGHBOR_BAN,
+  HINT_CACHE_VERSION,
   type HintResponse,
   type LeaderboardResponse,
   type MoveResponse,
@@ -517,8 +518,6 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
   const game = await loadGame(db, userId, gameId)
   if (game.status !== 'playing') throw appError('GAME_FINISHED')
 
-  const version = 2 // v1 cached game-specific six-slot lists; v2 caches verified pools.
-
   const cached = await db
     .select({ hints: hintCandidateCache.hints })
     .from(hintCandidateCache)
@@ -526,7 +525,7 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
       and(
         eq(hintCandidateCache.goal, game.goal),
         eq(hintCandidateCache.current, game.current),
-        eq(hintCandidateCache.hintVersion, version),
+        eq(hintCandidateCache.hintVersion, HINT_CACHE_VERSION),
       ),
     )
     .limit(1)
@@ -535,7 +534,8 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
 
   if (!pool) {
     // Only goal/current-independent exclusions are applied before storing the pool.
-    pool = await verifiedHintPool(db, game.goal, game.current)
+    // forbiddenInputs は goal だけから決まる（goalNeighborhood）ので、共有キャッシュと整合する。
+    pool = await verifiedHintPool(db, game.goal, game.current, game.forbiddenInputs)
     // **キャッシュに書けなくてもヒントは返す。** ここは速くするための保存でしかなく、
     // 正しいヒントはもう手元にある。書き込みの失敗（スキーマが古い・容量・権限など）で
     // ヒント機能ごと 500 にする理由が無い。
@@ -543,7 +543,12 @@ export async function openHints(db: Db, userId: string, gameId: string): Promise
     try {
       await db
         .insert(hintCandidateCache)
-        .values({ goal: game.goal, current: game.current, hintVersion: version, hints: pool })
+        .values({
+          goal: game.goal,
+          current: game.current,
+          hintVersion: HINT_CACHE_VERSION,
+          hints: pool,
+        })
         .onConflictDoNothing()
     } catch (e) {
       console.error('hint_candidate_cache への保存に失敗（ヒント自体は返す）', e)

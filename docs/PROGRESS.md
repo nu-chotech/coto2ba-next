@@ -1,6 +1,6 @@
 # 進捗
 
-> 最終更新: 2026-09-18 JST
+> 最終更新: 2026-09-19 JST
 > 対象: SPEC.md の Tier A（Expo Go 配布）＋ 展示に向けた UI/UX 刷新とマルチプレイ。
 > 確定した設計判断は [ARCHITECTURE.md](./ARCHITECTURE.md)、未決事項は [QUESTIONS.md](./QUESTIONS.md)、
 > 設計と計画は [superpowers/](./superpowers/) にある。
@@ -20,6 +20,40 @@
 | **EAS プロジェクト** | `73c7cda9-727c-4b83-ba2e-674c38b951ae`（slug: coto2ba-next） |
 
 ---
+
+## 2026-09-19 ヒント候補プール（PR #5 / feat/hint-candidate-pool）
+
+Issue #4 の提案どおり、**完成済みの 6 枠**ではなく**検証済み候補プール**を共有キャッシュに置くようにした。
+`hint_candidate_cache`（migration 0008）に最大 16 件を持ち、ゲーム固有の除外は表示直前に効かせる。
+これで同じ `(goal, current)` に別履歴で到達しても、先行ゲームの除外結果を引きずらない。
+
+### レビューで見つけた劣化とその直し
+
+PR の当初版は**ヒント上段の質を落としていた**。ベンチマーク（実語彙・決定論の 100 局面）で:
+
+| | main | PR 当初 | 修正後 |
+| --- | --- | --- | --- |
+| 順位改善率 | 100% | 100% | 100% |
+| クリア圏に着地 | **51** | **35** | **51** |
+| 100 位以内に着地 | **99** | **85** | **99** |
+
+原因は `vector.ts` の `hintCandidates`。`slice(0, HINT_VERIFY_LIMIT)` は **exclude を適用した後**に効くので、
+`verifiedHintPool` が `exclude: []` を渡すと、`GOAL_NEIGHBOR_BAN` の 12 語が検証枠 16 の上位を占める
+（あの語はコサインで最上位に並ぶ）。それを表示時に捨てるので、出せるのは弱い尾だけになっていた。
+
+直しは `game.forbiddenInputs` をプール構築時に渡すこと。**これは `goal` だけの関数**
+（`goalNeighborhood(goal, GOAL_NEIGHBOR_BAN)`）なので、共有キャッシュの前提は壊れない。
+Issue #4 も「保存前に除外してよいもの」に「goal 由来の禁止語」を挙げていた。
+
+**この劣化は CI では捕まらない。** 閾値が characterization の幅（`MIN_WITHIN_100_SHARE = 0.8`、
+`CLEAR_SHARE_RANGE = [0.2, 0.9]`）なので 85/35 でも通るし、そもそも**ベンチマークは DB が要るので CI では skip される**。
+ヒントの計算を触ったら、ローカル DB でベンチマークを回して上の表と突き合わせること。
+
+### 残り
+
+- キャッシュ版は `HINT_CACHE_VERSION`（contracts に集約、現在 3）。候補の作り方を変えたら上げる
+- 救済経路（通常候補が全滅したとき）が持つのは **1 件**。プール化の利点がここだけ効かない
+- 強度別表示（弱・中・強から各 2 件）は未実装。Issue #4 に残している
 
 ## 2026-09-18 の改修（feat/exhibition-ux）
 

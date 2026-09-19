@@ -106,8 +106,9 @@ describe.skipIf(SKIP_WITHOUT_VOCAB)('ヒントの順位改善率', () => {
       for (const { goal, current } of cases) {
         const forbidden = await goalNeighborhood(db, goal, GOAL_NEIGHBOR_BAN)
         // シートに出るのと同じ件数を取り、**一番上**を打つ（人はそうする）。
+        // openHints と同じ順序で呼ぶ（プール構築にゴール由来の禁止語、表示時に履歴）。
         const [hint] = selectHints(
-          await verifiedHintPool(db, goal, current),
+          await verifiedHintPool(db, goal, current, forbidden),
           goal,
           current,
           forbidden,

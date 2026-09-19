@@ -8,7 +8,7 @@
  *
  * vocab のデータが無ければ skipped として報告する（実行 0 件の passed にしない）。
  */
-import { hintResponseSchema, RATIOS } from '@coto2ba/contracts'
+import { HINT_CACHE_VERSION, hintResponseSchema, RATIOS } from '@coto2ba/contracts'
 import { and, eq } from 'drizzle-orm'
 import { afterAll, describe, expect, it } from 'vitest'
 import { app } from '../src/app'
@@ -109,7 +109,7 @@ describe.skipIf(SKIP_WITHOUT_VOCAB)('POST /api/games/:id/hints', () => {
         and(
           eq(hintCandidateCache.goal, board.goal),
           eq(hintCandidateCache.current, board.current),
-          eq(hintCandidateCache.hintVersion, 2),
+          eq(hintCandidateCache.hintVersion, HINT_CACHE_VERSION),
         ),
       )
     expect(cached).toHaveLength(1)
@@ -162,7 +162,9 @@ describe.skipIf(SKIP_WITHOUT_DB)('game-specific exclusions on a shared cached po
       await db
         .insert(hintCache)
         .values({ goal, current, hints: [{ word: 'old-cache-only', ratio: 0.5 }] })
-      await db.insert(hintCandidateCache).values({ goal, current, hintVersion: 2, hints })
+      await db
+        .insert(hintCandidateCache)
+        .values({ goal, current, hintVersion: HINT_CACHE_VERSION, hints })
       await db.insert(moves).values([
         {
           gameId: a.id,
@@ -196,7 +198,7 @@ describe.skipIf(SKIP_WITHOUT_DB)('game-specific exclusions on a shared cached po
           and(
             eq(hintCandidateCache.goal, goal),
             eq(hintCandidateCache.current, current),
-            eq(hintCandidateCache.hintVersion, 2),
+            eq(hintCandidateCache.hintVersion, HINT_CACHE_VERSION),
           ),
         )
       expect(stored?.hints).toEqual(hints)

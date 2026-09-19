@@ -333,13 +333,26 @@ export async function hintCandidates(
   return shuffle ? shuffleForDisplay(fallback, goal, current) : fallback
 }
 
-/** Ordered, verified, history-independent cache pool. Display selection happens after reading it. */
-export async function verifiedHintPool(db: Db, goal: string, current: string): Promise<Hint[]> {
+/**
+ * Ordered, verified, history-independent cache pool. Display selection happens after reading it.
+ * `forbidden` must depend on `goal` alone (`game.forbiddenInputs`), never on one game's moves —
+ * that is what keeps the pool shareable between games reaching the same (goal, current).
+ */
+export async function verifiedHintPool(
+  db: Db,
+  goal: string,
+  current: string,
+  forbidden: readonly string[] = [],
+): Promise<Hint[]> {
   // Eight extrapolation targets each fetch HINT_EXTRAPOLATION_NEIGHBORS words.
   // At most HINT_VERIFY_LIMIT (16) candidates enter the batched real-mix check;
-  // zero can pass it. The rescue check is also bounded by 16 and runs only when
-  // the first check yields nothing. Display selection takes at most six later.
-  return hintCandidates(db, goal, current, [], HINT_VERIFY_LIMIT, false)
+  // zero can pass it. The rescue check keeps 1 and runs only when the first check
+  // yields nothing. Display selection takes at most six later.
+  //
+  // ゴール近傍の禁止語を **この slice より前に** 落とすことが要る。あの 12 語は
+  // コサインで最上位に並ぶので、残したままだと検証枠 16 をそれで埋めてしまい、
+  // 表示時に捨てるだけの語に枠を使って、実際に出せる候補が弱い尾だけになる。
+  return hintCandidates(db, goal, current, forbidden, HINT_VERIFY_LIMIT, false)
 }
 
 /**
